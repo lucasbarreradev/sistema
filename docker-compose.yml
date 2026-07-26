@@ -3,31 +3,70 @@ services:
     build: sistema
     mem_limit: 512m
     ports:
-      - "8080:8080"
+      - "8082:8080"
     environment:
-      DB_URL: jdbc:mysql://electricidad:3306/electricidad?createDatabaseIfNotExist=true&serverTimezone=UTC
-      DB_USER_NAME: app
-      DB_PASSWORD: app123
+      TZ: America/Argentina/Buenos_Aires
+      JAVA_TOOL_OPTIONS: -Duser.timezone=America/Argentina/Buenos_Aires
 
-      APP_ADMIN_USER: admin
+      DB_URL: ${DB_URL}
+      DB_USER_NAME: ${DB_USER_NAME}
+      DB_PASSWORD: ${DB_PASSWORD}
+
+      APP_ADMIN_USER: ${ADMIN_USER:-admin}
       APP_ADMIN_PASS: ${ADMIN_PASS}
-      APP_EMPLEADO_USER: empleado
+      APP_EMPLEADO_USER: ${EMPLEADO_USER:-empleado}
       APP_EMPLEADO_PASS: ${EMPLEADO_PASS}
+
+      # Integraciones opcionales con canales de venta
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      WOOCOMMERCE_URL: ${WOOCOMMERCE_URL:-}
+      WOOCOMMERCE_CONSUMER_KEY: ${WOOCOMMERCE_CONSUMER_KEY:-}
+      WOOCOMMERCE_CONSUMER_SECRET: ${WOOCOMMERCE_CONSUMER_SECRET:-}
+      WC_URL: ${WC_URL:-}
+      WC_CONSUMER_KEY: ${WC_CONSUMER_KEY:-}
+      WC_CONSUMER_SECRET: ${WC_CONSUMER_SECRET:-}
+      MERCADOLIBRE_ACCESS_TOKEN: ${MERCADOLIBRE_ACCESS_TOKEN:-}
+      MERCADOLIBRE_REFRESH_TOKEN: ${MERCADOLIBRE_REFRESH_TOKEN:-}
+      MERCADOLIBRE_CLIENT_ID: ${MERCADOLIBRE_CLIENT_ID:-}
+      MERCADOLIBRE_CLIENT_SECRET: ${MERCADOLIBRE_CLIENT_SECRET:-}
+      MERCADOLIBRE_REDIRECT_URI: ${MERCADOLIBRE_REDIRECT_URI:-}
+      INTEGRATIONS_ENCRYPTION_KEY: ${INTEGRATIONS_ENCRYPTION_KEY:-}
+      INTEGRATIONS_WEBHOOK_SECRET: ${INTEGRATIONS_WEBHOOK_SECRET:-}
+
+      ML_ACCESS_TOKEN: ${ML_ACCESS_TOKEN:-}
+      ML_REFRESH_TOKEN: ${ML_REFRESH_TOKEN:-}
+      ML_CLIENT_ID: ${ML_CLIENT_ID:-}
+      ML_CLIENT_SECRET: ${ML_CLIENT_SECRET:-}
+      ML_SITE_ID: ${ML_SITE_ID:-MLA}
+      MERCADOLIBRE_CATEGORY_ID: ${MERCADOLIBRE_CATEGORY_ID:-}
+      MERCADOLIBRE_LISTING_TYPE_ID: ${MERCADOLIBRE_LISTING_TYPE_ID:-gold_special}
+      MERCADOLIBRE_USER_PRODUCTS: ${MERCADOLIBRE_USER_PRODUCTS:-true}
+      TIENDANUBE_STORE_ID: ${TIENDANUBE_STORE_ID:-}
+      TIENDANUBE_ACCESS_TOKEN: ${TIENDANUBE_ACCESS_TOKEN:-}
+      TIENDANUBE_USER_AGENT: ${TIENDANUBE_USER_AGENT:-SistemaStock/1.0}
+      TN_STORE_ID: ${TN_STORE_ID:-}
+      TN_ACCESS_TOKEN: ${TN_ACCESS_TOKEN:-}
+      TN_USER_AGENT: ${TN_USER_AGENT:-SistemaStock/1.0}
+      TN_CLIENT_ID: ${TN_CLIENT_ID:-}
+      TN_CLIENT_SECRET: ${TN_CLIENT_SECRET:-}
+      TIENDANUBE_CLIENT_ID: ${TIENDANUBE_CLIENT_ID:-}
+      TIENDANUBE_CLIENT_SECRET: ${TIENDANUBE_CLIENT_SECRET:-}
+      TIENDANUBE_REDIRECT_URI: ${TIENDANUBE_REDIRECT_URI:-}
 
     restart: always
     depends_on:
-      electricidad:
+      joya:
         condition: service_healthy
 
-  electricidad:
-    image: mysql:8.0 
+  joya:
+    image: mysql:8.0
     ports:
-      - "3307:3306"
+      - "3309:3306"
     environment:
-      MYSQL_USER: app
-      MYSQL_ROOT_PASSWORD: root123
-      MYSQL_PASSWORD: app123
-      MYSQL_DATABASE: electricidad
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
     volumes:
       - mysql_data:/var/lib/mysql
     restart: always

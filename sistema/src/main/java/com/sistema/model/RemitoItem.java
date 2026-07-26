@@ -8,7 +8,7 @@ import java.math.BigDecimal;
 @Entity
 @Table(name = "remito_item")
 @Getter @Setter @AllArgsConstructor @NoArgsConstructor
-public class RemitoItem {
+public class RemitoItem extends TenantAwareEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -21,6 +21,15 @@ public class RemitoItem {
     @ManyToOne
     @JoinColumn(name = "producto_id", nullable = false)
     private Producto producto;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "producto_variante_id")
+    private ProductoVariante variante;
+
+    @Transient
+    public String getDescripcionProducto() {
+        return producto.getDescripcion() + (variante == null ? "" : " - " + variante.getNombreMostrar());
+    }
 
     @Column(name = "cantidad", nullable = false)
     private Integer cantidad;

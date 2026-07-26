@@ -11,6 +11,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter;
 
 @Configuration @EnableWebSecurity @EnableMethodSecurity // Habilita @PreAuthorize
 public class SecurityConfig {
@@ -21,16 +22,23 @@ public class SecurityConfig {
     public AuthenticationManager authenticationManager( AuthenticationConfiguration config) throws Exception {
         return config.getAuthenticationManager(); }
     @Bean
-    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    public SecurityFilterChain filterChain(HttpSecurity http,
+                                           TenantAuthenticationSuccessHandler successHandler,
+                                           TenantContextFilter tenantContextFilter) throws Exception {
         http .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.GET, "/login").permitAll()
                         .requestMatchers(HttpMethod.POST, "/login").permitAll()
                 .requestMatchers("/WEB-INF/**").permitAll()
                 .requestMatchers("/css/**", "/js/**", "/img/**", "/vendor/**", "/webjars/**").permitAll()
                 .requestMatchers("/error").permitAll()
+                .requestMatchers(HttpMethod.POST, "/webhooks/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/canales/woocommerce/callback").permitAll()
+                .requestMatchers(HttpMethod.GET, "/productos/*/foto", "/productos/*/foto/*").permitAll()
+                .requestMatchers(HttpMethod.GET, "/productos/*/variantes/*/foto", "/productos/*/variantes/*/foto/*").permitAll()
 
                 //Roles
 
+                .requestMatchers("/tenants/**").hasRole("SUPERADMIN")
                 .requestMatchers("/usuarios/**").hasRole("ADMIN")
                         .requestMatchers("/reportes/**").hasRole("ADMIN") // ========================================== // ADMIN y EMPLEADO // ==========================================
 
@@ -38,6 +46,8 @@ public class SecurityConfig {
                                 "/ventas/**",
                                 "/presupuestos/**",
                                 "/productos/**",
+                                "/canales/**",
+                                "/guias-talles/**",
                                 "/clientes/**",
                                 "/proveedores/**"
                         ) .hasAnyRole("ADMIN", "EMPLEADO")
@@ -48,7 +58,7 @@ public class SecurityConfig {
                 .formLogin(form -> form
                         .loginPage("/login")
                         .loginProcessingUrl("/login")
-                        .defaultSuccessUrl("/", true)
+                        .successHandler(successHandler)
                         .failureUrl("/login?error=true")
                         .permitAll() )
                 .logout(logout -> logout
@@ -60,6 +70,10 @@ public class SecurityConfig {
                 .exceptionHandling(ex -> ex
                         .accessDeniedPage("/acceso-denegado")
                 )
-                .csrf(csrf -> csrf.disable());
+                .csrf(csrf -> csrf.ignoringRequestMatchers(
+                        "/webhooks/**",
+                        "/canales/woocommerce/callback"
+                ));
+        http.addFilterAfter(tenantContextFilter, AnonymousAuthenticationFilter.class);
         return http.build();
     } }

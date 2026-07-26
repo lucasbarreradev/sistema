@@ -85,6 +85,7 @@ public class PresupuestoController {
             @RequestParam(required = false) Long clienteId,
             @RequestParam FormaPago formaPago,
             @RequestParam List<Long> productoIds,
+            @RequestParam(required = false) List<Long> varianteIds,
             @RequestParam List<Integer> cantidades,
             @RequestParam(required = false) List<BigDecimal> descuentos,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaValidez,
@@ -99,6 +100,7 @@ public class PresupuestoController {
                     clienteId,
                     formaPago,
                     productoIds,
+                    varianteIds,
                     cantidades,
                     descuentos,
                     fechaValidez,
@@ -212,6 +214,7 @@ public class PresupuestoController {
             @PathVariable Long id,
             @RequestParam(required = false) Long clienteId,
             @RequestParam List<Long> productoIds,
+            @RequestParam(required = false) List<Long> varianteIds,
             @RequestParam List<Integer> cantidades,
             @RequestParam(required = false) List<BigDecimal> descuentos,
             @RequestParam(required = false) List<BigDecimal> precios,
@@ -225,7 +228,7 @@ public class PresupuestoController {
 
         try {
             presupuestoService.actualizar(
-                    id, clienteId, productoIds, cantidades,
+                    id, clienteId, productoIds, varianteIds, cantidades,
                     descuentos, precios, actualizarPrecioProducto, formaPago, fechaValidez, moneda, tipoCambio, notaTipoCambio);
 
             ra.addFlashAttribute("mensaje", "Presupuesto actualizado exitosamente");

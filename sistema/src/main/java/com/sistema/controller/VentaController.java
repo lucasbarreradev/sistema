@@ -25,6 +25,7 @@ public class VentaController {
     private final VentaItemRepository ventaItemRepo;
     private final RemitoService remitoService;
     private final RemitoRepository remitoRepo;
+    private final ProductoVarianteRepository varianteRepo;
 
     public VentaController(VentaService ventaService,
                            ProductoRepository productoRepo,
@@ -32,7 +33,8 @@ public class VentaController {
                            VentaRepository ventaRepo,
                            VentaItemRepository ventaItemRepo,
                            RemitoService remitoService,
-                           RemitoRepository remitoRepo) {
+                           RemitoRepository remitoRepo,
+                           ProductoVarianteRepository varianteRepo) {
         this.ventaService = ventaService;
         this.productoRepo = productoRepo;
         this.clienteRepo = clienteRepo;
@@ -40,6 +42,7 @@ public class VentaController {
         this.ventaItemRepo = ventaItemRepo;
         this.remitoService = remitoService;
         this.remitoRepo = remitoRepo;
+        this.varianteRepo = varianteRepo;
     }
 
     // ==========================================
@@ -82,6 +85,7 @@ public class VentaController {
             @RequestParam FormaPago formaPago,
             @RequestParam(required = false) String nota,
             @RequestParam(required = false) List<Long> productoIds,
+            @RequestParam(required = false) List<Long> varianteIds,
             @RequestParam(required = false) List<Integer> cantidades,
             @RequestParam(required = false) List<BigDecimal> descuentos,
             @RequestParam(value = "generarRemito", defaultValue = "false") Boolean generarRemito,
@@ -114,6 +118,11 @@ public class VentaController {
 
                 VentaItem item = new VentaItem();
                 item.setProducto(producto);
+                if (varianteIds != null && i < varianteIds.size() && varianteIds.get(i) != null && varianteIds.get(i) > 0) {
+                    ProductoVariante variante = varianteRepo.findById(varianteIds.get(i))
+                            .orElseThrow(() -> new IllegalArgumentException("Variante no encontrada"));
+                    item.setVariante(variante);
+                }
                 item.setCantidad(cantidades.get(i));
 
 

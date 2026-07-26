@@ -8,11 +8,11 @@ import java.math.BigDecimal;
 @Entity
 @Table(
         uniqueConstraints = {
-                @UniqueConstraint(columnNames = {"producto_id", "formaPago"})
+                @UniqueConstraint(name = "uk_precio_tenant_producto_forma", columnNames = {"tenant_id", "producto_id", "formaPago"})
         }
 )
 @Getter @Setter @ToString @AllArgsConstructor @NoArgsConstructor
-public class PrecioProducto {
+public class PrecioProducto extends TenantAwareEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

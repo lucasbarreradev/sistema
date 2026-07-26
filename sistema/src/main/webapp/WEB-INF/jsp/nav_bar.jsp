@@ -12,6 +12,12 @@
                 </div>
                 <div class="sidebar-brand-text mx-3">Sistema Stock</div>
             </a>
+            <c:if test="${not empty sessionScope.TENANT_NOMBRE}">
+                <div class="text-center text-white-50 small px-2 pb-2">
+                    <i class="fa-solid fa-building mr-1"></i>
+                    <c:out value="${sessionScope.TENANT_NOMBRE}"/>
+                </div>
+            </c:if>
 
             <!-- Divider -->
             <hr class="sidebar-divider my-0">
@@ -51,6 +57,20 @@
                                         </a>
                                     </li>
 
+            <li class="nav-item">
+                <a class="nav-link" href="<c:url value='/canales' />">
+                    <i class="fa-solid fa-cloud-arrow-up"></i>
+                    <span>Canales de venta</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="<c:url value='/guias-talles' />">
+                    <i class="fa-solid fa-ruler-combined"></i>
+                    <span>Guías de talles</span>
+                </a>
+            </li>
+
             <!-- Nav Item - Proveedores -->
             <li class="nav-item">
                 <a class="nav-link" href="<c:url value='/proveedores' />">
@@ -66,6 +86,24 @@
                                 <span>Clientes</span>
                             </a>
                         </li>
+
+            <sec:authorize access="hasRole('ADMIN')">
+                <li class="nav-item">
+                    <a class="nav-link" href="<c:url value='/usuarios' />">
+                        <i class="fa-solid fa-users-gear"></i>
+                        <span>Usuarios</span>
+                    </a>
+                </li>
+            </sec:authorize>
+
+            <sec:authorize access="hasRole('SUPERADMIN')">
+                <li class="nav-item">
+                    <a class="nav-link" href="<c:url value='/tenants' />">
+                        <i class="fa-solid fa-building-shield"></i>
+                        <span>Negocios</span>
+                    </a>
+                </li>
+            </sec:authorize>
 
             <!-- Divider -->
             <hr class="sidebar-divider d-none d-md-block">

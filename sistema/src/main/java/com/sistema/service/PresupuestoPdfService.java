@@ -333,7 +333,7 @@ public class PresupuestoPdfService {
 
             // Descripción
             PdfPCell descCell = new PdfPCell(
-                    new Phrase(d.getProducto().getDescripcion(), normal)
+                    new Phrase(d.getDescripcionProducto(), normal)
             );
             descCell.setPadding(6);
             descCell.setBorderColor(BaseColor.LIGHT_GRAY);

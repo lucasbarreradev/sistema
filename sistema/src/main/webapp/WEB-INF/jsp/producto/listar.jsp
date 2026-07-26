@@ -37,6 +37,10 @@
                        class="btn btn-primary">
                         + Nuevo Producto
                     </a>
+                    <a href="${pageContext.request.contextPath}/canales"
+                       class="btn btn-info ml-2">
+                        Importar / Publicar
+                    </a>
 
                 </div>
 
@@ -78,6 +82,7 @@
 
                                 <thead class="table-dark">
                                 <tr>
+                                    <th>Foto</th>
                                     <th>SKU</th>
                                     <th>Descripción</th>
                                     <th>Cantidad</th>
@@ -92,9 +97,18 @@
                                 <tbody>
                                 <c:forEach items="${productos}" var="p">
                                     <tr>
+                                        <td class="text-center">
+                                            <c:choose>
+                                                <c:when test="${p.tieneFoto()}">
+                                                    <img src="${pageContext.request.contextPath}/productos/${p.id}/foto"
+                                                         alt="Foto" style="width:52px;height:52px;object-fit:cover;border-radius:6px;">
+                                                </c:when>
+                                                <c:otherwise><span class="text-muted">Sin foto</span></c:otherwise>
+                                            </c:choose>
+                                        </td>
                                         <td>${p.sku}</td>
                                         <td>${p.descripcion}</td>
-                                        <td>${p.cantidad}</td>
+                                        <td>${p.stockTotal}<c:if test="${p.tieneVariantes()}"><br><span class="badge badge-info">Variantes</span></c:if></td>
                                         <td>${p.precioContado}</td>
                                         <td>${p.precioCuentaCorriente}</td>
                                         <td>${p.precioTarjeta}</td>
@@ -110,6 +124,8 @@
                                         </td>
 
                                         <td class="text-center">
+                                            <a class="btn btn-sm btn-info"
+                                               href="${pageContext.request.contextPath}/productos/${p.id}/variantes">Variantes</a>
                                             <a class="btn btn-sm btn-warning"
                                                href="${pageContext.request.contextPath}/productos/editar/${p.id}">
                                                 Editar

@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Getter @Setter @ToString @AllArgsConstructor @NoArgsConstructor
-public class Gasto {
+public class Gasto extends TenantAwareEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

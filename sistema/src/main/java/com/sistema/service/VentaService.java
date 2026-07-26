@@ -21,17 +21,20 @@ public class VentaService {
     private final ClienteRepository clienteRepo;
     private final PresupuestoRepository presupuestoRepo;
     private final MovimientoInventarioService movimientoService;
+    private final ProductoVarianteRepository varianteRepo;
 
     public VentaService(VentaRepository ventaRepo,
                         ProductoRepository productoRepo,
                         ClienteRepository clienteRepo,
                         PresupuestoRepository presupuestoRepo,
-                        MovimientoInventarioService movimientoService) {
+                        MovimientoInventarioService movimientoService,
+                        ProductoVarianteRepository varianteRepo) {
         this.ventaRepo = ventaRepo;
         this.productoRepo = productoRepo;
         this.clienteRepo = clienteRepo;
         this.presupuestoRepo = presupuestoRepo;
         this.movimientoService = movimientoService;
+        this.varianteRepo = varianteRepo;
     }
 
     // =====================================================
@@ -76,17 +79,27 @@ public class VentaService {
             // Asegurar entidad gestionada
             item.setProducto(producto);
 
+            ProductoVariante variante = null;
+            if (item.getVariante() != null && item.getVariante().getId() != null) {
+                variante = varianteRepo.findById(item.getVariante().getId())
+                        .orElseThrow(() -> new IllegalArgumentException("Variante no encontrada"));
+                if (!variante.getProducto().getId().equals(producto.getId())) throw new IllegalArgumentException("La variante no pertenece al producto");
+                item.setVariante(variante);
+            } else if (varianteRepo.existsByProductoId(producto.getId())) {
+                throw new IllegalArgumentException("Debe seleccionar una variante para " + producto.getDescripcion());
+            }
+
             BigDecimal precio;
 
             switch (venta.getFormaPago()) {
                     case CONTADO:
-                    precio = producto.getPrecioContado();
+                    precio = variante == null ? producto.getPrecioContado() : variante.precio(FormaPago.CONTADO);
                     break;
                 case TARJETA:
-                    precio = producto.getPrecioTarjeta();
+                    precio = variante == null ? producto.getPrecioTarjeta() : variante.precio(FormaPago.TARJETA);
                     break;
                 case CUENTA_CORRIENTE:
-                    precio = producto.getPrecioCuentaCorriente();
+                    precio = variante == null ? producto.getPrecioCuentaCorriente() : variante.precio(FormaPago.CUENTA_CORRIENTE);
                     break;
                 default:
                     throw new RuntimeException("Forma de pago inválida");
@@ -100,7 +113,7 @@ public class VentaService {
             item.setPrecioUnitario(precio);
 
             item.setCostoUnitario(
-                    producto.getPrecioCompra() != null
+                    variante != null && variante.getPrecioCompra() != null ? variante.getPrecioCompra() : producto.getPrecioCompra() != null
                             ? producto.getPrecioCompra()
                             : BigDecimal.ZERO
             );
@@ -113,7 +126,8 @@ public class VentaService {
             // Asociar item a la venta
             venta.agregarItem(item);
 
-            if (producto.getCantidad() < item.getCantidad()) {
+            int stockDisponible = variante == null ? producto.getCantidad() : variante.getStock();
+            if (stockDisponible < item.getCantidad()) {
                 throw new IllegalStateException("Stock insuficiente");
             }
 
@@ -121,6 +135,7 @@ public class VentaService {
             // Movimiento de inventario (SALIDA)
             movimientoService.registrarVenta(
                     producto.getId(),
+                    variante == null ? null : variante.getId(),
                     item.getCantidad(),
                     "Venta " + venta.getCodigo()
             );
@@ -163,6 +178,8 @@ public class VentaService {
                     dp.getProducto().getId()
             ).orElseThrow(() ->
                     new IllegalArgumentException("Producto no encontrado"));
+            ProductoVariante variante = dp.getVariante() == null ? null : varianteRepo.findById(dp.getVariante().getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Variante no encontrada"));
 
             BigDecimal precio = dp.getPrecioUnitario();
 
@@ -174,9 +191,10 @@ public class VentaService {
             VentaItem item = new VentaItem();
             item.setPrecioUnitario(precio); // ← precio del presupuesto
             item.setProducto(producto);
+            item.setVariante(variante);
             item.setCantidad(dp.getCantidad());
             item.setCostoUnitario(
-                    producto.getPrecioCompra() != null
+                    variante != null && variante.getPrecioCompra() != null ? variante.getPrecioCompra() : producto.getPrecioCompra() != null
                             ? producto.getPrecioCompra()
                             : BigDecimal.ZERO
             );
@@ -188,6 +206,7 @@ public class VentaService {
 
             movimientoService.registrarVenta(
                     producto.getId(),
+                    variante == null ? null : variante.getId(),
                     dp.getCantidad(),
                     "Venta desde presupuesto " + p.getCodigo()
             );
@@ -261,6 +280,7 @@ public class VentaService {
         for (VentaItem item : venta.getItems()) {
             movimientoService.registrarDevolucion(
                     item.getProducto().getId(),
+                    item.getVariante() == null ? null : item.getVariante().getId(),
                     item.getCantidad(),
                     "Anulación venta " + venta.getCodigo()
             );

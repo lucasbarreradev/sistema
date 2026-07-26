@@ -16,6 +16,9 @@ public class Usuario {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(name = "tenant_id", nullable = false)
+    private Long tenantId;
+
     @Column(unique = true, nullable = false, length = 50)
     private String username;
 
@@ -39,6 +42,7 @@ public class Usuario {
     private Set<Rol> roles = new HashSet<>();
 
     public enum Rol {
+        SUPERADMIN,
         ADMIN,
         EMPLEADO
     }

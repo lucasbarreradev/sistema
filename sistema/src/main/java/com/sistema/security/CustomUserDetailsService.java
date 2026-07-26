@@ -2,6 +2,7 @@ package com.sistema.security;
 
 import com.sistema.model.Usuario;
 import com.sistema.repository.UsuarioRepository;
+import com.sistema.repository.TenantRepository;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.User;
@@ -17,9 +18,11 @@ import java.util.stream.Collectors;
 public class CustomUserDetailsService implements UserDetailsService {
 
     private final UsuarioRepository usuarioRepo;
+    private final TenantRepository tenantRepo;
 
-    public CustomUserDetailsService(UsuarioRepository usuarioRepo) {
+    public CustomUserDetailsService(UsuarioRepository usuarioRepo, TenantRepository tenantRepo) {
         this.usuarioRepo = usuarioRepo;
+        this.tenantRepo = tenantRepo;
     }
 
     @Override
@@ -34,6 +37,9 @@ public class CustomUserDetailsService implements UserDetailsService {
             throw new UsernameNotFoundException(
                     "Usuario inactivo: " + username);
         }
+        com.sistema.model.Tenant tenant = tenantRepo.findById(usuario.getTenantId())
+                .filter(t -> Boolean.TRUE.equals(t.getActivo()))
+                .orElseThrow(() -> new UsernameNotFoundException("Negocio inactivo o inexistente"));
 
 
         // Convertir roles a authorities
@@ -41,11 +47,8 @@ public class CustomUserDetailsService implements UserDetailsService {
                 .map(rol -> new SimpleGrantedAuthority("ROLE_" + rol.name()))
                 .collect(Collectors.toSet());
 
-        return User.builder()
-                .username(usuario.getUsername())
-                .password(usuario.getPassword())
-                .authorities(authorities)
-                .build();
+        return new TenantUserDetails(usuario.getUsername(), usuario.getPassword(), true,
+                authorities, tenant.getId(), tenant.getNombre());
 
     }
 

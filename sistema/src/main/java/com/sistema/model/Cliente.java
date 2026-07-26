@@ -9,7 +9,7 @@ import java.util.List;
 @Entity
 @Getter @Setter @AllArgsConstructor @NoArgsConstructor
 @ToString(exclude = {"ventas", "presupuestos"})
-public class Cliente {
+public class Cliente extends TenantAwareEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;

@@ -10,15 +10,16 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Entity
-    @Table(name = "remito")
+    @Table(name = "remito", uniqueConstraints =
+            @UniqueConstraint(name = "uk_remito_tenant_codigo", columnNames = {"tenant_id", "codigo"}))
     @Getter @Setter @AllArgsConstructor @NoArgsConstructor
-    public class Remito {
+    public class Remito extends TenantAwareEntity {
 
         @Id
         @GeneratedValue(strategy = GenerationType.IDENTITY)
         private Long id;
 
-        @Column(name = "codigo", unique = true, nullable = false, length = 50)
+        @Column(name = "codigo", nullable = false, length = 50)
         private String codigo;
 
         @ManyToOne

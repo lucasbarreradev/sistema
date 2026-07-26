@@ -11,7 +11,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 @ToString(exclude = "productos")
-public class Proveedor {
+public class Proveedor extends TenantAwareEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     Long id;

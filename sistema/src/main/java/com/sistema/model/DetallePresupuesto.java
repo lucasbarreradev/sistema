@@ -11,7 +11,7 @@ import java.math.RoundingMode;
 @Getter @Setter
 @ToString(exclude = {"presupuesto", "producto"})
 @Table(name = "presupuesto_detalle")
-public class DetallePresupuesto {
+public class DetallePresupuesto extends TenantAwareEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -27,6 +27,15 @@ public class DetallePresupuesto {
     @ManyToOne
     @JoinColumn(name = "producto_id", nullable = false)
     private Producto producto;
+
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "producto_variante_id")
+    private ProductoVariante variante;
+
+    @Transient
+    public String getDescripcionProducto() {
+        return producto.getDescripcion() + (variante == null ? "" : " - " + variante.getNombreMostrar());
+    }
 
     @Column(name = "descuento_pct")
     private BigDecimal descuentoPct = BigDecimal.ZERO;

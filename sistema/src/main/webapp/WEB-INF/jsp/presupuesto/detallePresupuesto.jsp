@@ -151,7 +151,7 @@
                                 <tbody>
                                 <c:forEach items="${presupuesto.detalles}" var="d">
                                     <tr>
-                                        <td>${d.producto.descripcion}</td>
+                                        <td>${d.descripcionProducto}</td>
                                         <td class="text-center">${d.cantidad}</td>
                                         <td class="text-end">
                                             ${simboloMoneda}

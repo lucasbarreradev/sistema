@@ -104,6 +104,13 @@
 			<version>5.5.13.3</version>
 		</dependency>
 
+		<!-- Lectura de exportaciones Excel de Mercado Libre -->
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>5.4.1</version>
+		</dependency>
+
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-test</artifactId>

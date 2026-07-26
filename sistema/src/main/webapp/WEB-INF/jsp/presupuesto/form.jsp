@@ -360,7 +360,8 @@ const itemsExistentes = [
     <c:forEach items="${presupuesto.detalles}" var="detalle" varStatus="status">
     {
         productoId: ${detalle.producto.id},
-        descripcion: "${fn:escapeXml(detalle.producto.descripcion)}",
+        varianteId: ${empty detalle.variante ? 0 : detalle.variante.id},
+        descripcion: "${fn:escapeXml(detalle.descripcionProducto)}",
         cantidad: ${detalle.cantidad},
         precioContado: ${not empty detalle.producto.precioContado ? detalle.producto.precioContado : 0},
         precioTarjeta: ${not empty detalle.producto.precioTarjeta ? detalle.producto.precioTarjeta : 0},
@@ -386,6 +387,7 @@ let tipoCambio = ${not empty presupuesto.tipoCambio ? presupuesto.tipoCambio : 1
 
 let items = [];
 let productoSeleccionado = null;
+let productoVarianteSeleccionada = 0;
 let clienteSeleccionado = null;
 let productoDescripcion = "";
 let precioContado = 0;
@@ -398,6 +400,7 @@ let precioCC = 0;
 if (itemsExistentes && itemsExistentes.length > 0) {
     items = itemsExistentes.map(i => ({
         productoId: i.productoId,
+        varianteId: i.varianteId || 0,
         descripcion: i.descripcion,
         cantidad: i.cantidad,
         precioContado: parseFloat(i.precioContado),
@@ -434,13 +437,14 @@ function agregarProducto() {
         }
     }
 
-    let itemExistente = items.find(i => i.productoId === productoSeleccionado);
+    let itemExistente = items.find(i => i.productoId === productoSeleccionado && i.varianteId === productoVarianteSeleccionada);
 
     if (itemExistente) {
         itemExistente.cantidad += cantidad;
     } else {
         items.push({
             productoId: productoSeleccionado,
+            varianteId: productoVarianteSeleccionada,
             descripcion: productoDescripcion,
             cantidad: cantidad,
             precioContado: precioContado,
@@ -458,6 +462,7 @@ function agregarProducto() {
 
 function limpiarSeleccion() {
     productoSeleccionado = null;
+    productoVarianteSeleccionada = 0;
     productoDescripcion = "";
     document.getElementById("buscarProducto").value = "";
     document.getElementById("stock").value = "";
@@ -541,6 +546,7 @@ function renderTabla() {
 
         hidden.innerHTML +=
             "<input type='hidden' name='productoIds' value='" + item.productoId + "'>" +
+            "<input type='hidden' name='varianteIds' value='" + (item.varianteId || 0) + "'>" +
             "<input type='hidden' name='cantidades' value='" + item.cantidad + "'>" +
             "<input type='hidden' name='descuentos' value='" + item.descuento + "'>" +
             "<input type='hidden' name='precios' value='" + precioBase.toFixed(2) + "'>";
@@ -710,6 +716,7 @@ document.getElementById("buscarProducto").addEventListener("keyup", function() {
                     html +=
                         "<a href='#' class='list-group-item list-group-item-action producto-item' " +
                         "data-id='" + p.id + "' " +
+                        "data-variante-id='" + (p.varianteId || 0) + "' " +
                         "data-descripcion='" + (p.descripcion || '') + "' " +
                         "data-stock='" + stock + "' " +
                         "data-precio-contado='" + (p.precioContado || 0) + "' " +
@@ -734,6 +741,7 @@ document.getElementById("resultados").addEventListener("click", function(e) {
 
     seleccionarProducto(
         item.dataset.id,
+        item.dataset.varianteId,
         item.dataset.descripcion,
         item.dataset.stock,
         item.dataset.precioContado,
@@ -742,8 +750,9 @@ document.getElementById("resultados").addEventListener("click", function(e) {
     );
 });
 
-function seleccionarProducto(id, descripcion, stock, pContado, pTarjeta, pCC) {
+function seleccionarProducto(id, varianteId, descripcion, stock, pContado, pTarjeta, pCC) {
     productoSeleccionado = Number(id);
+    productoVarianteSeleccionada = Number(varianteId || 0);
     productoDescripcion = descripcion;
     precioContado = parseFloat(pContado);
     precioTarjeta = parseFloat(pTarjeta);

@@ -212,6 +212,7 @@
 <script>
 let items = [];
 let productoSeleccionado = null;
+let productoVarianteSeleccionada = 0;
 let clienteSeleccionado = null;
 let productoDescripcion = "";
 let precioContado = 0;
@@ -238,7 +239,7 @@ function agregarProducto() {
     }
 
     // Buscar si el producto ya existe en items
-    let itemExistente = items.find(i => i.productoId === productoSeleccionado);
+    let itemExistente = items.find(i => i.productoId === productoSeleccionado && i.varianteId === productoVarianteSeleccionada);
 
     let cantidadTotal = cantidad;
     if (itemExistente) {
@@ -257,6 +258,7 @@ function agregarProducto() {
         // Agregar nuevo producto
         items.push({
             productoId: productoSeleccionado,
+            varianteId: productoVarianteSeleccionada,
             descripcion: productoDescripcion,
             cantidad: cantidad,
             precioContado: precioContado,
@@ -274,6 +276,7 @@ function agregarProducto() {
 
 function limpiarSeleccion() {
     productoSeleccionado = null;
+    productoVarianteSeleccionada = 0;
     productoDescripcion = "";
     document.getElementById("buscarProducto").value = "";
     document.getElementById("stock").value = "";
@@ -328,6 +331,7 @@ function renderTabla() {
             // Inputs hidden (guardar IDs para el backend)
             hidden.innerHTML +=
                 "<input type='hidden' name='productoIds' value='" + item.productoId + "'>" +
+                "<input type='hidden' name='varianteIds' value='" + (item.varianteId || 0) + "'>" +
                 "<input type='hidden' name='cantidades' value='" + item.cantidad + "'>" +
                 "<input type='hidden' name='descuentos' value='" + item.descuento + "'>";
         });
@@ -455,6 +459,7 @@ document.getElementById("buscarProducto").addEventListener("keyup", function() {
                 html +=
                     "<a href='#' class='list-group-item list-group-item-action producto-item' " +
                     "data-id='" + p.id + "' " +
+                    "data-variante-id='" + (p.varianteId || 0) + "' " +
                     "data-descripcion='" + (p.descripcion || '') + "' " +
                     "data-stock='" + stock + "' " +
                     "data-precio-contado='" + (p.precioContado || 0) + "' " +
@@ -479,6 +484,7 @@ document.getElementById("resultados").addEventListener("click", function(e) {
 
     seleccionarProducto(
         item.dataset.id,
+        item.dataset.varianteId,
         item.dataset.descripcion,
         item.dataset.stock,
         item.dataset.precioContado,
@@ -487,8 +493,9 @@ document.getElementById("resultados").addEventListener("click", function(e) {
     );
 });
 
-function seleccionarProducto(id, descripcion, stock, pContado, pTarjeta, pCC) {
+function seleccionarProducto(id, varianteId, descripcion, stock, pContado, pTarjeta, pCC) {
     productoSeleccionado = id;
+    productoVarianteSeleccionada = Number(varianteId || 0);
     productoDescripcion = descripcion;
     precioContado = parseFloat(pContado);
     precioTarjeta = parseFloat(pTarjeta);

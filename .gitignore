@@ -1,0 +1,6 @@
+.env
+.env.*
+!.env.example
+.idea/
+*.sql
+docker-compose.override.yml

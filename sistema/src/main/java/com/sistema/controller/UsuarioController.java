@@ -9,6 +9,7 @@ import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
+import com.sistema.tenant.TenantContext;
 
 @Controller
 @RequestMapping("/usuarios")
@@ -26,14 +27,14 @@ public class UsuarioController {
 
     @GetMapping
     public String listar(Model model) {
-        model.addAttribute("usuarios", usuarioRepo.findAll());
-        model.addAttribute("roles", Usuario.Rol.values());
+        model.addAttribute("usuarios", usuarioRepo.findAllByTenantIdOrderByUsernameAsc(TenantContext.require()));
+        model.addAttribute("roles", java.util.List.of(Usuario.Rol.ADMIN, Usuario.Rol.EMPLEADO));
         return "usuario/listar";
     }
 
     @GetMapping("/nuevo")
     public String nuevo(Model model) {
-        model.addAttribute("roles", Usuario.Rol.values());
+        model.addAttribute("roles", java.util.List.of(Usuario.Rol.ADMIN, Usuario.Rol.EMPLEADO));
         return "usuario/form";
     }
 
@@ -60,11 +61,14 @@ public class UsuarioController {
             usuario.setNombre(nombre);
             usuario.setApellido(apellido);
             usuario.setActivo(true);
+            usuario.setTenantId(TenantContext.require());
 
             // Agregar roles
             if (roles != null) {
                 for (String rol : roles) {
-                    usuario.getRoles().add(Usuario.Rol.valueOf(rol));
+                    Usuario.Rol valor = Usuario.Rol.valueOf(rol);
+                    if (valor == Usuario.Rol.SUPERADMIN) throw new IllegalArgumentException("Rol no permitido");
+                    usuario.getRoles().add(valor);
                 }
             } else {
                 // Por defecto EMPLEADO
@@ -84,7 +88,7 @@ public class UsuarioController {
 
     @PostMapping("/{id}/activar")
     public String activar(@PathVariable Long id, RedirectAttributes ra) {
-        Usuario usuario = usuarioRepo.findById(id)
+        Usuario usuario = usuarioRepo.findByIdAndTenantId(id, TenantContext.require())
                 .orElseThrow(() -> new IllegalArgumentException("Usuario no encontrado"));
 
         usuario.setActivo(!usuario.getActivo());

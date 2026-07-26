@@ -23,19 +23,22 @@ public class PresupuestoService {
     private final VentaService ventaService;
     private final VentaRepository ventaRepo;
     private final MovimientoInventarioService movimientoService;
+    private final ProductoVarianteRepository varianteRepo;
 
     public PresupuestoService(PresupuestoRepository presupuestoRepo,
                               ProductoRepository productoRepo,
                               ClienteRepository clienteRepo,
                               VentaService ventaService,
                               VentaRepository ventaRepo,
-                              MovimientoInventarioService movimientoService) {
+                              MovimientoInventarioService movimientoService,
+                              ProductoVarianteRepository varianteRepo) {
         this.presupuestoRepo = presupuestoRepo;
         this.productoRepo = productoRepo;
         this.clienteRepo = clienteRepo;
         this.ventaService = ventaService;
         this.ventaRepo = ventaRepo;
         this.movimientoService = movimientoService;
+        this.varianteRepo = varianteRepo;
     }
 
     // ==========================================
@@ -44,6 +47,7 @@ public class PresupuestoService {
     public Presupuesto crear(Long clienteId,
                              FormaPago formaPago,
                              List<Long> productoIds,
+                             List<Long> varianteIds,
                              List<Integer> cantidades,
                              List<BigDecimal> descuentos,
                              LocalDate fechaValidez,
@@ -98,6 +102,7 @@ public class PresupuestoService {
             Producto producto = productoRepo.findById(productoId)
                     .orElseThrow(() ->
                             new IllegalArgumentException("Producto no encontrado: " + productoId));
+            ProductoVariante variante = resolverVariante(producto, varianteIds, i);
 
             Integer cantidad = cantidades.get(i);
 
@@ -115,11 +120,12 @@ public class PresupuestoService {
 
             } else {
 
-                precio = producto.getPrecioSegunFormaPago(formaPago);
+                precio = variante == null ? producto.getPrecioSegunFormaPago(formaPago) : variante.precio(formaPago);
             }
 
             DetallePresupuesto detalle = new DetallePresupuesto();
             detalle.setProducto(producto);
+            detalle.setVariante(variante);
             detalle.setCantidad(cantidad);
             detalle.setPrecioUnitario(precio);
             detalle.setDescuentoPct(descuento);
@@ -274,6 +280,7 @@ public class PresupuestoService {
     public Presupuesto actualizar(Long id,
                                   Long clienteId,
                                   List<Long> productoIds,
+                                  List<Long> varianteIds,
                                   List<Integer> cantidades,
                                   List<BigDecimal> descuentos,
                                   List<BigDecimal> precios,
@@ -331,6 +338,7 @@ public class PresupuestoService {
 
             Producto producto = productoRepo.findById(productoIds.get(i))
                     .orElseThrow(() -> new IllegalArgumentException("Producto no encontrado"));
+            ProductoVariante variante = resolverVariante(producto, varianteIds, i);
 
             Integer cantidad = cantidades.get(i);
             if (cantidad == null || cantidad <= 0) continue;
@@ -342,7 +350,7 @@ public class PresupuestoService {
             if (precios != null && i < precios.size() && precios.get(i) != null) {
                 precio = precios.get(i);
             } else {
-                precio = producto.getPrecioSegunFormaPago(formaPago);
+                precio = variante == null ? producto.getPrecioSegunFormaPago(formaPago) : variante.precio(formaPago);
             }
 
             if (actualizarPrecioProducto != null
@@ -375,6 +383,7 @@ public class PresupuestoService {
 
             DetallePresupuesto detalle = new DetallePresupuesto();
             detalle.setProducto(producto);
+            detalle.setVariante(variante);
             detalle.setCantidad(cantidad);
             detalle.setPrecioUnitario(precio);
             detalle.setDescuentoPct(descuento);
@@ -388,6 +397,18 @@ public class PresupuestoService {
         return presupuestoRepo.save(presupuesto);
     }
 
+    private ProductoVariante resolverVariante(Producto producto, List<Long> varianteIds, int indice) {
+        Long varianteId = varianteIds != null && indice < varianteIds.size() ? varianteIds.get(indice) : null;
+        if (varianteId == null || varianteId == 0) {
+            if (varianteRepo.existsByProductoId(producto.getId())) throw new IllegalArgumentException("Debe seleccionar una variante para " + producto.getDescripcion());
+            return null;
+        }
+        ProductoVariante variante = varianteRepo.findById(varianteId)
+                .orElseThrow(() -> new IllegalArgumentException("Variante no encontrada"));
+        if (!variante.getProducto().getId().equals(producto.getId())) throw new IllegalArgumentException("La variante no pertenece al producto");
+        return variante;
+    }
+
     // ==========================================
 // ANULAR VENTA ASOCIADA
 // ==========================================
@@ -399,6 +420,7 @@ public class PresupuestoService {
                 for (VentaItem item : venta.getItems()) {
                     movimientoService.registrarDevolucion(
                             item.getProducto().getId(),
+                            item.getVariante() == null ? null : item.getVariante().getId(),
                             item.getCantidad(),
                             "Anulación por edición de presupuesto " + presupuesto.getCodigo()
                     );

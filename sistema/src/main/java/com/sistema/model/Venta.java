@@ -14,10 +14,12 @@ import java.util.List;
 import java.util.Objects;
 
 @Entity
+@Table(uniqueConstraints =
+        @UniqueConstraint(name = "uk_venta_tenant_codigo", columnNames = {"tenant_id", "codigo"}))
 @ToString(exclude = {"items", "cliente"})
 @Getter
 @Setter
-public class Venta {
+public class Venta extends TenantAwareEntity {
     // ==========================================
     // Estado de la venta
     // ==========================================
@@ -41,7 +43,7 @@ public class Venta {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "codigo", unique = true, nullable = false, length = 20)
+    @Column(name = "codigo", nullable = false, length = 20)
     private String codigo;
 
     @ManyToOne

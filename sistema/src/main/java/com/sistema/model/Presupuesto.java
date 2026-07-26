@@ -12,10 +12,11 @@ import java.util.List;
 import java.util.Objects;
 
 @Entity
-@Table(name = "presupuesto")
+@Table(name = "presupuesto", uniqueConstraints =
+        @UniqueConstraint(name = "uk_presupuesto_tenant_codigo", columnNames = {"tenant_id", "codigo"}))
 @Getter @Setter @AllArgsConstructor @NoArgsConstructor
 @ToString(exclude = {"detalles", "cliente"})
-public class Presupuesto {
+public class Presupuesto extends TenantAwareEntity {
 
     public enum Estado {
         PENDIENTE,
@@ -28,7 +29,7 @@ public class Presupuesto {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "codigo", unique = true, nullable = false, length = 20)
+    @Column(name = "codigo", nullable = false, length = 20)
     private String codigo;
 
     private LocalDateTime fecha = LocalDateTime.now();

@@ -202,6 +202,7 @@ public class RemitoService {
 
             movimientoService.registrarDevolucion(
                     pt.getId(),
+                    item.getVariante() == null ? null : item.getVariante().getId(),
                     item.getCantidad(),
                     "Remito " + remito.getCodigo()
             );
@@ -216,6 +217,7 @@ public class RemitoService {
 
             movimientoService.registrarVenta(
                     pt.getId(),
+                    item.getVariante() == null ? null : item.getVariante().getId(),
                     item.getCantidad(),
                     "Anulación remito " + remito.getCodigo()
             );
@@ -240,6 +242,7 @@ public class RemitoService {
         for (VentaItem ventaItem : venta.getItems()) {
             RemitoItem remitoItem = new RemitoItem();
             remitoItem.setProducto(ventaItem.getProducto());
+            remitoItem.setVariante(ventaItem.getVariante());
             remitoItem.setCantidad(ventaItem.getCantidad());
             remitoItem.setPrecioUnitario(ventaItem.getPrecioUnitario());
             remitoItem.calcularSubtotal();

@@ -284,7 +284,7 @@ public class RemitoImpresionService {
             itemsTable.addCell(cantCell);
 
             // Descripción
-            String descripcion = item.getProducto().getDescripcion();
+            String descripcion = item.getDescripcionProducto();
 
             PdfPCell descCell = new PdfPCell(new Phrase(descripcion, font));
             descCell.setBorder(Rectangle.BOX);

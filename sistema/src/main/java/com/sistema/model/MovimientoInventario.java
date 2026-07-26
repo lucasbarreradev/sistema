@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 
 @Entity
 @Getter @Setter @NoArgsConstructor @AllArgsConstructor @ToString
-public class MovimientoInventario {
+public class MovimientoInventario extends TenantAwareEntity {
     public enum Tipo {
         ENTRADA,
         SALIDA,
@@ -22,6 +22,10 @@ public class MovimientoInventario {
     @ManyToOne
     @JoinColumn(name = "producto_id", nullable = false)
     private Producto producto;
+
+    @ManyToOne
+    @JoinColumn(name = "producto_variante_id")
+    private ProductoVariante variante;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "tipo", nullable = false)
