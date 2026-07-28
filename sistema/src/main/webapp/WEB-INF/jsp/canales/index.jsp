@@ -159,6 +159,12 @@
                     <div class="card-header py-3"><h6 class="m-0 font-weight-bold text-primary">Sincronizar entre canales</h6></div>
                     <div class="card-body">
                         <p class="text-muted">Trae todo el catálogo activo del origen al sistema y luego crea o actualiza esos productos en los destinos seleccionados.</p>
+                        <c:if test="${sincronizacionActiva}">
+                            <div class="alert alert-info">
+                                <i class="fa-solid fa-spinner fa-spin mr-1"></i>
+                                Hay una sincronización ejecutándose en segundo plano. Esta página se actualizará automáticamente.
+                            </div>
+                        </c:if>
                         <form method="post" action="${pageContext.request.contextPath}/canales/sincronizar">
                             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
                             <div class="row align-items-end">
@@ -177,11 +183,71 @@
                                     </c:forEach>
                                 </div>
                                 <div class="col-md-2 mb-3">
-                                    <button class="btn btn-success btn-block" type="submit">Sincronizar</button>
+                                    <button class="btn btn-success btn-block" type="submit" ${sincronizacionActiva ? 'disabled' : ''}>
+                                        ${sincronizacionActiva ? 'Procesando...' : 'Sincronizar'}
+                                    </button>
                                 </div>
                             </div>
                         </form>
-                        <small class="text-muted">Si un SKU ya existe se actualiza. Si no existe, se crea. El origen seleccionado define nombre, precio, stock y foto.</small>
+                        <small class="text-muted">La tarea continúa aunque cierre esta página. Si un SKU ya existe se actualiza; si no existe, se crea.</small>
+                    </div>
+                </div>
+
+                <div class="card shadow mb-4">
+                    <div class="card-header py-3 d-flex align-items-center justify-content-between">
+                        <h6 class="m-0 font-weight-bold text-primary">Trabajos de sincronización</h6>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.location.reload()">
+                            <i class="fa-solid fa-rotate mr-1"></i>Actualizar
+                        </button>
+                    </div>
+                    <div class="card-body table-responsive">
+                        <table class="table table-sm table-bordered">
+                            <thead>
+                            <tr><th>#</th><th>Flujo</th><th>Estado</th><th>Creado</th><th>Finalizado</th><th>Resultado</th></tr>
+                            </thead>
+                            <tbody>
+                            <c:forEach items="${trabajosSincronizacion}" var="trabajo">
+                                <tr>
+                                    <td>${trabajo.id}</td>
+                                    <td>
+                                        <c:out value="${trabajo.origenDescripcion}"/>
+                                        <i class="fa-solid fa-arrow-right mx-1"></i>
+                                        <c:out value="${trabajo.destinosDescripcion}"/>
+                                    </td>
+                                    <td>
+                                        <c:choose>
+                                            <c:when test="${trabajo.estado == 'COMPLETADA'}">
+                                                <span class="badge badge-success">${trabajo.estado.descripcion}</span>
+                                            </c:when>
+                                            <c:when test="${trabajo.estado == 'COMPLETADA_CON_ERRORES'}">
+                                                <span class="badge badge-warning">${trabajo.estado.descripcion}</span>
+                                            </c:when>
+                                            <c:when test="${trabajo.estado == 'ERROR'}">
+                                                <span class="badge badge-danger">${trabajo.estado.descripcion}</span>
+                                            </c:when>
+                                            <c:otherwise>
+                                                <span class="badge badge-info">${trabajo.estado.descripcion}</span>
+                                            </c:otherwise>
+                                        </c:choose>
+                                    </td>
+                                    <td><c:out value="${trabajo.creadoEnFormateado}"/></td>
+                                    <td><c:out value="${trabajo.finalizadoEnFormateado}"/></td>
+                                    <td style="min-width:280px">
+                                        <c:out value="${trabajo.resumen}"/>
+                                        <c:if test="${not empty trabajo.detalle}">
+                                            <details class="mt-2">
+                                                <summary class="text-warning" style="cursor:pointer">Ver detalle</summary>
+                                                <pre class="small mt-2 mb-0 text-wrap"><c:out value="${trabajo.detalle}"/></pre>
+                                            </details>
+                                        </c:if>
+                                    </td>
+                                </tr>
+                            </c:forEach>
+                            <c:if test="${empty trabajosSincronizacion}">
+                                <tr><td colspan="6" class="text-center text-muted">Todavía no hay trabajos de sincronización.</td></tr>
+                            </c:if>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -253,6 +319,9 @@ document.getElementById('buscarProducto').addEventListener('input', function () 
     const q = this.value.toLowerCase();
     document.querySelectorAll('#tablaProductos tbody tr').forEach(r => r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none');
 });
+<c:if test="${sincronizacionActiva}">
+window.setTimeout(function () { window.location.reload(); }, 8000);
+</c:if>
 </script>
 </body>
 </html>

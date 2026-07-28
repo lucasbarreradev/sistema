@@ -8,7 +8,7 @@ import com.sistema.service.ImportacionCsvService;
 import com.sistema.service.ProductoService;
 import com.sistema.service.PublicacionService;
 import com.sistema.service.ImportacionCanalService;
-import com.sistema.service.SincronizacionCanalesService;
+import com.sistema.service.TrabajoSincronizacionService;
 import com.sistema.service.MercadoLibreTokenService;
 import com.sistema.service.TiendanubeCredencialesService;
 import com.sistema.service.WooCommerceCredencialesService;
@@ -28,7 +28,7 @@ public class CanalesController {
     private final ImportacionCsvService importacionCsvService;
     private final PublicacionService publicacionService;
     private final ImportacionCanalService importacionCanalService;
-    private final SincronizacionCanalesService sincronizacionCanalesService;
+    private final TrabajoSincronizacionService trabajoSincronizacionService;
     private final MercadoLibreTokenService mercadoLibreTokenService;
     private final WooCommerceCredencialesService wooCommerceCredencialesService;
     private final TiendanubeCredencialesService tiendanubeCredencialesService;
@@ -37,7 +37,7 @@ public class CanalesController {
 
     public CanalesController(ProductoService productoService, ImportacionCsvService importacionCsvService,
                              PublicacionService publicacionService, ImportacionCanalService importacionCanalService,
-                             SincronizacionCanalesService sincronizacionCanalesService,
+                             TrabajoSincronizacionService trabajoSincronizacionService,
                              MercadoLibreTokenService mercadoLibreTokenService,
                              WooCommerceCredencialesService wooCommerceCredencialesService,
                              TiendanubeCredencialesService tiendanubeCredencialesService,
@@ -47,7 +47,7 @@ public class CanalesController {
         this.importacionCsvService = importacionCsvService;
         this.publicacionService = publicacionService;
         this.importacionCanalService = importacionCanalService;
-        this.sincronizacionCanalesService = sincronizacionCanalesService;
+        this.trabajoSincronizacionService = trabajoSincronizacionService;
         this.mercadoLibreTokenService = mercadoLibreTokenService;
         this.wooCommerceCredencialesService = wooCommerceCredencialesService;
         this.tiendanubeCredencialesService = tiendanubeCredencialesService;
@@ -63,6 +63,8 @@ public class CanalesController {
         model.addAttribute("configuracionImportacion", java.util.Arrays.stream(CanalVenta.values())
                 .collect(java.util.stream.Collectors.toMap(c -> c, importacionCanalService::configurado)));
         model.addAttribute("publicaciones", publicacionService.historial());
+        model.addAttribute("trabajosSincronizacion", trabajoSincronizacionService.ultimos());
+        model.addAttribute("sincronizacionActiva", trabajoSincronizacionService.hayTrabajoActivo());
         model.addAttribute("mercadoLibreConectado", mercadoLibreTokenService.conectado());
         model.addAttribute("mercadoLibreOAuthDisponible",
                 mercadoLibreTokenService.aplicacionConfigurada() && !mercadoLibreRedirectUri.isBlank());
@@ -97,12 +99,9 @@ public class CanalesController {
                               RedirectAttributes ra) {
         try {
             if (destinos == null) throw new IllegalArgumentException("Seleccione al menos un canal de destino");
-            SincronizacionCanalesService.Resultado resultado = sincronizacionCanalesService.sincronizar(origen, destinos);
-            ra.addFlashAttribute("mensaje", "Sincronización terminada: " + resultado.importacion().resumen()
-                    + "; " + resultado.publicacion().getExitosas() + " publicaciones enviadas");
-            List<String> errores = new java.util.ArrayList<>(resultado.importacion().getErrores());
-            errores.addAll(resultado.publicacion().getErrores());
-            if (!errores.isEmpty()) ra.addFlashAttribute("erroresPublicacion", errores);
+            var trabajo = trabajoSincronizacionService.iniciar(origen, destinos);
+            ra.addFlashAttribute("mensaje", "Sincronización iniciada en segundo plano (trabajo #"
+                    + trabajo.getId() + "). Puede salir de esta página sin interrumpirla.");
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
         }

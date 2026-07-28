@@ -36,4 +36,16 @@ public class TenantAsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    @Bean(name = "sincronizacionTaskExecutor")
+    public Executor sincronizacionTaskExecutor(TaskDecorator tenantTaskDecorator) {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(50);
+        executor.setThreadNamePrefix("sincronizacion-");
+        executor.setTaskDecorator(tenantTaskDecorator);
+        executor.initialize();
+        return executor;
+    }
 }
