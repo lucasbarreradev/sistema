@@ -101,7 +101,7 @@
                                             <c:choose>
                                                 <c:when test="${p.tieneFoto()}">
                                                     <img src="${pageContext.request.contextPath}/productos/${p.id}/foto"
-                                                         alt="Foto" style="width:52px;height:52px;object-fit:cover;border-radius:6px;">
+                                                         alt="Foto" style="width:52px;height:52px;object-fit:contain;background:#fff;border-radius:6px;">
                                                 </c:when>
                                                 <c:otherwise><span class="text-muted">Sin foto</span></c:otherwise>
                                             </c:choose>

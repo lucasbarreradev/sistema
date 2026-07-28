@@ -89,7 +89,7 @@
     <div class="card shadow"><div class="card-body table-responsive"><table class="table table-bordered">
         <thead><tr><th>Foto</th><th>Presentación</th><th>SKU</th><th>Código</th><th>Stock</th><th>Contado</th><th></th></tr></thead><tbody>
         <c:forEach items="${variantes}" var="v"><tr>
-            <td><c:if test="${v.tieneFoto}"><img class="img-thumbnail" style="width:64px;height:64px;object-fit:cover" alt="Foto" src="${pageContext.request.contextPath}/productos/${producto.id}/variantes/${v.id}/foto"></c:if><c:if test="${not v.tieneFoto}"><span class="text-muted">General</span></c:if></td>
+            <td><c:if test="${v.tieneFoto}"><img class="img-thumbnail" style="width:64px;height:64px;object-fit:contain;background:#fff" alt="Foto" src="${pageContext.request.contextPath}/productos/${producto.id}/variantes/${v.id}/foto"></c:if><c:if test="${not v.tieneFoto}"><span class="text-muted">General</span></c:if></td>
             <td><c:out value="${v.nombreMostrar}"/></td><td><c:out value="${v.sku}"/></td><td><c:out value="${v.codigoBarras}"/></td>
             <td>${v.stock}</td><td>${empty v.precioContado ? producto.precioContado : v.precioContado}</td>
             <td><a class="btn btn-sm btn-warning" href="${pageContext.request.contextPath}/productos/${producto.id}/variantes/${v.id}/editar">Editar</a>

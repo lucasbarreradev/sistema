@@ -1,6 +1,7 @@
 package com.sistema.service.canal;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sistema.model.CanalVenta;
 import com.sistema.model.Producto;
 import com.sistema.model.ProductoVariante;
@@ -12,19 +13,35 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.HtmlUtils;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Component
 public class WooCommercePublicador implements PublicadorCanal {
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Set<String> ATRIBUTOS_INTERNOS = Set.of(
+            "SELLER_SKU", "ITEM_CONDITION", "SIZE_GRID_ID", "SIZE_GRID_ROW_ID",
+            "EMPTY_GTIN_REASON", "HAZMAT_TRANSPORTABILITY", "GIFTABLE",
+            "IS_TOM_BRAND", "IS_HIGHLIGHT_BRAND", "IS_EMERGING_BRAND",
+            "VALUE_ADDED_TAX", "IMPORT_DUTY", "WITH_VIRTUAL_TRY_ON", "AGID", "MPN");
+    private static final Map<String, String> ALIAS_ATRIBUTOS_WOO = Map.of(
+            "MAIN_COLOR", "COLOR",
+            "COLOR_SECONDARY_COLOR", "COLOR",
+            "FILTRABLE_SIZE", "SIZE",
+            "MANUFACTURER_SIZE", "SIZE",
+            "FILTRABLE_GENDER", "GENDER");
     private final RestClient restClient;
     private final ProductoVarianteRepository varianteRepository;
     private final WooCommerceCredencialesService credenciales;
@@ -71,12 +88,18 @@ public class WooCommercePublicador implements PublicadorCanal {
         boolean variable = variantes.size() > 1;
         ProductoVariante presentacionSimple = variantes.size() == 1 ? variantes.get(0) : null;
         validarSkuNoUsadoPorOtraVariante(p, presentacionSimple);
-        Map<String, String> nombresAtributos = nombresAtributos(p);
+        Map<String, String> nombresAtributos = new LinkedHashMap<>(nombresAtributos(p));
+        Map<String, String> atributosGenerales = atributosGenerales(p, nombresAtributos);
         body.put("name", p.getDescripcion());
         body.put("type", variable ? "variable" : "simple");
         body.put("sku", presentacionSimple == null ? p.getSku() : presentacionSimple.getSku());
         body.put("status", "publish");
-        List<Map<String, Object>> atributosProducto = atributosWoo(variantes, nombresAtributos);
+        String descripcion = descripcionWoo(p);
+        if (!descripcion.isBlank()) body.put("description", descripcion);
+        String resumen = resumenCaracteristicas(atributosGenerales, nombresAtributos);
+        if (!resumen.isBlank()) body.put("short_description", resumen);
+        List<Map<String, Object>> atributosProducto =
+                atributosWoo(atributosGenerales, variantes, nombresAtributos);
         if (!atributosProducto.isEmpty()) body.put("attributes", atributosProducto);
         if (variable) {
             int stockTotal = variantes.stream().mapToInt(this::stock).sum();
@@ -146,37 +169,129 @@ public class WooCommercePublicador implements PublicadorCanal {
     }
 
     private void putStock(String endpoint, int stock, WooCommerceCredencialesService.Credenciales c) {
-        restClient.put().uri(endpoint).headers(h -> h.setBasicAuth(c.key(), c.secret()))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of(
-                        "manage_stock", true,
-                        "stock_quantity", stock,
-                        "stock_status", estadoStock(stock),
-                        "backorders", "no"))
-                .retrieve().toBodilessEntity();
+        conReintentoIo(() -> {
+            restClient.put().uri(endpoint).headers(h -> h.setBasicAuth(c.key(), c.secret()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of(
+                            "manage_stock", true,
+                            "stock_quantity", stock,
+                            "stock_status", estadoStock(stock),
+                            "backorders", "no"))
+                    .retrieve().toBodilessEntity();
+            return null;
+        });
     }
 
     private void putEstadoProductoVariable(String endpoint, int stockTotal,
                                            WooCommerceCredencialesService.Credenciales c) {
-        restClient.put().uri(endpoint).headers(h -> h.setBasicAuth(c.key(), c.secret()))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of(
-                        "manage_stock", false,
-                        "stock_status", estadoStock(stockTotal)))
-                .retrieve().toBodilessEntity();
+        conReintentoIo(() -> {
+            restClient.put().uri(endpoint).headers(h -> h.setBasicAuth(c.key(), c.secret()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of(
+                            "manage_stock", false,
+                            "stock_status", estadoStock(stockTotal)))
+                    .retrieve().toBodilessEntity();
+            return null;
+        });
     }
 
     List<Map<String, Object>> atributosWoo(List<ProductoVariante> variantes) {
-        return atributosWoo(variantes, Map.of());
+        return atributosWoo(Map.of(), variantes, Map.of());
     }
 
-    private List<Map<String, Object>> atributosWoo(List<ProductoVariante> variantes,
+    private List<Map<String, Object>> atributosWoo(Map<String, String> atributosGenerales,
+                                                   List<ProductoVariante> variantes,
                                                    Map<String, String> nombresAtributos) {
         List<Map<String, Object>> atributos = new ArrayList<>();
         Map<String, LinkedHashSet<String>> opciones = opcionesAtributos(variantes);
+        atributosGenerales.forEach((id, valor) ->
+                opciones.computeIfAbsent(id, ignorado -> new LinkedHashSet<>()).add(valor));
+        Set<String> atributosDeVariacion = idsAtributosVariacion(variantes);
         opciones.forEach((id, valores) -> atributos.add(Map.of("name", nombreAtributo(id, nombresAtributos),
-                "visible", true, "variation", valores.size() > 1, "options", new ArrayList<>(valores))));
+                "visible", true, "variation", atributosDeVariacion.contains(id),
+                "options", new ArrayList<>(valores))));
         return atributos;
+    }
+
+    private Map<String, String> atributosGenerales(Producto producto,
+                                                   Map<String, String> nombresAtributos) {
+        Map<String, String> atributos = new LinkedHashMap<>();
+        agregarAtributo(atributos, nombresAtributos, "BRAND", "Marca",
+                producto.getMercadoLibreMarca());
+        agregarAtributo(atributos, nombresAtributos, "MODEL", "Modelo",
+                producto.getMercadoLibreModelo());
+        agregarAtributo(atributos, nombresAtributos, "GTIN", "GTIN",
+                producto.getMercadoLibreGtin());
+        String json = producto.getMercadoLibreAtributosJson();
+        if (json == null || json.isBlank()) return atributos;
+        try {
+            JsonNode lista = JSON.readTree(json);
+            if (!lista.isArray()) return atributos;
+            for (JsonNode atributo : lista) {
+                String id = textoJson(atributo.get("id")).toUpperCase(Locale.ROOT);
+                if (id.isBlank() || esAtributoInterno(id)) continue;
+                String valor = textoJson(atributo.get("value_name"));
+                if (valor.isBlank() && atributo.path("values").isArray()) {
+                    List<String> valores = new ArrayList<>();
+                    atributo.path("values").forEach(v -> {
+                        String nombre = textoJson(v.get("name"));
+                        if (!nombre.isBlank()) valores.add(nombre);
+                    });
+                    valor = String.join(", ", valores);
+                }
+                String nombre = textoJson(atributo.get("name"));
+                agregarAtributo(atributos, nombresAtributos, id,
+                        nombre.isBlank() ? AtributosVarianteHelper.nombre(id) : nombre, valor);
+            }
+            return canonicalizarAtributosWoo(atributos);
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Las caracterÃ­sticas de Mercado Libre del producto "
+                    + producto.getSku() + " no son vÃ¡lidas", e);
+        }
+    }
+
+    private void agregarAtributo(Map<String, String> atributos,
+                                 Map<String, String> nombresAtributos,
+                                 String id, String nombre, String valor) {
+        if (id == null || valor == null || valor.isBlank()) return;
+        String idNormalizado = id.trim().toUpperCase(Locale.ROOT);
+        String valorNormalizado = valor.trim();
+        if (idNormalizado.isBlank() || valorNormalizado.isBlank()
+                || "null".equalsIgnoreCase(valorNormalizado)) return;
+        atributos.putIfAbsent(idNormalizado, valorNormalizado);
+        if (nombre != null && !nombre.isBlank()) nombresAtributos.putIfAbsent(idNormalizado, nombre.trim());
+    }
+
+    private boolean esAtributoInterno(String id) {
+        return ATRIBUTOS_INTERNOS.contains(id) || id.startsWith("SELLER_PACKAGE_");
+    }
+
+    private String textoJson(JsonNode valor) {
+        if (valor == null || valor.isNull() || valor.isMissingNode() || !valor.isValueNode()) return "";
+        String texto = valor.asText("").trim();
+        return "null".equalsIgnoreCase(texto) ? "" : texto;
+    }
+
+    private String descripcionWoo(Producto producto) {
+        String descripcion = producto.getMercadoLibreDescripcion();
+        if (descripcion == null || descripcion.isBlank()) descripcion = producto.getDescripcion();
+        if (descripcion == null || descripcion.isBlank()) return "";
+        String html = HtmlUtils.htmlEscape(descripcion.trim(), StandardCharsets.UTF_8.name())
+                .replace("\r\n", "\n");
+        return "<p>" + html.replace("\n\n", "</p><p>").replace("\n", "<br>") + "</p>";
+    }
+
+    private String resumenCaracteristicas(Map<String, String> atributos,
+                                          Map<String, String> nombresAtributos) {
+        if (atributos.isEmpty()) return "";
+        StringBuilder html = new StringBuilder("<ul>");
+        atributos.entrySet().stream().limit(8).forEach(atributo -> html.append("<li><strong>")
+                .append(HtmlUtils.htmlEscape(nombreAtributo(atributo.getKey(), nombresAtributos),
+                        StandardCharsets.UTF_8.name()))
+                .append(":</strong> ")
+                .append(HtmlUtils.htmlEscape(atributo.getValue(), StandardCharsets.UTF_8.name()))
+                .append("</li>"));
+        return html.append("</ul>").toString();
     }
 
     private Set<String> idsAtributosVariacion(List<ProductoVariante> variantes) {
@@ -189,12 +304,29 @@ public class WooCommercePublicador implements PublicadorCanal {
 
     private Map<String, LinkedHashSet<String>> opcionesAtributos(List<ProductoVariante> variantes) {
         Map<String, LinkedHashSet<String>> opciones = new LinkedHashMap<>();
-        variantes.forEach(v -> AtributosVarianteHelper.obtener(v).forEach((id, valor) -> {
+        variantes.forEach(v -> atributosWoo(v).forEach((id, valor) -> {
             if (valor != null && !valor.isBlank()) {
                 opciones.computeIfAbsent(id, k -> new LinkedHashSet<>()).add(valor);
             }
         }));
         return opciones;
+    }
+
+    private Map<String, String> atributosWoo(ProductoVariante variante) {
+        return canonicalizarAtributosWoo(AtributosVarianteHelper.obtener(variante));
+    }
+
+    private Map<String, String> canonicalizarAtributosWoo(Map<String, String> atributos) {
+        Map<String, String> resultado = new LinkedHashMap<>();
+        atributos.forEach((idOriginal, valor) -> {
+            if (idOriginal == null || valor == null || valor.isBlank()) return;
+            String id = idOriginal.trim().toUpperCase(Locale.ROOT);
+            if (esAtributoInterno(id)) return;
+            String canonico = ALIAS_ATRIBUTOS_WOO.getOrDefault(id, id);
+            if (canonico.equals(id)) resultado.put(canonico, valor);
+            else resultado.putIfAbsent(canonico, valor);
+        });
+        return resultado;
     }
 
     private void publicarVariantes(String productoId, List<ProductoVariante> variantes,
@@ -212,13 +344,13 @@ public class WooCommercePublicador implements PublicadorCanal {
             body.put("stock_status", estadoStock(stock));
             body.put("backorders", "no");
             List<Map<String, String>> atributos = new ArrayList<>();
-            AtributosVarianteHelper.obtener(variante).forEach((id, valor) -> {
+            atributosWoo(variante).forEach((id, valor) -> {
                 if (idsAtributosVariacion.contains(id)) {
                     atributos.add(Map.of("name", nombreAtributo(id, nombresAtributos), "option", valor));
                 }
             });
             body.put("attributes", atributos);
-            String imagen = FotoCanalHelper.resolverUrl(variante, publicBaseUrl);
+            String imagen = FotoCanalHelper.resolverUrlWooCommerce(variante, publicBaseUrl);
             if (imagen != null && !imagen.isBlank()) body.put("image", Map.of("src", imagen));
             String actual = variante.getWooCommerceVariationId();
             if (actual == null || actual.isBlank()) actual = buscarVariacionPorSku(productoId, variante.getSku(), c);
@@ -231,9 +363,16 @@ public class WooCommercePublicador implements PublicadorCanal {
                                     WooCommerceCredencialesService.Credenciales c) {
         boolean nuevo = id == null || id.isBlank();
         String endpoint = c.url() + "/wp-json/wc/v3/products" + (nuevo ? "" : "/" + id);
-        RestClient.RequestBodySpec request = (nuevo ? restClient.post() : restClient.put()).uri(endpoint)
-                .headers(h -> h.setBasicAuth(c.key(), c.secret())).contentType(MediaType.APPLICATION_JSON);
-        return request.body(body).retrieve().body(JsonNode.class);
+        if (nuevo) {
+            return restClient.post().uri(endpoint)
+                    .headers(h -> h.setBasicAuth(c.key(), c.secret()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body).retrieve().body(JsonNode.class);
+        }
+        return conReintentoIo(() -> restClient.put().uri(endpoint)
+                .headers(h -> h.setBasicAuth(c.key(), c.secret()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body).retrieve().body(JsonNode.class));
     }
 
     private JsonNode enviarVariacion(String productoId, Map<String, Object> body, String id,
@@ -241,9 +380,16 @@ public class WooCommercePublicador implements PublicadorCanal {
         boolean nueva = id == null || id.isBlank();
         String endpoint = c.url() + "/wp-json/wc/v3/products/" + productoId
                 + "/variations" + (nueva ? "" : "/" + id);
-        RestClient.RequestBodySpec request = (nueva ? restClient.post() : restClient.put()).uri(endpoint)
-                .headers(h -> h.setBasicAuth(c.key(), c.secret())).contentType(MediaType.APPLICATION_JSON);
-        return request.body(body).retrieve().body(JsonNode.class);
+        if (nueva) {
+            return restClient.post().uri(endpoint)
+                    .headers(h -> h.setBasicAuth(c.key(), c.secret()))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body).retrieve().body(JsonNode.class);
+        }
+        return conReintentoIo(() -> restClient.put().uri(endpoint)
+                .headers(h -> h.setBasicAuth(c.key(), c.secret()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(body).retrieve().body(JsonNode.class));
     }
 
     private String buscarProductoPorSku(String sku, WooCommerceCredencialesService.Credenciales c) {
@@ -252,8 +398,9 @@ public class WooCommercePublicador implements PublicadorCanal {
             String endpoint = c.url() + "/wp-json/wc/v3/products?sku="
                     + URLEncoder.encode(sku, StandardCharsets.UTF_8)
                     + "&status=" + estado + "&per_page=100";
-            JsonNode respuesta = restClient.get().uri(endpoint)
-                    .headers(h -> h.setBasicAuth(c.key(), c.secret())).retrieve().body(JsonNode.class);
+            JsonNode respuesta = conReintentoIo(() -> restClient.get().uri(endpoint)
+                    .headers(h -> h.setBasicAuth(c.key(), c.secret()))
+                    .retrieve().body(JsonNode.class));
             if (respuesta != null && respuesta.isArray()) {
                 for (JsonNode producto : respuesta) {
                     if (sku.equalsIgnoreCase(producto.path("sku").asText())) {
@@ -319,8 +466,9 @@ public class WooCommercePublicador implements PublicadorCanal {
         if (sku == null || sku.isBlank()) return null;
         String endpoint = c.url() + "/wp-json/wc/v3/products/" + productoId
                 + "/variations?sku=" + URLEncoder.encode(sku, StandardCharsets.UTF_8) + "&per_page=100";
-        JsonNode respuesta = restClient.get().uri(endpoint)
-                .headers(h -> h.setBasicAuth(c.key(), c.secret())).retrieve().body(JsonNode.class);
+        JsonNode respuesta = conReintentoIo(() -> restClient.get().uri(endpoint)
+                .headers(h -> h.setBasicAuth(c.key(), c.secret()))
+                .retrieve().body(JsonNode.class));
         if (respuesta != null && respuesta.isArray()) {
             for (JsonNode variacion : respuesta) {
                 if (sku.equalsIgnoreCase(variacion.path("sku").asText())) return variacion.path("id").asText();
@@ -329,17 +477,45 @@ public class WooCommercePublicador implements PublicadorCanal {
         return null;
     }
 
+    private <T> T conReintentoIo(Supplier<T> operacion) {
+        ResourceAccessException ultimoError = null;
+        for (int intento = 1; intento <= 3; intento++) {
+            try {
+                return operacion.get();
+            } catch (ResourceAccessException e) {
+                ultimoError = e;
+                if (intento == 3) throw e;
+                esperarAntesDeReintentar(intento);
+            }
+        }
+        throw ultimoError;
+    }
+
+    private void esperarAntesDeReintentar(int intento) {
+        try {
+            Thread.sleep(750L * intento);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("La publicación fue interrumpida mientras reintentaba comunicarse con WooCommerce", e);
+        }
+    }
+
     private static RestClient crearRestClient() {
+        HttpClient cliente = HttpClient.newBuilder()
+                .version(HttpClient.Version.HTTP_1_1)
+                .connectTimeout(Duration.ofSeconds(20))
+                .build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(cliente);
+        requestFactory.setReadTimeout(Duration.ofSeconds(60));
         return RestClient.builder()
-                .requestFactory(new JdkClientHttpRequestFactory(HttpClient.newBuilder()
-                        .version(HttpClient.Version.HTTP_1_1)
-                        .build()))
+                .requestFactory(requestFactory)
                 .build();
     }
 
     private void agregarImagen(Map<String, Object> body, Producto p, ProductoVariante presentacionSimple) {
-        String src = presentacionSimple == null ? FotoCanalHelper.resolverUrl(p, publicBaseUrl)
-                : FotoCanalHelper.resolverUrl(presentacionSimple, publicBaseUrl);
+        String src = presentacionSimple == null
+                ? FotoCanalHelper.resolverUrlWooCommerce(p, publicBaseUrl)
+                : FotoCanalHelper.resolverUrlWooCommerce(presentacionSimple, publicBaseUrl);
         if (src != null && !src.isBlank()) body.put("images", List.of(Map.of("src", src)));
     }
     private String precio(Producto p) { return Optional.ofNullable(p.getPrecioContado()).orElseThrow(() -> new IllegalArgumentException("El producto no tiene precio de contado")).toPlainString(); }

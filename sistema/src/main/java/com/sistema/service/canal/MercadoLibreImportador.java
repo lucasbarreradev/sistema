@@ -105,7 +105,7 @@ public class MercadoLibreImportador implements ImportadorCanal {
     private ProductoCanalImportado mapear(JsonNode producto) {
         Map<String, JsonNode> atributos = indexarAtributos(producto.path("attributes"));
         String sku = valorAtributo(atributos, "SELLER_SKU");
-        if (sku.isBlank()) sku = producto.path("seller_sku").asText();
+        if (sku.isBlank()) sku = textoJson(producto.get("seller_sku"));
 
         List<String> fotos = new ArrayList<>();
         if (producto.path("pictures").isArray()) {
@@ -275,8 +275,8 @@ public class MercadoLibreImportador implements ImportadorCanal {
             }
             Map<String, JsonNode> atributosPropios = indexarAtributos(v.path("attributes"));
             String sku = valorAtributo(atributosPropios, "SELLER_SKU");
-            if (sku.isBlank()) sku = v.path("seller_sku").asText();
-            if (sku.isBlank()) sku = v.path("seller_custom_field").asText();
+            if (sku.isBlank()) sku = textoJson(v.get("seller_sku"));
+            if (sku.isBlank()) sku = textoJson(v.get("seller_custom_field"));
             String gtin = valorAtributo(atributosPropios, "GTIN");
             if (gtin.isBlank()) gtin = valorAtributo(atributosPropios, "EAN");
             if (gtin.isBlank()) gtin = valorAtributo(atributosPropios, "UPC");
@@ -430,7 +430,14 @@ public class MercadoLibreImportador implements ImportadorCanal {
     private String valorAtributo(Map<String, JsonNode> atributos, String id) {
         JsonNode atributo = atributos.get(id);
         if (atributo == null) return "";
-        return atributo.path("value_name").asText(atributo.path("value_id").asText());
+        String valor = textoJson(atributo.get("value_name"));
+        return valor.isBlank() ? textoJson(atributo.get("value_id")) : valor;
+    }
+
+    private String textoJson(JsonNode valor) {
+        if (valor == null || valor.isNull() || valor.isMissingNode() || !valor.isValueNode()) return "";
+        String texto = valor.asText("").trim();
+        return "null".equalsIgnoreCase(texto) ? "" : texto;
     }
 
     private String valorTermino(JsonNode terminos, String id) {

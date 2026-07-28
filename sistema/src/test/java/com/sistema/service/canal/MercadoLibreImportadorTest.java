@@ -101,6 +101,36 @@ class MercadoLibreImportadorTest {
     }
 
     @Test
+    void noConvierteElSkuJsonNuloEnElTextoNull() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        MercadoLibreImportador importador = new MercadoLibreImportador(
+                mock(MercadoLibreTokenService.class), objectMapper);
+        var variaciones = objectMapper.readTree("""
+                [{
+                  "id": 187111873168,
+                  "seller_sku": null,
+                  "seller_custom_field": null,
+                  "available_quantity": 1,
+                  "price": 259900,
+                  "attribute_combinations": [
+                    {"id": "SIZE", "value_name": "41 AR"}
+                  ],
+                  "attributes": [
+                    {"id": "SELLER_SKU", "value_id": null, "value_name": null}
+                  ]
+                }]
+                """);
+
+        List<VarianteCanalImportada> resultado =
+                importador.mapearVariantes(variaciones, objectMapper.createArrayNode());
+
+        assertEquals(1, resultado.size());
+        assertTrue(resultado.get(0).sku() == null || resultado.get(0).sku().isBlank());
+        assertEquals("41 AR", resultado.get(0).talle());
+        assertEquals(1, resultado.get(0).stock());
+    }
+
+    @Test
     void sumaElStockRealDeTodasLasUbicacionesDelUserProduct() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
         MercadoLibreImportador importador = new MercadoLibreImportador(

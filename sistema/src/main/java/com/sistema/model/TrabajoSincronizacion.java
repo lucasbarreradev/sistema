@@ -27,6 +27,10 @@ public class TrabajoSincronizacion extends TenantAwareEntity {
     @Column(nullable = false, length = 30)
     private CanalVenta origen;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "tipo_trabajo", length = 40)
+    private TipoTrabajoSincronizacion tipoTrabajo = TipoTrabajoSincronizacion.SINCRONIZACION_CANALES;
+
     @Column(nullable = false, length = 150)
     private String destinos;
 
@@ -56,6 +60,14 @@ public class TrabajoSincronizacion extends TenantAwareEntity {
     @Transient
     public String getOrigenDescripcion() {
         return origen == null ? "" : origen.getDescripcion();
+    }
+
+    @Transient
+    public String getFlujoDescripcion() {
+        if (tipoTrabajo == TipoTrabajoSincronizacion.PUBLICACION_SELECCIONADA) {
+            return "Sistema \u2192 " + getDestinosDescripcion();
+        }
+        return getOrigenDescripcion() + " \u2192 " + getDestinosDescripcion();
     }
 
     @Transient

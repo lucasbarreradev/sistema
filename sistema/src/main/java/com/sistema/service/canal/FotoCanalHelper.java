@@ -28,6 +28,27 @@ final class FotoCanalHelper {
         return resolverUrl(variante.getProducto(), publicBaseUrl);
     }
 
+    static String resolverUrlWooCommerce(Producto producto, String publicBaseUrl) {
+        if (producto == null || !producto.tieneFoto()) return null;
+        if (publicBaseUrl == null || publicBaseUrl.isBlank()) {
+            return resolverUrl(producto, publicBaseUrl);
+        }
+        return limpiarUrl(publicBaseUrl) + "/productos/" + producto.getId()
+                + "/foto/woocommerce.jpg";
+    }
+
+    static String resolverUrlWooCommerce(ProductoVariante variante, String publicBaseUrl) {
+        if (variante == null) return null;
+        if (!variante.tieneFoto()) {
+            return resolverUrlWooCommerce(variante.getProducto(), publicBaseUrl);
+        }
+        if (publicBaseUrl == null || publicBaseUrl.isBlank()) {
+            return resolverUrl(variante, publicBaseUrl);
+        }
+        return limpiarUrl(publicBaseUrl) + "/productos/" + variante.getProducto().getId()
+                + "/variantes/" + variante.getId() + "/foto/woocommerce.jpg";
+    }
+
     private static String extension(String contentType) {
         if (contentType == null) return "jpg";
         return switch (contentType.toLowerCase()) {

@@ -32,7 +32,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         when(sincronizacion.sincronizar(CanalVenta.MERCADO_LIBRE, List.of(CanalVenta.WOOCOMMERCE)))
                 .thenReturn(new SincronizacionCanalesService.Resultado(importacion, publicacion));
         ProcesadorTrabajoSincronizacionService procesador =
-                new ProcesadorTrabajoSincronizacionService(repository, sincronizacion);
+                new ProcesadorTrabajoSincronizacionService(
+                        repository, sincronizacion, mock(PublicacionService.class));
 
         procesador.ejecutar(10L, 3L, CanalVenta.MERCADO_LIBRE, List.of(CanalVenta.WOOCOMMERCE));
 
@@ -46,6 +47,35 @@ class ProcesadorTrabajoSincronizacionServiceTest {
     }
 
     @Test
+    void procesaPublicacionSeleccionadaYGuardaElResultadoEnElTrabajo() {
+        TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
+        SincronizacionCanalesService sincronizacion = mock(SincronizacionCanalesService.class);
+        PublicacionService publicacionService = mock(PublicacionService.class);
+        TrabajoSincronizacion trabajo = trabajo();
+        when(repository.findById(10L)).thenReturn(Optional.of(trabajo));
+        ResultadoPublicacionLote resultado = new ResultadoPublicacionLote();
+        resultado.exito();
+        resultado.exito();
+        resultado.error("CAMP-001 / WooCommerce: error de prueba");
+        when(publicacionService.publicar(List.of(4L, 5L, 6L), List.of(CanalVenta.WOOCOMMERCE)))
+                .thenReturn(resultado);
+        ProcesadorTrabajoSincronizacionService procesador =
+                new ProcesadorTrabajoSincronizacionService(
+                        repository, sincronizacion, publicacionService);
+
+        procesador.ejecutarPublicacion(10L, 3L, List.of(4L, 5L, 6L),
+                List.of(CanalVenta.WOOCOMMERCE));
+
+        assertEquals(EstadoTrabajoSincronizacion.COMPLETADA_CON_ERRORES, trabajo.getEstado());
+        assertNotNull(trabajo.getIniciadoEn());
+        assertNotNull(trabajo.getFinalizadoEn());
+        assertEquals("Publicaciones procesadas correctamente: 2.", trabajo.getResumen());
+        assertEquals("CAMP-001 / WooCommerce: error de prueba", trabajo.getDetalle());
+        verify(repository).saveAndFlush(trabajo);
+        verify(repository).save(trabajo);
+    }
+
+    @Test
     void registraComoErrorUnaExcepcionGeneral() {
         TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
         SincronizacionCanalesService sincronizacion = mock(SincronizacionCanalesService.class);
@@ -54,7 +84,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         when(sincronizacion.sincronizar(CanalVenta.MERCADO_LIBRE, List.of(CanalVenta.WOOCOMMERCE)))
                 .thenThrow(new IllegalStateException("WooCommerce no responde"));
         ProcesadorTrabajoSincronizacionService procesador =
-                new ProcesadorTrabajoSincronizacionService(repository, sincronizacion);
+                new ProcesadorTrabajoSincronizacionService(
+                        repository, sincronizacion, mock(PublicacionService.class));
 
         procesador.ejecutar(10L, 3L, CanalVenta.MERCADO_LIBRE, List.of(CanalVenta.WOOCOMMERCE));
 

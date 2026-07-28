@@ -9,6 +9,7 @@ import com.sistema.service.MercadoLibreAtributosVarianteService;
 import com.sistema.service.ProductoService;
 import com.sistema.service.ProductoVarianteService;
 import com.sistema.service.TenantPublicResourceService;
+import com.sistema.service.ImagenWooCommerceService;
 import com.sistema.tenant.TenantContext;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -17,6 +18,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpHeaders;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,16 +32,19 @@ public class ProductoVarianteController {
     private final ProductoVarianteService varianteService;
     private final MercadoLibreAtributosVarianteService atributosService;
     private final TenantPublicResourceService tenantPublicResourceService;
+    private final ImagenWooCommerceService imagenWooCommerceService;
     private final ObjectMapper objectMapper;
 
     public ProductoVarianteController(ProductoService productoService, ProductoVarianteService varianteService,
                                       MercadoLibreAtributosVarianteService atributosService,
                                       TenantPublicResourceService tenantPublicResourceService,
+                                      ImagenWooCommerceService imagenWooCommerceService,
                                       ObjectMapper objectMapper) {
         this.productoService = productoService;
         this.varianteService = varianteService;
         this.atributosService = atributosService;
         this.tenantPublicResourceService = tenantPublicResourceService;
+        this.imagenWooCommerceService = imagenWooCommerceService;
         this.objectMapper = objectMapper;
     }
 
@@ -83,13 +88,14 @@ public class ProductoVarianteController {
                                   @PathVariable(required = false) String nombre) {
         if (TenantContext.get() == null) {
             return tenantPublicResourceService.buscarTenantVariante(id)
-                    .map(tenantId -> TenantContext.call(tenantId, () -> cargarFoto(productoId, id)))
+                    .map(tenantId -> TenantContext.call(
+                            tenantId, () -> cargarFoto(productoId, id, nombre)))
                     .orElseGet(() -> ResponseEntity.notFound().build());
         }
-        return cargarFoto(productoId, id);
+        return cargarFoto(productoId, id, nombre);
     }
 
-    private ResponseEntity<?> cargarFoto(Long productoId, Long id) {
+    private ResponseEntity<?> cargarFoto(Long productoId, Long id, String nombre) {
         ProductoVariante variante = varianteService.buscar(id).orElse(null);
         if (variante == null || !variante.getProducto().getId().equals(productoId)
                 || (!variante.tieneFoto() && !variante.getProducto().tieneFotoLocal())) {
@@ -97,15 +103,37 @@ public class ProductoVarianteController {
         }
         if (!variante.tieneFotoLocal() && variante.getFotoUrlExterna() != null
                 && !variante.getFotoUrlExterna().isBlank()) {
+            if ("woocommerce.jpg".equalsIgnoreCase(nombre)) {
+                try {
+                    return fotoWooCommerce(imagenWooCommerceService
+                            .normalizarDesdeUrl(variante.getFotoUrlExterna()));
+                } catch (Exception ignored) {
+                    // Si la normalización no es posible se conserva la foto original.
+                }
+            }
             return ResponseEntity.status(302).location(java.net.URI.create(variante.getFotoUrlExterna())).build();
         }
         byte[] contenido = variante.tieneFotoLocal() ? variante.getFotoContenido() : variante.getProducto().getFotoContenido();
         String tipoContenido = variante.tieneFotoLocal() ? variante.getFotoTipoContenido()
                 : variante.getProducto().getFotoTipoContenido();
+        if ("woocommerce.jpg".equalsIgnoreCase(nombre)) {
+            try {
+                return fotoWooCommerce(imagenWooCommerceService.normalizar(contenido));
+            } catch (Exception ignored) {
+                // Si la normalización no es posible se entrega el archivo original.
+            }
+        }
         MediaType tipo;
         try { tipo = MediaType.parseMediaType(tipoContenido); }
         catch (Exception e) { tipo = MediaType.APPLICATION_OCTET_STREAM; }
         return ResponseEntity.ok().contentType(tipo).body(contenido);
+    }
+
+    private ResponseEntity<byte[]> fotoWooCommerce(byte[] contenido) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+                .contentType(MediaType.IMAGE_JPEG)
+                .body(contenido);
     }
 
     @GetMapping("/{id}/editar")

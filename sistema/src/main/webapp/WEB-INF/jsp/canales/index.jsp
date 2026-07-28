@@ -162,7 +162,7 @@
                         <c:if test="${sincronizacionActiva}">
                             <div class="alert alert-info">
                                 <i class="fa-solid fa-spinner fa-spin mr-1"></i>
-                                Hay una sincronización ejecutándose en segundo plano. Esta página se actualizará automáticamente.
+                                Hay un trabajo ejecutándose en segundo plano. Esta página se actualizará automáticamente.
                             </div>
                         </c:if>
                         <form method="post" action="${pageContext.request.contextPath}/canales/sincronizar">
@@ -195,7 +195,7 @@
 
                 <div class="card shadow mb-4">
                     <div class="card-header py-3 d-flex align-items-center justify-content-between">
-                        <h6 class="m-0 font-weight-bold text-primary">Trabajos de sincronización</h6>
+                        <h6 class="m-0 font-weight-bold text-primary">Trabajos en segundo plano</h6>
                         <button type="button" class="btn btn-sm btn-outline-secondary" onclick="window.location.reload()">
                             <i class="fa-solid fa-rotate mr-1"></i>Actualizar
                         </button>
@@ -210,9 +210,7 @@
                                 <tr>
                                     <td>${trabajo.id}</td>
                                     <td>
-                                        <c:out value="${trabajo.origenDescripcion}"/>
-                                        <i class="fa-solid fa-arrow-right mx-1"></i>
-                                        <c:out value="${trabajo.destinosDescripcion}"/>
+                                        <c:out value="${trabajo.flujoDescripcion}"/>
                                     </td>
                                     <td>
                                         <c:choose>
@@ -277,14 +275,18 @@
                                     <c:forEach items="${productos}" var="p">
                                         <tr>
                                             <td><input type="checkbox" class="producto-check" name="productoIds" value="${p.id}"></td>
-                                            <td><c:if test="${p.tieneFoto()}"><img src="${pageContext.request.contextPath}/productos/${p.id}/foto" alt="" style="width:44px;height:44px;object-fit:cover;border-radius:5px"></c:if></td>
+                                            <td><c:if test="${p.tieneFoto()}"><img src="${pageContext.request.contextPath}/productos/${p.id}/foto" alt="" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:5px"></c:if></td>
                                             <td><c:out value="${p.sku}"/></td><td><c:out value="${p.descripcion}"/></td><td>${p.stockTotal}</td><td>${p.precioContado}</td>
                                         </tr>
                                     </c:forEach>
                                     </tbody>
                                 </table>
                             </div>
-                            <button type="submit" class="btn btn-success mt-3"><i class="fa-solid fa-cloud-arrow-up mr-1"></i> Publicar seleccionados</button>
+                            <button type="submit" class="btn btn-success mt-3" ${sincronizacionActiva ? 'disabled' : ''}>
+                                <i class="fa-solid ${sincronizacionActiva ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'} mr-1"></i>
+                                ${sincronizacionActiva ? 'Hay un trabajo en proceso' : 'Publicar seleccionados'}
+                            </button>
+                            <small class="text-muted d-block mt-2">La publicación continúa en segundo plano aunque cierre esta página. El resultado aparecerá en la tabla de trabajos.</small>
                         </div>
                     </div>
                 </form>

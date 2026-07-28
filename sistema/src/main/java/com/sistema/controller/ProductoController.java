@@ -8,6 +8,7 @@ import com.sistema.service.ProductoService;
 import com.sistema.service.ProveedorService;
 import com.sistema.service.MercadoLibreAtributosProductoService;
 import com.sistema.service.TenantPublicResourceService;
+import com.sistema.service.ImagenWooCommerceService;
 import com.sistema.tenant.TenantContext;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -34,17 +35,20 @@ public class ProductoController {
     private final ProveedorService proveedorService;
     private final MercadoLibreAtributosProductoService atributosProductoMlService;
     private final TenantPublicResourceService tenantPublicResourceService;
+    private final ImagenWooCommerceService imagenWooCommerceService;
     private final ObjectMapper objectMapper;
 
     public ProductoController(ProductoService productoService,
                               ProveedorService proveedorService,
                               MercadoLibreAtributosProductoService atributosProductoMlService,
                               TenantPublicResourceService tenantPublicResourceService,
+                              ImagenWooCommerceService imagenWooCommerceService,
                               ObjectMapper objectMapper) {
         this.productoService = productoService;
         this.proveedorService = proveedorService;
         this.atributosProductoMlService = atributosProductoMlService;
         this.tenantPublicResourceService = tenantPublicResourceService;
+        this.imagenWooCommerceService = imagenWooCommerceService;
         this.objectMapper = objectMapper;
     }
 
@@ -271,26 +275,43 @@ public class ProductoController {
                                   @PathVariable(required = false) String nombre) {
         if (TenantContext.get() == null) {
             return tenantPublicResourceService.buscarTenantProducto(id)
-                    .map(tenantId -> TenantContext.call(tenantId, () -> cargarFoto(id)))
+                    .map(tenantId -> TenantContext.call(tenantId, () -> cargarFoto(id, nombre)))
                     .orElseGet(() -> ResponseEntity.notFound().build());
         }
-        return cargarFoto(id);
+        return cargarFoto(id, nombre);
     }
 
-    private ResponseEntity<?> cargarFoto(Long id) {
+    private ResponseEntity<?> cargarFoto(Long id, String nombre) {
         Producto producto = productoService.getProductoById(id).orElse(null);
         if (producto == null || !producto.tieneFoto()) {
             return ResponseEntity.notFound().build();
         }
+        boolean paraWooCommerce = "woocommerce.jpg".equalsIgnoreCase(nombre);
         if (!producto.tieneFotoLocal()) {
             try {
                 URI uri = URI.create(producto.getFotoUrlExterna());
                 if (!("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))) {
                     return ResponseEntity.badRequest().build();
                 }
+                if (paraWooCommerce) {
+                    try {
+                        return fotoWooCommerce(
+                                imagenWooCommerceService.normalizarDesdeUrl(producto.getFotoUrlExterna()));
+                    } catch (Exception ignored) {
+                        // Si la normalización no es posible se conserva la foto original.
+                    }
+                }
                 return ResponseEntity.status(302).location(uri).build();
             } catch (IllegalArgumentException e) {
                 return ResponseEntity.notFound().build();
+            }
+        }
+        if (paraWooCommerce) {
+            try {
+                return fotoWooCommerce(
+                        imagenWooCommerceService.normalizar(producto.getFotoContenido()));
+            } catch (Exception ignored) {
+                // Si la normalización no es posible se entrega el archivo original.
             }
         }
         MediaType mediaType;
@@ -303,6 +324,13 @@ public class ProductoController {
                 .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600")
                 .contentType(mediaType)
                 .body(producto.getFotoContenido());
+    }
+
+    private ResponseEntity<byte[]> fotoWooCommerce(byte[] contenido) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CACHE_CONTROL, "public, max-age=86400")
+                .contentType(MediaType.IMAGE_JPEG)
+                .body(contenido);
     }
 
 

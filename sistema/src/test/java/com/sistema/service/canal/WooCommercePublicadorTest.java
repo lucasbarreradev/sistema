@@ -11,6 +11,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
@@ -24,6 +25,7 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.*;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withException;
 
 class WooCommercePublicadorTest {
 
@@ -58,16 +60,63 @@ class WooCommercePublicadorTest {
     }
 
     @Test
-    void traduceLosAtributosTecnicosDeMercadoLibreAlEspanol() {
+    void unificaLosAliasDeColorYTalleDeMercadoLibreParaWooCommerce() {
         ProductoVariante variante = variante(
-                "{\"MAIN_COLOR\":\"Amarillo\",\"FILTRABLE_SIZE\":\"3XS,2XS\","
+                "{\"COLOR\":\"Amarillo\",\"MAIN_COLOR\":\"Amarillo\","
+                        + "\"SIZE\":\"M\",\"FILTRABLE_SIZE\":\"M\","
                         + "\"DISPLAY_SIZE\":\"6.8 pulgadas\"}");
 
         List<Map<String, Object>> atributos = publicador.atributosWoo(List.of(variante));
 
-        assertTrue(atributos.stream().anyMatch(a -> "Color principal".equals(a.get("name"))));
-        assertTrue(atributos.stream().anyMatch(a -> "Equivalencias".equals(a.get("name"))));
+        assertEquals(3, atributos.size());
+        assertTrue(atributos.stream().anyMatch(a -> "Color".equals(a.get("name"))));
+        assertTrue(atributos.stream().anyMatch(a -> "Talle".equals(a.get("name"))));
+        assertFalse(atributos.stream().anyMatch(a -> "Color principal".equals(a.get("name"))));
+        assertFalse(atributos.stream().anyMatch(a -> "Equivalencias".equals(a.get("name"))));
         assertTrue(atributos.stream().anyMatch(a -> "Tamaño de pantalla".equals(a.get("name"))));
+    }
+
+    @Test
+    void noCreaSelectoresDuplicadosParaVariantesConAliasDeColorYTalle() {
+        ProductoVariante talleS = variante(
+                "{\"COLOR\":\"Negro\",\"MAIN_COLOR\":\"Negro\","
+                        + "\"SIZE\":\"S\",\"FILTRABLE_SIZE\":\"S\"}");
+        ProductoVariante talleL = variante(
+                "{\"COLOR\":\"Negro\",\"MAIN_COLOR\":\"Negro\","
+                        + "\"SIZE\":\"L\",\"FILTRABLE_SIZE\":\"L\"}");
+
+        List<Map<String, Object>> atributos = publicador.atributosWoo(List.of(talleS, talleL));
+
+        assertEquals(2, atributos.size());
+        assertTrue(atributos.stream().filter(a -> "Talle".equals(a.get("name")))
+                .allMatch(a -> Boolean.TRUE.equals(a.get("variation"))));
+        assertTrue(atributos.stream().filter(a -> "Color".equals(a.get("name")))
+                .allMatch(a -> Boolean.FALSE.equals(a.get("variation"))));
+    }
+
+    @Test
+    void excluyeMetadatosInternosDeMercadoLibreTambienEnLasVariantes() {
+        ProductoVariante variante = variante("""
+                {
+                  "COLOR":"Negro",
+                  "SIZE":"M",
+                  "WITH_VIRTUAL_TRY_ON":"Sí",
+                  "SELLER_PACKAGE_HEIGHT":"40 cm",
+                  "SELLER_PACKAGE_WIDTH":"25 cm",
+                  "VALUE_ADDED_TAX":"21 %",
+                  "SIZE_GRID_ROW_ID":"123:4"
+                }
+                """);
+
+        List<Map<String, Object>> atributos = publicador.atributosWoo(List.of(variante));
+
+        assertEquals(2, atributos.size());
+        assertTrue(atributos.stream().anyMatch(a -> "Color".equals(a.get("name"))));
+        assertTrue(atributos.stream().anyMatch(a -> "Talle".equals(a.get("name"))));
+        assertFalse(atributos.toString().contains("VIRTUAL_TRY_ON"));
+        assertFalse(atributos.toString().contains("PACKAGE"));
+        assertFalse(atributos.toString().contains("IVA"));
+        assertFalse(atributos.toString().contains("GRID"));
     }
 
     @Test
@@ -81,6 +130,16 @@ class WooCommercePublicadorTest {
         producto.setId(10L);
         producto.setSku("CELU-001");
         producto.setDescripcion("Celular");
+        producto.setMercadoLibreDescripcion("DescripciÃ³n completa del producto.\nSegunda lÃ­nea.");
+        producto.setMercadoLibreMarca("Samsung");
+        producto.setMercadoLibreModelo("Galaxy S24");
+        producto.setMercadoLibreAtributosJson("""
+                [
+                  {"id":"DISPLAY_SIZE","name":"TamaÃ±o de pantalla","value_name":"6.8 pulgadas"},
+                  {"id":"PROCESSOR_MODEL","name":"Modelo del procesador","value_name":"Snapdragon"},
+                  {"id":"SELLER_PACKAGE_HEIGHT","name":"Alto del paquete","value_name":"20 cm"}
+                ]
+                """);
         producto.setPrecioContado(new BigDecimal("1000"));
         producto.setCantidad(5);
         when(variantes.findByProductoIdOrderByNombreAsc(10L)).thenReturn(List.of());
@@ -99,6 +158,15 @@ class WooCommercePublicadorTest {
         servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/2396"))
                 .andExpect(method(HttpMethod.PUT))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"sku\":\"CELU-001\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"description\":\"<p>DescripciÃ³n completa del producto.<br>Segunda lÃ­nea.</p>\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"short_description\":\"<ul>")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"name\":\"Marca\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"options\":[\"Samsung\"]")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"name\":\"TamaÃ±o de pantalla\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("Alto del paquete"))))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_quantity\":5")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_status\":\"instock\"")))
                 .andRespond(withSuccess("{\"id\":2396,\"sku\":\"CELU-001\"}", MediaType.APPLICATION_JSON));
@@ -106,6 +174,40 @@ class WooCommercePublicadorTest {
         ResultadoPublicacion resultado = publicador.publicar(producto, null);
 
         assertEquals("2396", resultado.idExterno());
+        servidor.verify();
+    }
+
+    @Test
+    void reintentaUnaActualizacionCuandoWooCommerceCierraLaConexionSinResponder() {
+        ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
+        WooCommerceCredencialesService credenciales = mock(WooCommerceCredencialesService.class);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        WooCommercePublicador publicador =
+                new WooCommercePublicador(variantes, credenciales, builder.build());
+        Producto producto = new Producto();
+        producto.setId(20L);
+        producto.setSku("ZAPA-001");
+        producto.setDescripcion("Zapatilla");
+        producto.setPrecioContado(new BigDecimal("1000"));
+        producto.setCantidad(1);
+        when(variantes.findByProductoIdOrderByNombreAsc(20L)).thenReturn(List.of());
+        when(credenciales.configurado()).thenReturn(true);
+        when(credenciales.obtener()).thenReturn(
+                new WooCommerceCredencialesService.Credenciales(
+                        "https://woo.test", "ck_test", "cs_test"));
+
+        servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/1692"))
+                .andExpect(method(HttpMethod.PUT))
+                .andRespond(withException(new IOException("HTTP/1.1 header parser received no bytes")));
+        servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/1692"))
+                .andExpect(method(HttpMethod.PUT))
+                .andRespond(withSuccess("{\"id\":1692,\"sku\":\"ZAPA-001\"}",
+                        MediaType.APPLICATION_JSON));
+
+        ResultadoPublicacion resultado = publicador.publicar(producto, "1692");
+
+        assertEquals("1692", resultado.idExterno());
         servidor.verify();
     }
 

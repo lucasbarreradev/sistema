@@ -127,6 +127,56 @@ class ImportacionCanalServiceTest {
     }
 
     @Test
+    void identificaVariantesPorIdExternoAntesQuePorSkuRepetido() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        ProductoService productoService = mock(ProductoService.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        ProductoVarianteRepository variantesRepo = mock(ProductoVarianteRepository.class);
+        ProductoVarianteService variantesService = mock(ProductoVarianteService.class);
+        ImportadorCanal importador = mock(ImportadorCanal.class);
+        Producto producto = new Producto();
+        producto.setId(10L);
+        producto.setSku("ZAPA-020");
+        PublicacionCanal publicacion = publicacion(producto, "MLA2452926932");
+        var talle40 = new com.sistema.model.ProductoVariante();
+        talle40.setId(101L);
+        talle40.setProducto(producto);
+        talle40.setSku(" null ");
+        var talle41 = new com.sistema.model.ProductoVariante();
+        talle41.setId(102L);
+        talle41.setProducto(producto);
+        List<VarianteCanalImportada> variantes = List.of(
+                new VarianteCanalImportada("186255490018", "null", "40 AR", "40 AR", "", 2,
+                        BigDecimal.TEN, null, null, null, Map.of("SIZE", "40 AR"), null, false),
+                new VarianteCanalImportada("186255490022", "ZAPA-020", "41 AR", "41 AR", "", 3,
+                        BigDecimal.TEN, null, null, null, Map.of("SIZE", "41 AR"), null, false));
+        when(importador.canal()).thenReturn(CanalVenta.MERCADO_LIBRE);
+        when(importador.configurado()).thenReturn(true);
+        when(importador.obtenerProductos()).thenReturn(List.of(new ProductoCanalImportado(
+                "MLA2452926932", "ZAPA-020", "Zapatilla", 5, BigDecimal.TEN,
+                null, "MLA109027", Map.of(), variantes)));
+        when(publicaciones.findByCanalAndIdExterno(
+                CanalVenta.MERCADO_LIBRE, "MLA2452926932")).thenReturn(Optional.of(publicacion));
+        when(variantesRepo.findByMercadoLibreVariationId("186255490018"))
+                .thenReturn(Optional.of(talle40));
+        when(variantesRepo.findByMercadoLibreVariationId("186255490022"))
+                .thenReturn(Optional.of(talle41));
+
+        ImportacionCanalService service = new ImportacionCanalService(
+                productos, productoService, publicaciones, List.of(importador),
+                variantesRepo, variantesService, new com.fasterxml.jackson.databind.ObjectMapper());
+
+        service.importar(CanalVenta.MERCADO_LIBRE);
+
+        verify(variantesService).guardarImportada(eq(producto), same(talle40));
+        verify(variantesService).guardarImportada(eq(producto), same(talle41));
+        verify(variantesRepo, never()).findBySkuIgnoreCase(anyString());
+        assertEquals("186255490018", talle40.getMercadoLibreVariationId());
+        assertEquals("186255490022", talle41.getMercadoLibreVariationId());
+        assertEquals(null, talle40.getSku());
+    }
+
+    @Test
     void creaUnaPresentacionConAtributosParaUnItemSimpleDeMercadoLibre() {
         ProductoRepository productos = mock(ProductoRepository.class);
         ProductoService productoService = mock(ProductoService.class);

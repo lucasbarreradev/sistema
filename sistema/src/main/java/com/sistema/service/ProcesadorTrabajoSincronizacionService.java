@@ -22,11 +22,14 @@ public class ProcesadorTrabajoSincronizacionService {
 
     private final TrabajoSincronizacionRepository repository;
     private final SincronizacionCanalesService sincronizacionCanalesService;
+    private final PublicacionService publicacionService;
 
     public ProcesadorTrabajoSincronizacionService(TrabajoSincronizacionRepository repository,
-                                                  SincronizacionCanalesService sincronizacionCanalesService) {
+                                                  SincronizacionCanalesService sincronizacionCanalesService,
+                                                  PublicacionService publicacionService) {
         this.repository = repository;
         this.sincronizacionCanalesService = sincronizacionCanalesService;
+        this.publicacionService = publicacionService;
     }
 
     @Async("sincronizacionTaskExecutor")
@@ -45,11 +48,36 @@ public class ProcesadorTrabajoSincronizacionService {
         }
     }
 
+    @Async("sincronizacionTaskExecutor")
+    public void ejecutarPublicacion(Long trabajoId, long tenantId, List<Long> productoIds,
+                                    List<CanalVenta> canales) {
+        try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
+            actualizarAProcesando(trabajoId,
+                    "Publicando " + productoIds.size() + " producto(s) en "
+                            + descripcionCanales(canales) + "...");
+            ResultadoPublicacionLote resultado = publicacionService.publicar(productoIds, canales);
+            guardarResultadoPublicacion(trabajoId, resultado);
+        } catch (Exception e) {
+            log.error("Falló el trabajo de publicación {} del tenant {}", trabajoId, tenantId, e);
+            try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
+                guardarError(trabajoId, mensajeExcepcion(e));
+            } catch (Exception errorGuardando) {
+                log.error("No se pudo guardar el error del trabajo de publicación {}", trabajoId, errorGuardando);
+            }
+        }
+    }
+
     private void actualizarAProcesando(Long trabajoId) {
+        TrabajoSincronizacion trabajo = buscar(trabajoId);
+        actualizarAProcesando(trabajoId,
+                "Importando productos desde " + trabajo.getOrigenDescripcion() + "...");
+    }
+
+    private void actualizarAProcesando(Long trabajoId, String resumen) {
         TrabajoSincronizacion trabajo = buscar(trabajoId);
         trabajo.setEstado(EstadoTrabajoSincronizacion.PROCESANDO);
         trabajo.setIniciadoEn(LocalDateTime.now());
-        trabajo.setResumen("Importando productos desde " + trabajo.getOrigenDescripcion() + "...");
+        trabajo.setResumen(resumen);
         repository.saveAndFlush(trabajo);
     }
 
@@ -70,11 +98,23 @@ public class ProcesadorTrabajoSincronizacionService {
         repository.save(trabajo);
     }
 
+    private void guardarResultadoPublicacion(Long trabajoId, ResultadoPublicacionLote resultado) {
+        TrabajoSincronizacion trabajo = buscar(trabajoId);
+        trabajo.setFinalizadoEn(LocalDateTime.now());
+        trabajo.setResumen("Publicaciones procesadas correctamente: " + resultado.getExitosas() + ".");
+        trabajo.setDetalle(resultado.getErrores().isEmpty()
+                ? null : String.join("\n", resultado.getErrores()));
+        trabajo.setEstado(resultado.getErrores().isEmpty()
+                ? EstadoTrabajoSincronizacion.COMPLETADA
+                : EstadoTrabajoSincronizacion.COMPLETADA_CON_ERRORES);
+        repository.save(trabajo);
+    }
+
     private void guardarError(Long trabajoId, String mensaje) {
         TrabajoSincronizacion trabajo = buscar(trabajoId);
         trabajo.setEstado(EstadoTrabajoSincronizacion.ERROR);
         trabajo.setFinalizadoEn(LocalDateTime.now());
-        trabajo.setResumen("La sincronización no pudo completarse.");
+        trabajo.setResumen("El trabajo no pudo completarse.");
         trabajo.setDetalle(mensaje);
         repository.save(trabajo);
     }
@@ -82,6 +122,11 @@ public class ProcesadorTrabajoSincronizacionService {
     private TrabajoSincronizacion buscar(Long trabajoId) {
         return repository.findById(trabajoId)
                 .orElseThrow(() -> new IllegalStateException("No se encontró el trabajo de sincronización " + trabajoId));
+    }
+
+    private String descripcionCanales(List<CanalVenta> canales) {
+        return canales.stream().map(CanalVenta::getDescripcion)
+                .collect(java.util.stream.Collectors.joining(", "));
     }
 
     private String mensajeExcepcion(Exception e) {

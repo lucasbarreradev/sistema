@@ -1,7 +1,6 @@
 package com.sistema.controller;
 
 import com.sistema.dto.ResultadoImportacion;
-import com.sistema.dto.ResultadoPublicacionLote;
 import com.sistema.dto.ResultadoImportacionCanal;
 import com.sistema.model.CanalVenta;
 import com.sistema.service.ImportacionCsvService;
@@ -130,9 +129,13 @@ public class CanalesController {
             ra.addFlashAttribute("error", "Seleccione al menos un producto y un canal");
             return "redirect:/canales";
         }
-        ResultadoPublicacionLote resultado = publicacionService.publicar(productoIds, canales);
-        if (resultado.getExitosas() > 0) ra.addFlashAttribute("mensaje", resultado.getExitosas() + " publicaciones procesadas correctamente");
-        if (!resultado.getErrores().isEmpty()) ra.addFlashAttribute("erroresPublicacion", resultado.getErrores());
+        try {
+            var trabajo = trabajoSincronizacionService.iniciarPublicacion(productoIds, canales);
+            ra.addFlashAttribute("mensaje", "Publicación iniciada en segundo plano (trabajo #"
+                    + trabajo.getId() + "). Puede salir de esta página sin interrumpirla.");
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
         return "redirect:/canales";
     }
 }

@@ -112,7 +112,7 @@
                                     <div class="mt-3">
                                         <img src="${pageContext.request.contextPath}/productos/${producto.id}/foto"
                                              alt="Foto de ${producto.descripcion}"
-                                             style="width:140px;height:140px;object-fit:cover;border-radius:8px;">
+                                             style="width:140px;height:140px;object-fit:contain;background:#fff;border-radius:8px;">
                                         <div class="small text-muted mt-1">La foto actual se conserva si no selecciona otra.</div>
                                     </div>
                                 </c:if>

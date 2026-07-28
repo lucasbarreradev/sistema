@@ -191,19 +191,25 @@ public class ImportacionCanalService {
     private void importarVariantes(CanalVenta canal, Producto producto, List<VarianteCanalImportada> datos) {
         if (datos == null || datos.isEmpty()) return;
         for (VarianteCanalImportada dato : datos) {
-            Optional<ProductoVariante> encontrada = dato.sku() == null || dato.sku().isBlank()
-                    ? Optional.empty() : varianteRepository.findBySkuIgnoreCase(dato.sku());
-            if (encontrada.isEmpty() && dato.idExterno() != null) {
+            Optional<ProductoVariante> encontrada = Optional.empty();
+            if (dato.idExterno() != null && !dato.idExterno().isBlank()) {
                 encontrada = switch (canal) {
                     case MERCADO_LIBRE -> dato.itemMercadoLibre()
-                            ? varianteRepository.findByProductoIdAndMercadoLibreItemId(producto.getId(), dato.idExterno())
-                            : varianteRepository.findByProductoIdAndMercadoLibreVariationId(producto.getId(), dato.idExterno());
-                    case WOOCOMMERCE -> varianteRepository.findByProductoIdAndWooCommerceVariationId(producto.getId(), dato.idExterno());
-                    case TIENDANUBE -> varianteRepository.findByProductoIdAndTiendaNubeVariationId(producto.getId(), dato.idExterno());
+                            ? varianteRepository.findByMercadoLibreItemId(dato.idExterno())
+                            : varianteRepository.findByMercadoLibreVariationId(dato.idExterno());
+                    case WOOCOMMERCE -> varianteRepository.findByWooCommerceVariationId(dato.idExterno());
+                    case TIENDANUBE -> varianteRepository.findByTiendaNubeVariationId(dato.idExterno());
                 };
             }
+            if (encontrada.isEmpty() && dato.sku() != null && !dato.sku().isBlank()) {
+                encontrada = varianteRepository.findBySkuIgnoreCase(dato.sku())
+                        .filter(variante -> variante.getProducto() != null
+                                && Objects.equals(variante.getProducto().getId(), producto.getId()));
+            }
             ProductoVariante variante = encontrada.orElseGet(ProductoVariante::new);
-            if (dato.sku() != null && !dato.sku().isBlank()) variante.setSku(dato.sku());
+            String skuImportado = normalizarSkuImportado(dato.sku());
+            if (!skuImportado.isBlank()) variante.setSku(skuImportado);
+            else if (normalizarSkuImportado(variante.getSku()).isBlank()) variante.setSku(null);
             variante.setNombre(dato.nombre()); variante.setTalle(dato.talle()); variante.setColor(dato.color());
             variante.setMercadoLibreGtin(dato.gtin());
             if (dato.fotoUrl() != null && !dato.fotoUrl().isBlank()) {
@@ -236,6 +242,12 @@ public class ImportacionCanalService {
             }
             varianteService.guardarImportada(producto, variante);
         }
+    }
+
+    private String normalizarSkuImportado(String sku) {
+        if (sku == null) return "";
+        String normalizado = sku.trim();
+        return normalizado.isBlank() || "null".equalsIgnoreCase(normalizado) ? "" : normalizado;
     }
 
     private List<VarianteCanalImportada> crearPresentacionSimple(Producto producto,
