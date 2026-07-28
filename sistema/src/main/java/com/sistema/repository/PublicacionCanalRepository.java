@@ -10,7 +10,9 @@ import java.util.Optional;
 
 public interface PublicacionCanalRepository extends JpaRepository<PublicacionCanal, Long> {
     Optional<PublicacionCanal> findByProductoIdAndCanal(Long productoId, CanalVenta canal);
+    @EntityGraph(attributePaths = "producto")
     Optional<PublicacionCanal> findByCanalAndIdExterno(CanalVenta canal, String idExterno);
+    @EntityGraph(attributePaths = "producto")
     List<PublicacionCanal> findByCanalAndIdExternoIsNotNull(CanalVenta canal);
     @EntityGraph(attributePaths = "producto")
     Optional<PublicacionCanal> findWithProductoById(Long id);

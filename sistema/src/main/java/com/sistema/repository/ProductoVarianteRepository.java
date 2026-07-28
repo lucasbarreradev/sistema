@@ -2,12 +2,15 @@ package com.sistema.repository;
 
 import com.sistema.model.ProductoVariante;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
 
 import java.util.List;
 import java.util.Optional;
 
 public interface ProductoVarianteRepository extends JpaRepository<ProductoVariante, Long> {
+    @EntityGraph(attributePaths = "producto")
     List<ProductoVariante> findByProductoIdOrderByNombreAsc(Long productoId);
+    @EntityGraph(attributePaths = "producto")
     Optional<ProductoVariante> findBySkuIgnoreCase(String sku);
     Optional<ProductoVariante> findByProductoIdAndMercadoLibreVariationId(Long productoId, String variationId);
     Optional<ProductoVariante> findByProductoIdAndMercadoLibreItemId(Long productoId, String itemId);

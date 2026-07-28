@@ -4,7 +4,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.sistema.model.CredencialWooCommerce;
 import com.sistema.repository.CredencialWooCommerceRepository;
 import com.sistema.tenant.TenantContext;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
@@ -17,27 +16,14 @@ public class WooCommerceCredencialesService {
     private final RestClient restClient = RestClient.create();
     private final CredencialWooCommerceRepository repository;
     private final CifradoCredencialesService cifrado;
-    private final String urlInicial;
-    private final String keyInicial;
-    private final String secretInicial;
 
     public WooCommerceCredencialesService(CredencialWooCommerceRepository repository,
-            CifradoCredencialesService cifrado,
-            @Value("${integraciones.woocommerce.url:}") String urlInicial,
-            @Value("${integraciones.woocommerce.consumer-key:}") String keyInicial,
-            @Value("${integraciones.woocommerce.consumer-secret:}") String secretInicial) {
+            CifradoCredencialesService cifrado) {
         this.repository = repository;
         this.cifrado = cifrado;
-        this.urlInicial = limpiarUrl(urlInicial);
-        this.keyInicial = keyInicial;
-        this.secretInicial = secretInicial;
     }
 
-    public boolean configurado() {
-        long tenantId = TenantContext.require();
-        return repository.existsByTenantId(tenantId)
-                || (tenantId == 1L && !urlInicial.isBlank() && !keyInicial.isBlank() && !secretInicial.isBlank());
-    }
+    public boolean configurado() { return conectado(); }
 
     public boolean conectado() { return repository.existsByTenantId(TenantContext.require()); }
     public boolean conexionDisponible() { return cifrado.configurado(); }
@@ -48,10 +34,7 @@ public class WooCommerceCredencialesService {
         return repository.findByTenantId(tenantId)
                 .map(c -> new Credenciales(c.getUrlTienda(), cifrado.descifrar(c.getConsumerKeyCifrada()),
                         cifrado.descifrar(c.getConsumerSecretCifrado())))
-                .orElseGet(() -> {
-                    if (!configurado()) throw new IllegalStateException("WooCommerce no tiene una cuenta conectada");
-                    return new Credenciales(urlInicial, keyInicial, secretInicial);
-                });
+                .orElseThrow(() -> new IllegalStateException("WooCommerce no tiene una cuenta conectada"));
     }
 
     public void vincular(String url, String key, String secret) {
@@ -79,7 +62,7 @@ public class WooCommerceCredencialesService {
     public Long resolverTenantPorUrl(String url) {
         String normalizada = limpiarUrl(url);
         return repository.findByUrlTiendaIgnoreCase(normalizada).map(CredencialWooCommerce::getTenantId)
-                .orElseGet(() -> normalizada.equalsIgnoreCase(urlInicial) && !urlInicial.isBlank() ? 1L : null);
+                .orElse(null);
     }
 
     public String validarUrl(String valor) {
