@@ -3,6 +3,7 @@ package com.sistema.service.canal;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.sistema.dto.ProductoCanalImportado;
 import com.sistema.dto.VarianteCanalImportada;
 import com.sistema.model.CanalVenta;
@@ -292,8 +293,6 @@ public class MercadoLibreImportador implements ImportadorCanal {
 
     private JsonNode completarDetalleStockVariacion(String itemId, JsonNode variacion) {
         if (variacion.path("available_quantity").asInt(0) > 0
-                || !variacion.path("user_product_id").asText("").isBlank()
-                || !variacion.path("inventory_id").asText("").isBlank()
                 || itemId == null || itemId.isBlank()) {
             return variacion;
         }
@@ -301,7 +300,10 @@ public class MercadoLibreImportador implements ImportadorCanal {
         if (variacionId.isBlank()) return variacion;
         JsonNode detalle = getOpcional("/items/" + itemId + "/variations/" + variacionId
                 + "?include_attributes=all");
-        return detalle == null ? variacion : detalle;
+        if (detalle == null || !detalle.isObject() || !variacion.isObject()) return variacion;
+        ObjectNode combinado = ((ObjectNode) variacion).deepCopy();
+        detalle.fields().forEachRemaining(campo -> combinado.set(campo.getKey(), campo.getValue()));
+        return combinado;
     }
 
     private int stockDisponible(JsonNode itemOVariacion) {

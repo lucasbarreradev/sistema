@@ -135,7 +135,7 @@ class MercadoLibreImportadorTest {
     }
 
     @Test
-    void consultaDetalleEInventarioCuandoLaVariacionSoloTieneTalle() {
+    void consultaDetalleAunqueElResumenConTalleTraigaUserProductId() {
         MercadoLibreTokenService tokenService = mock(MercadoLibreTokenService.class);
         when(tokenService.obtenerAccessToken()).thenReturn("token");
         RestClient.Builder builder = RestClient.builder();
@@ -156,6 +156,7 @@ class MercadoLibreImportadorTest {
                           "pictures": [],
                           "variations": [{
                             "id": 501,
+                            "user_product_id": "MLAU-501",
                             "available_quantity": 0,
                             "price": 100,
                             "attribute_combinations": [
@@ -174,16 +175,6 @@ class MercadoLibreImportadorTest {
                 .andRespond(withSuccess("""
                         {
                           "id": 501,
-                          "available_quantity": 0,
-                          "inventory_id": "FULL-501"
-                        }
-                        """, MediaType.APPLICATION_JSON));
-        servidor.expect(requestTo(
-                        "https://api.mercadolibre.com/inventories/FULL-501/stock/fulfillment"))
-                .andExpect(method(HttpMethod.GET))
-                .andRespond(withSuccess("""
-                        {
-                          "inventory_id": "FULL-501",
                           "available_quantity": 4
                         }
                         """, MediaType.APPLICATION_JSON));
