@@ -46,12 +46,12 @@ public class MercadoLibreImportador implements ImportadorCanal {
                 ProductoCanalImportado importado = mapear(item);
                 String familyName = item.path("family_name").asText("");
                 String userProductId = item.path("user_product_id").asText("");
-                if (!familyName.isBlank() && !userProductId.isBlank()) {
+                if (!userProductId.isBlank()) {
                     String familyId = familiasPorUserProduct.computeIfAbsent(userProductId,
                             clave -> resolverFamilyId(clave));
                     if (!familyId.isBlank()) {
                         importado.datosCanal().put("familyId", familyId);
-                        importado.datosCanal().put("familyName", familyName);
+                        if (!familyName.isBlank()) importado.datosCanal().put("familyName", familyName);
                     }
                 }
                 productos.add(importado);
@@ -135,9 +135,9 @@ public class MercadoLibreImportador implements ImportadorCanal {
         datos.put("atributosItem", valoresAtributos(producto.path("attributes")));
 
         return new ProductoCanalImportado(producto.path("id").asText(), sku, producto.path("title").asText(),
-                producto.path("available_quantity").asInt(0), producto.path("price").decimalValue(),
+                stockDisponible(producto), producto.path("price").decimalValue(),
                 fotos.isEmpty() ? null : fotos.get(0), producto.path("category_id").asText(null), datos,
-                mapearVariantes(producto.path("variations")));
+                mapearVariantes(producto.path("variations"), producto.path("pictures")));
     }
 
     private String resolverFamilyId(String userProductId) {
@@ -241,9 +241,10 @@ public class MercadoLibreImportador implements ImportadorCanal {
         }
     }
 
-    private List<VarianteCanalImportada> mapearVariantes(JsonNode lista) {
+    List<VarianteCanalImportada> mapearVariantes(JsonNode lista, JsonNode fotosProducto) {
         List<VarianteCanalImportada> resultado = new ArrayList<>();
         if (!lista.isArray()) return resultado;
+        Map<String, String> fotosPorId = indexarFotos(fotosProducto);
         for (JsonNode v : lista) {
             String talle = "", color = "";
             Map<String, String> atributosVariante = new LinkedHashMap<>();
@@ -256,17 +257,62 @@ public class MercadoLibreImportador implements ImportadorCanal {
             }
             Map<String, JsonNode> atributosPropios = indexarAtributos(v.path("attributes"));
             String sku = valorAtributo(atributosPropios, "SELLER_SKU");
+            if (sku.isBlank()) sku = v.path("seller_sku").asText();
             if (sku.isBlank()) sku = v.path("seller_custom_field").asText();
             String gtin = valorAtributo(atributosPropios, "GTIN");
             if (gtin.isBlank()) gtin = valorAtributo(atributosPropios, "EAN");
             if (gtin.isBlank()) gtin = valorAtributo(atributosPropios, "UPC");
             String nombre = String.join(" / ", atributosVariante.values());
+            String fotoUrl = primeraFoto(v.path("picture_ids"), fotosPorId);
             resultado.add(new VarianteCanalImportada(v.path("id").asText(),
                     sku, nombre, talle, color,
-                    v.path("available_quantity").asInt(0), v.path("price").decimalValue(), null,
-                    v.path("product_id").asText(null), gtin, atributosVariante, null, false));
+                    stockDisponible(v), v.path("price").decimalValue(), null,
+                    v.path("product_id").asText(null), gtin, atributosVariante, fotoUrl, false));
         }
         return resultado;
+    }
+
+    private int stockDisponible(JsonNode itemOVariacion) {
+        int stockItem = itemOVariacion.path("available_quantity").asInt(0);
+        String userProductId = itemOVariacion.path("user_product_id").asText("");
+        if (stockItem > 0 || userProductId.isBlank()) return stockItem;
+        try {
+            JsonNode stock = get("/user-products/" + userProductId + "/stock");
+            Integer distribuido = sumarStockUbicaciones(stock);
+            return distribuido == null ? stockItem : distribuido;
+        } catch (RuntimeException ignored) {
+            // No todas las cuentas tienen stock distribuido inicializado.
+            return stockItem;
+        }
+    }
+
+    Integer sumarStockUbicaciones(JsonNode stock) {
+        if (stock == null || !stock.path("locations").isArray()) return null;
+        int total = 0;
+        for (JsonNode ubicacion : stock.path("locations")) {
+            total += Math.max(0, ubicacion.path("quantity").asInt(0));
+        }
+        return total;
+    }
+
+    private Map<String, String> indexarFotos(JsonNode fotos) {
+        Map<String, String> resultado = new LinkedHashMap<>();
+        if (!fotos.isArray()) return resultado;
+        for (JsonNode foto : fotos) {
+            String id = foto.path("id").asText();
+            String url = foto.path("secure_url").asText(foto.path("url").asText());
+            if (!id.isBlank() && !url.isBlank()) resultado.put(id, url);
+        }
+        return resultado;
+    }
+
+    private String primeraFoto(JsonNode ids, Map<String, String> fotosPorId) {
+        if (!ids.isArray()) return null;
+        for (JsonNode id : ids) {
+            String url = fotosPorId.get(id.asText());
+            if (url != null && !url.isBlank()) return url;
+        }
+        return null;
     }
 
     private Map<String, JsonNode> indexarAtributos(JsonNode lista) {

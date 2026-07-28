@@ -78,12 +78,19 @@ public class WooCommercePublicador implements PublicadorCanal {
         body.put("status", "publish");
         List<Map<String, Object>> atributosProducto = atributosWoo(variantes, nombresAtributos);
         if (!atributosProducto.isEmpty()) body.put("attributes", atributosProducto);
-        if (!variable) {
+        if (variable) {
+            int stockTotal = variantes.stream().mapToInt(this::stock).sum();
+            body.put("manage_stock", false);
+            body.put("stock_status", estadoStock(stockTotal));
+        } else {
+            int stock = presentacionSimple == null
+                    ? Optional.ofNullable(p.getCantidad()).orElse(0)
+                    : stock(presentacionSimple);
             body.put("regular_price", presentacionSimple == null ? precio(p) : precio(presentacionSimple));
             body.put("manage_stock", true);
-            body.put("stock_quantity", presentacionSimple == null
-                    ? Optional.ofNullable(p.getCantidad()).orElse(0)
-                    : Optional.ofNullable(presentacionSimple.getStock()).orElse(0));
+            body.put("stock_quantity", stock);
+            body.put("stock_status", estadoStock(stock));
+            body.put("backorders", "no");
         }
         agregarImagen(body, p, presentacionSimple);
         String idProducto = idActual;
@@ -121,10 +128,12 @@ public class WooCommercePublicador implements PublicadorCanal {
         List<ProductoVariante> variantes = varianteRepository.findByProductoIdOrderByNombreAsc(producto.getId());
         if (variantes.size() <= 1) {
             int stock = variantes.isEmpty() ? Optional.ofNullable(producto.getCantidad()).orElse(0)
-                    : Optional.ofNullable(variantes.get(0).getStock()).orElse(0);
+                    : stock(variantes.get(0));
             putStock(c.url() + "/wp-json/wc/v3/products/" + productoWooId, stock, c);
             return;
         }
+        int stockTotal = variantes.stream().mapToInt(this::stock).sum();
+        putEstadoProductoVariable(c.url() + "/wp-json/wc/v3/products/" + productoWooId, stockTotal, c);
         for (ProductoVariante variante : variantes) {
             String variacionWooId = variante.getWooCommerceVariationId();
             if (variacionWooId == null || variacionWooId.isBlank()) {
@@ -132,14 +141,28 @@ public class WooCommercePublicador implements PublicadorCanal {
                         + " no está vinculada con una variante de WooCommerce; publíquela nuevamente una vez");
             }
             putStock(c.url() + "/wp-json/wc/v3/products/" + productoWooId
-                    + "/variations/" + variacionWooId, Optional.ofNullable(variante.getStock()).orElse(0), c);
+                    + "/variations/" + variacionWooId, stock(variante), c);
         }
     }
 
     private void putStock(String endpoint, int stock, WooCommerceCredencialesService.Credenciales c) {
         restClient.put().uri(endpoint).headers(h -> h.setBasicAuth(c.key(), c.secret()))
                 .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("manage_stock", true, "stock_quantity", stock))
+                .body(Map.of(
+                        "manage_stock", true,
+                        "stock_quantity", stock,
+                        "stock_status", estadoStock(stock),
+                        "backorders", "no"))
+                .retrieve().toBodilessEntity();
+    }
+
+    private void putEstadoProductoVariable(String endpoint, int stockTotal,
+                                           WooCommerceCredencialesService.Credenciales c) {
+        restClient.put().uri(endpoint).headers(h -> h.setBasicAuth(c.key(), c.secret()))
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(Map.of(
+                        "manage_stock", false,
+                        "stock_status", estadoStock(stockTotal)))
                 .retrieve().toBodilessEntity();
     }
 
@@ -181,7 +204,13 @@ public class WooCommercePublicador implements PublicadorCanal {
         for (ProductoVariante variante : variantes) {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("regular_price", Optional.ofNullable(variante.getPrecioContado()).orElse(variante.getProducto().getPrecioContado()).toPlainString());
-            body.put("sku", variante.getSku()); body.put("manage_stock", true); body.put("stock_quantity", variante.getStock());
+            int stock = stock(variante);
+            body.put("sku", variante.getSku());
+            body.put("status", "publish");
+            body.put("manage_stock", true);
+            body.put("stock_quantity", stock);
+            body.put("stock_status", estadoStock(stock));
+            body.put("backorders", "no");
             List<Map<String, String>> atributos = new ArrayList<>();
             AtributosVarianteHelper.obtener(variante).forEach((id, valor) -> {
                 if (idsAtributosVariacion.contains(id)) {
@@ -315,5 +344,7 @@ public class WooCommercePublicador implements PublicadorCanal {
     }
     private String precio(Producto p) { return Optional.ofNullable(p.getPrecioContado()).orElseThrow(() -> new IllegalArgumentException("El producto no tiene precio de contado")).toPlainString(); }
     private String precio(ProductoVariante v) { return Optional.ofNullable(v.getPrecioContado()).orElse(v.getProducto().getPrecioContado()).toPlainString(); }
+    private int stock(ProductoVariante variante) { return Optional.ofNullable(variante.getStock()).orElse(0); }
+    private String estadoStock(int stock) { return stock > 0 ? "instock" : "outofstock"; }
     private void validar() { if (!configurado()) throw new IllegalStateException("WooCommerce no está configurado"); }
 }

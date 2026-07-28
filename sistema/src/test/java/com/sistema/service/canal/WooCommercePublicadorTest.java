@@ -99,11 +99,110 @@ class WooCommercePublicadorTest {
         servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/2396"))
                 .andExpect(method(HttpMethod.PUT))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"sku\":\"CELU-001\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_quantity\":5")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_status\":\"instock\"")))
                 .andRespond(withSuccess("{\"id\":2396,\"sku\":\"CELU-001\"}", MediaType.APPLICATION_JSON));
 
         ResultadoPublicacion resultado = publicador.publicar(producto, null);
 
         assertEquals("2396", resultado.idExterno());
+        servidor.verify();
+    }
+
+    @Test
+    void publicaProductoVariableYVariantesConEstadoDeStockExplicito() {
+        ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
+        WooCommerceCredencialesService credenciales = mock(WooCommerceCredencialesService.class);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        WooCommercePublicador publicador = new WooCommercePublicador(variantes, credenciales, builder.build());
+        Producto producto = new Producto();
+        producto.setId(10L);
+        producto.setSku("REME-001");
+        producto.setDescripcion("Remera");
+        producto.setFotoUrlExterna("https://img.test/remera.jpg");
+
+        ProductoVariante talleM = variante("{\"COLOR\":\"Agua\",\"SIZE\":\"M\"}");
+        talleM.setId(1L);
+        talleM.setProducto(producto);
+        talleM.setSku("REME-001-M");
+        talleM.setStock(3);
+        talleM.setPrecioContado(new BigDecimal("1000"));
+        talleM.setWooCommerceVariationId("101");
+        ProductoVariante talleL = variante("{\"COLOR\":\"Agua\",\"SIZE\":\"L\"}");
+        talleL.setId(2L);
+        talleL.setProducto(producto);
+        talleL.setSku("REME-001-L");
+        talleL.setStock(0);
+        talleL.setPrecioContado(new BigDecimal("1000"));
+        talleL.setWooCommerceVariationId("102");
+
+        when(variantes.findByProductoIdOrderByNombreAsc(10L)).thenReturn(List.of(talleL, talleM));
+        when(credenciales.configurado()).thenReturn(true);
+        when(credenciales.obtener()).thenReturn(
+                new WooCommerceCredencialesService.Credenciales("https://woo.test", "ck_test", "cs_test"));
+
+        servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/200"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"type\":\"variable\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"manage_stock\":false")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_status\":\"instock\"")))
+                .andRespond(withSuccess("{\"id\":200}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/200/variations/102"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_quantity\":0")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_status\":\"outofstock\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"image\":{\"src\":\"https://img.test/remera.jpg\"}")))
+                .andRespond(withSuccess("{\"id\":102}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/200/variations/101"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_quantity\":3")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_status\":\"instock\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"image\":{\"src\":\"https://img.test/remera.jpg\"}")))
+                .andRespond(withSuccess("{\"id\":101}", MediaType.APPLICATION_JSON));
+
+        ResultadoPublicacion resultado = publicador.publicar(producto, "200");
+
+        assertEquals("200", resultado.idExterno());
+        servidor.verify();
+    }
+
+    @Test
+    void publicaUnaUnicaPresentacionComoSimpleConSuStockReal() {
+        ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
+        WooCommerceCredencialesService credenciales = mock(WooCommerceCredencialesService.class);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        WooCommercePublicador publicador = new WooCommercePublicador(variantes, credenciales, builder.build());
+        Producto producto = new Producto();
+        producto.setId(30L);
+        producto.setSku("ASIC-001");
+        producto.setDescripcion("Zapatilla Asics");
+        ProductoVariante talleUnico = variante("{\"COLOR\":\"Agua\",\"SIZE\":\"41 AR\"}");
+        talleUnico.setProducto(producto);
+        talleUnico.setSku("ASIC-001-41");
+        talleUnico.setStock(6);
+        talleUnico.setPrecioContado(new BigDecimal("259900"));
+
+        when(variantes.findByProductoIdOrderByNombreAsc(30L)).thenReturn(List.of(talleUnico));
+        when(variantes.findBySkuIgnoreCase("ASIC-001-41")).thenReturn(Optional.of(talleUnico));
+        when(credenciales.configurado()).thenReturn(true);
+        when(credenciales.obtener()).thenReturn(
+                new WooCommerceCredencialesService.Credenciales("https://woo.test", "ck_test", "cs_test"));
+
+        servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/300"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"type\":\"simple\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"sku\":\"ASIC-001-41\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_quantity\":6")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"stock_status\":\"instock\"")))
+                .andRespond(withSuccess("{\"id\":300}", MediaType.APPLICATION_JSON));
+
+        ResultadoPublicacion resultado = publicador.publicar(producto, "300");
+
+        assertEquals("300", resultado.idExterno());
         servidor.verify();
     }
 

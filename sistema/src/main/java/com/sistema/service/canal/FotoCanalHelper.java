@@ -25,12 +25,7 @@ final class FotoCanalHelper {
         if (variante.getFotoUrlExterna() != null && !variante.getFotoUrlExterna().isBlank()) {
             return variante.getFotoUrlExterna().trim();
         }
-        if (variante.getProducto().tieneFotoLocal() && publicBaseUrl != null && !publicBaseUrl.isBlank()) {
-            return limpiarUrl(publicBaseUrl) + "/productos/" + variante.getProducto().getId()
-                    + "/variantes/" + variante.getId() + "/foto/variante-" + variante.getId()
-                    + "." + extension(variante.getProducto().getFotoTipoContenido());
-        }
-        return null;
+        return resolverUrl(variante.getProducto(), publicBaseUrl);
     }
 
     private static String extension(String contentType) {
