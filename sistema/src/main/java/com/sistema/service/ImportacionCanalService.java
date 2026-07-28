@@ -72,6 +72,7 @@ public class ImportacionCanalService {
     }
 
     private void guardar(CanalVenta canal, ProductoCanalImportado dato, ResultadoImportacionCanal resultado) {
+        validarStockVariantesMercadoLibre(canal, dato);
         Set<Producto> productosSeparados = new LinkedHashSet<>();
         Optional<PublicacionCanal> mapeo = publicacionRepository.findByCanalAndIdExterno(canal, dato.idExterno());
         Optional<Producto> encontrado = mapeo.map(PublicacionCanal::getProducto);
@@ -132,6 +133,23 @@ public class ImportacionCanalService {
         publicacionRepository.save(publicacion);
         consolidarProductosSeparados(producto, productosSeparados);
         if (nuevo) resultado.creado(producto.getId()); else resultado.actualizado(producto.getId());
+    }
+
+    private void validarStockVariantesMercadoLibre(CanalVenta canal, ProductoCanalImportado dato) {
+        if (canal != CanalVenta.MERCADO_LIBRE || dato.variantes() == null || dato.variantes().isEmpty()
+                || Optional.ofNullable(dato.cantidad()).orElse(0) <= 0) {
+            return;
+        }
+        int stockVariantes = dato.variantes().stream()
+                .map(VarianteCanalImportada::stock)
+                .filter(Objects::nonNull)
+                .mapToInt(Integer::intValue)
+                .sum();
+        if (stockVariantes <= 0) {
+            throw new IllegalStateException("Mercado Libre informó stock para el producto, pero no para sus "
+                    + "presentaciones. No se importó con stock cero: vuelva a sincronizar para consultar "
+                    + "el inventario de cada talle.");
+        }
     }
 
     private void aplicarDatosMercadoLibre(Producto producto, Map<String, Object> datos) {

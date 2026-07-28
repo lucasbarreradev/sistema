@@ -18,14 +18,23 @@ import java.util.*;
 public class MercadoLibreImportador implements ImportadorCanal {
     private static final Set<String> ATRIBUTOS_CON_CAMPO = Set.of(
             "SELLER_SKU", "ITEM_CONDITION", "BRAND", "MODEL", "GTIN");
+    private static final long INTERVALO_STOCK_MS = 650L;
 
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient;
     private final MercadoLibreTokenService tokenService;
     private final ObjectMapper objectMapper;
+    private final Object bloqueoConsultasStock = new Object();
+    private long proximaConsultaStockNanos;
 
     public MercadoLibreImportador(MercadoLibreTokenService tokenService, ObjectMapper objectMapper) {
+        this(tokenService, objectMapper, RestClient.create());
+    }
+
+    MercadoLibreImportador(MercadoLibreTokenService tokenService, ObjectMapper objectMapper,
+                            RestClient restClient) {
         this.tokenService = tokenService;
         this.objectMapper = objectMapper;
+        this.restClient = restClient;
     }
 
     public CanalVenta canal() { return CanalVenta.MERCADO_LIBRE; }
@@ -137,7 +146,8 @@ public class MercadoLibreImportador implements ImportadorCanal {
         return new ProductoCanalImportado(producto.path("id").asText(), sku, producto.path("title").asText(),
                 stockDisponible(producto), producto.path("price").decimalValue(),
                 fotos.isEmpty() ? null : fotos.get(0), producto.path("category_id").asText(null), datos,
-                mapearVariantes(producto.path("variations"), producto.path("pictures")));
+                mapearVariantes(producto.path("variations"), producto.path("pictures"),
+                        producto.path("id").asText()));
     }
 
     private String resolverFamilyId(String userProductId) {
@@ -242,6 +252,11 @@ public class MercadoLibreImportador implements ImportadorCanal {
     }
 
     List<VarianteCanalImportada> mapearVariantes(JsonNode lista, JsonNode fotosProducto) {
+        return mapearVariantes(lista, fotosProducto, "");
+    }
+
+    private List<VarianteCanalImportada> mapearVariantes(JsonNode lista, JsonNode fotosProducto,
+                                                          String itemId) {
         List<VarianteCanalImportada> resultado = new ArrayList<>();
         if (!lista.isArray()) return resultado;
         Map<String, String> fotosPorId = indexarFotos(fotosProducto);
@@ -264,25 +279,104 @@ public class MercadoLibreImportador implements ImportadorCanal {
             if (gtin.isBlank()) gtin = valorAtributo(atributosPropios, "UPC");
             String nombre = String.join(" / ", atributosVariante.values());
             String fotoUrl = primeraFoto(v.path("picture_ids"), fotosPorId);
+            JsonNode detalleStock = completarDetalleStockVariacion(itemId, v);
             resultado.add(new VarianteCanalImportada(v.path("id").asText(),
                     sku, nombre, talle, color,
-                    stockDisponible(v), v.path("price").decimalValue(), null,
+                    stockDisponible(detalleStock), v.path("price").decimalValue(), null,
                     v.path("product_id").asText(null), gtin, atributosVariante, fotoUrl, false));
         }
         return resultado;
     }
 
+    private JsonNode completarDetalleStockVariacion(String itemId, JsonNode variacion) {
+        if (variacion.path("available_quantity").asInt(0) > 0
+                || !variacion.path("user_product_id").asText("").isBlank()
+                || !variacion.path("inventory_id").asText("").isBlank()
+                || itemId == null || itemId.isBlank()) {
+            return variacion;
+        }
+        String variacionId = variacion.path("id").asText("");
+        if (variacionId.isBlank()) return variacion;
+        JsonNode detalle = getOpcional("/items/" + itemId + "/variations/" + variacionId
+                + "?include_attributes=all");
+        return detalle == null ? variacion : detalle;
+    }
+
     private int stockDisponible(JsonNode itemOVariacion) {
         int stockItem = itemOVariacion.path("available_quantity").asInt(0);
         String userProductId = itemOVariacion.path("user_product_id").asText("");
-        if (stockItem > 0 || userProductId.isBlank()) return stockItem;
+        String inventoryId = itemOVariacion.path("inventory_id").asText("");
+        if (stockItem > 0) return stockItem;
+        if (!userProductId.isBlank()) {
+            try {
+                JsonNode stock = obtenerStockConReintentos(
+                        "/user-products/" + userProductId + "/stock");
+                Integer distribuido = sumarStockUbicaciones(stock);
+                if (distribuido != null) return distribuido;
+            } catch (RestClientResponseException e) {
+                if (!recursoStockNoDisponible(e)) throw e;
+            }
+        }
+        if (!inventoryId.isBlank()) {
+            try {
+                JsonNode stock = obtenerStockConReintentos(
+                        "/inventories/" + inventoryId + "/stock/fulfillment");
+                Integer fulfillment = stockFulfillment(stock);
+                if (fulfillment != null) return fulfillment;
+            } catch (RestClientResponseException e) {
+                if (!recursoStockNoDisponible(e)) throw e;
+            }
+        }
+        // No todas las cuentas tienen stock distribuido o Full inicializado.
+        return stockItem;
+    }
+
+    private boolean recursoStockNoDisponible(RestClientResponseException error) {
+        return error.getStatusCode() == HttpStatus.BAD_REQUEST
+                || error.getStatusCode() == HttpStatus.NOT_FOUND;
+    }
+
+    private JsonNode obtenerStockConReintentos(String endpoint) {
+        RestClientResponseException ultimoError = null;
+        for (int intento = 1; intento <= 4; intento++) {
+            esperarTurnoConsultaStock();
+            try {
+                return get(endpoint);
+            } catch (RestClientResponseException e) {
+                ultimoError = e;
+                if (e.getStatusCode() != HttpStatus.TOO_MANY_REQUESTS || intento == 4) throw e;
+                esperar(retryAfterMs(e));
+            }
+        }
+        throw ultimoError;
+    }
+
+    private void esperarTurnoConsultaStock() {
+        synchronized (bloqueoConsultasStock) {
+            long ahora = System.nanoTime();
+            long esperaNanos = Math.max(0L, proximaConsultaStockNanos - ahora);
+            if (esperaNanos > 0) esperar((esperaNanos + 999_999L) / 1_000_000L);
+            proximaConsultaStockNanos = System.nanoTime() + INTERVALO_STOCK_MS * 1_000_000L;
+        }
+    }
+
+    private long retryAfterMs(RestClientResponseException error) {
+        String valor = error.getResponseHeaders() == null
+                ? null : error.getResponseHeaders().getFirst("Retry-After");
+        if (valor == null || valor.isBlank()) return 1500L;
         try {
-            JsonNode stock = get("/user-products/" + userProductId + "/stock");
-            Integer distribuido = sumarStockUbicaciones(stock);
-            return distribuido == null ? stockItem : distribuido;
-        } catch (RuntimeException ignored) {
-            // No todas las cuentas tienen stock distribuido inicializado.
-            return stockItem;
+            return Math.max(1000L, Math.min(10_000L, Long.parseLong(valor.trim()) * 1000L));
+        } catch (NumberFormatException ignored) {
+            return 1500L;
+        }
+    }
+
+    private void esperar(long milisegundos) {
+        try {
+            Thread.sleep(milisegundos);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Se interrumpió la consulta de stock de Mercado Libre", e);
         }
     }
 
@@ -293,6 +387,14 @@ public class MercadoLibreImportador implements ImportadorCanal {
             total += Math.max(0, ubicacion.path("quantity").asInt(0));
         }
         return total;
+    }
+
+    Integer stockFulfillment(JsonNode stock) {
+        if (stock == null || !stock.has("available_quantity")
+                || stock.path("available_quantity").isNull()) {
+            return null;
+        }
+        return Math.max(0, stock.path("available_quantity").asInt(0));
     }
 
     private Map<String, String> indexarFotos(JsonNode fotos) {

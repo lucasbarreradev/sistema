@@ -5,6 +5,10 @@ import com.sistema.dto.ProductoCanalImportado;
 import com.sistema.dto.VarianteCanalImportada;
 import com.sistema.service.MercadoLibreTokenService;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
 import java.util.LinkedHashMap;
@@ -13,6 +17,10 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class MercadoLibreImportadorTest {
 
@@ -107,6 +115,85 @@ class MercadoLibreImportadorTest {
                 """);
 
         assertEquals(14, importador.sumarStockUbicaciones(stock));
+    }
+
+    @Test
+    void obtieneElStockDisponibleDelInventarioFull() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        MercadoLibreImportador importador = new MercadoLibreImportador(
+                mock(MercadoLibreTokenService.class), objectMapper);
+        var stock = objectMapper.readTree("""
+                {
+                  "inventory_id": "ABC123",
+                  "total": 20,
+                  "available_quantity": 7,
+                  "not_available_quantity": 13
+                }
+                """);
+
+        assertEquals(7, importador.stockFulfillment(stock));
+    }
+
+    @Test
+    void consultaDetalleEInventarioCuandoLaVariacionSoloTieneTalle() {
+        MercadoLibreTokenService tokenService = mock(MercadoLibreTokenService.class);
+        when(tokenService.obtenerAccessToken()).thenReturn("token");
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        MercadoLibreImportador importador = new MercadoLibreImportador(
+                tokenService, new ObjectMapper(), builder.build());
+
+        servidor.expect(requestTo("https://api.mercadolibre.com/items/MLA1?include_attributes=all"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {
+                          "id": "MLA1",
+                          "title": "Zapatilla azul",
+                          "category_id": "MLA109027",
+                          "price": 100,
+                          "available_quantity": 0,
+                          "attributes": [],
+                          "pictures": [],
+                          "variations": [{
+                            "id": 501,
+                            "available_quantity": 0,
+                            "price": 100,
+                            "attribute_combinations": [
+                              {"id": "SIZE", "value_name": "41 AR"}
+                            ],
+                            "attributes": []
+                          }]
+                        }
+                        """, MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://api.mercadolibre.com/items/MLA1/description"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"plain_text\":\"Zapatilla\"}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(
+                        "https://api.mercadolibre.com/items/MLA1/variations/501?include_attributes=all"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {
+                          "id": 501,
+                          "available_quantity": 0,
+                          "inventory_id": "FULL-501"
+                        }
+                        """, MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(
+                        "https://api.mercadolibre.com/inventories/FULL-501/stock/fulfillment"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        {
+                          "inventory_id": "FULL-501",
+                          "available_quantity": 4
+                        }
+                        """, MediaType.APPLICATION_JSON));
+
+        ProductoCanalImportado resultado = importador.obtenerProducto("MLA1");
+
+        assertEquals(1, resultado.variantes().size());
+        assertEquals("41 AR", resultado.variantes().get(0).talle());
+        assertEquals(4, resultado.variantes().get(0).stock());
+        servidor.verify();
     }
 
     private ProductoCanalImportado item(String id, String sku, String talle, String color, int stock) {

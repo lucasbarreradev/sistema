@@ -19,10 +19,42 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 class ImportacionCanalServiceTest {
+    @Test
+    void noImportaVariantesEnCeroSiMercadoLibreInformaStockGeneral() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        ProductoService productoService = mock(ProductoService.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        ProductoVarianteRepository variantesRepo = mock(ProductoVarianteRepository.class);
+        ProductoVarianteService variantesService = mock(ProductoVarianteService.class);
+        ImportadorCanal importador = mock(ImportadorCanal.class);
+        List<VarianteCanalImportada> variantes = List.of(
+                new VarianteCanalImportada("101", "ASIC-40", "40 AR", "40 AR", "", 0,
+                        BigDecimal.TEN, null, null, null, Map.of("SIZE", "40 AR"), null, false),
+                new VarianteCanalImportada("102", "ASIC-41", "41 AR", "41 AR", "", 0,
+                        BigDecimal.TEN, null, null, null, Map.of("SIZE", "41 AR"), null, false));
+        when(importador.canal()).thenReturn(CanalVenta.MERCADO_LIBRE);
+        when(importador.configurado()).thenReturn(true);
+        when(importador.obtenerProductos()).thenReturn(List.of(new ProductoCanalImportado(
+                "MLA1", "ASIC-001", "Zapatilla Asics", 6, BigDecimal.TEN,
+                null, "MLA109027", Map.of(), variantes)));
+
+        ImportacionCanalService service = new ImportacionCanalService(
+                productos, productoService, publicaciones, List.of(importador), variantesRepo,
+                variantesService, new com.fasterxml.jackson.databind.ObjectMapper());
+
+        ResultadoImportacionCanal resultado = service.importar(CanalVenta.MERCADO_LIBRE);
+
+        assertEquals(0, resultado.getCreados());
+        assertEquals(0, resultado.getActualizados());
+        assertTrue(resultado.getErrores().get(0).contains("no para sus presentaciones"));
+        verifyNoInteractions(productoService, variantesService);
+    }
+
     @Test
     void actualizaPorIdExternoSinCrearOtroProducto() {
         ProductoRepository productos = mock(ProductoRepository.class);
