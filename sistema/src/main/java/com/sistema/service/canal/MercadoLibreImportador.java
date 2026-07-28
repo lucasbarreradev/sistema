@@ -7,6 +7,7 @@ import com.sistema.dto.ProductoCanalImportado;
 import com.sistema.dto.VarianteCanalImportada;
 import com.sistema.model.CanalVenta;
 import com.sistema.service.MercadoLibreTokenService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -26,6 +27,7 @@ public class MercadoLibreImportador implements ImportadorCanal {
     private final Object bloqueoConsultasStock = new Object();
     private long proximaConsultaStockNanos;
 
+    @Autowired
     public MercadoLibreImportador(MercadoLibreTokenService tokenService, ObjectMapper objectMapper) {
         this(tokenService, objectMapper, RestClient.create());
     }
