@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -57,6 +58,28 @@ class WooCommercePublicadorTest {
                 .allMatch(a -> Boolean.TRUE.equals(a.get("variation"))));
         assertFalse(atributos.stream().filter(a -> "Marca".equals(a.get("name")) || "Modelo".equals(a.get("name")))
                 .anyMatch(a -> Boolean.TRUE.equals(a.get("variation"))));
+    }
+
+    @Test
+    void noConvierteCaracteristicasDeFamiliaEnSelectoresAunqueCambien() {
+        ProductoVariante talle35 = variante(
+                "{\"SIZE\":\"35 AR\",\"FILTRABLE_SIZE\":\"35\","
+                        + "\"INSOLES_MATERIALS\":\"Espuma\","
+                        + "\"SUITABLE_SURFACES\":\"Césped,Tierra\"}");
+        ProductoVariante talle38 = variante(
+                "{\"SIZE\":\"38 AR\",\"FILTRABLE_SIZE\":\"38\","
+                        + "\"INSOLES_MATERIALS\":\"Tela\","
+                        + "\"SUITABLE_SURFACES\":\"Barro\"}");
+
+        List<Map<String, Object>> atributos =
+                publicador.atributosWoo(List.of(talle35, talle38), Set.of("SIZE", "COLOR"));
+
+        assertTrue(atributos.stream().filter(a -> "Talle".equals(a.get("name")))
+                .allMatch(a -> Boolean.TRUE.equals(a.get("variation"))));
+        assertTrue(atributos.stream()
+                .filter(a -> "Insoles materials".equals(a.get("name"))
+                        || "Suitable surfaces".equals(a.get("name")))
+                .noneMatch(a -> Boolean.TRUE.equals(a.get("variation"))));
     }
 
     @Test

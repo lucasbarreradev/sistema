@@ -9,7 +9,14 @@ public record AtributoVarianteMl(
         List<String> valores,
         List<String> unidades,
         String unidadPredeterminada,
-        boolean obligatorio) {
+        boolean obligatorio,
+        boolean permiteVariar) {
+    public AtributoVarianteMl(
+            String id, String nombre, String tipo, List<String> valores,
+            List<String> unidades, String unidadPredeterminada, boolean obligatorio) {
+        this(id, nombre, tipo, valores, unidades, unidadPredeterminada, obligatorio, true);
+    }
+
     public String getId() { return id; }
     public String getNombre() { return nombre; }
     public String getTipo() { return tipo; }
@@ -17,4 +24,5 @@ public record AtributoVarianteMl(
     public List<String> getUnidades() { return unidades; }
     public String getUnidadPredeterminada() { return unidadPredeterminada; }
     public boolean isObligatorio() { return obligatorio; }
+    public boolean isPermiteVariar() { return permiteVariar; }
 }

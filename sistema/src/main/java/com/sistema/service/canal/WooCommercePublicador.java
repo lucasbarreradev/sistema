@@ -47,6 +47,7 @@ public class WooCommercePublicador implements PublicadorCanal {
     private final WooCommerceCredencialesService credenciales;
     private final MercadoLibreAtributosVarianteService atributosMercadoLibre;
     private final Map<String, Map<String, String>> nombresAtributosPorCategoria = new ConcurrentHashMap<>();
+    private final Map<String, Set<String>> atributosVariablesPorCategoria = new ConcurrentHashMap<>();
     @Value("${integraciones.public-base-url:}") private String publicBaseUrl;
 
     @Autowired
@@ -89,6 +90,8 @@ public class WooCommercePublicador implements PublicadorCanal {
         ProductoVariante presentacionSimple = variantes.size() == 1 ? variantes.get(0) : null;
         validarSkuNoUsadoPorOtraVariante(p, presentacionSimple);
         Map<String, String> nombresAtributos = new LinkedHashMap<>(nombresAtributos(p));
+        Set<String> idsAtributosVariacion = idsAtributosVariacion(
+                variantes, atributosVariablesPermitidos(p));
         Map<String, String> atributosGenerales = atributosGenerales(p, nombresAtributos);
         body.put("name", p.getDescripcion());
         body.put("type", variable ? "variable" : "simple");
@@ -99,7 +102,8 @@ public class WooCommercePublicador implements PublicadorCanal {
         String resumen = resumenCaracteristicas(atributosGenerales, nombresAtributos);
         if (!resumen.isBlank()) body.put("short_description", resumen);
         List<Map<String, Object>> atributosProducto =
-                atributosWoo(atributosGenerales, variantes, nombresAtributos);
+                atributosWoo(atributosGenerales, variantes, nombresAtributos,
+                        idsAtributosVariacion);
         if (!atributosProducto.isEmpty()) body.put("attributes", atributosProducto);
         if (variable) {
             int stockTotal = variantes.stream().mapToInt(this::stock).sum();
@@ -130,7 +134,7 @@ public class WooCommercePublicador implements PublicadorCanal {
             response = enviarProducto(body, idProducto, c);
         }
         idProducto = response == null ? idProducto : response.path("id").asText(idProducto);
-        if (variable) publicarVariantes(idProducto, variantes, idsAtributosVariacion(variantes),
+        if (variable) publicarVariantes(idProducto, variantes, idsAtributosVariacion,
                 nombresAtributos, c);
         return new ResultadoPublicacion(idProducto);
     }
@@ -196,17 +200,24 @@ public class WooCommercePublicador implements PublicadorCanal {
     }
 
     List<Map<String, Object>> atributosWoo(List<ProductoVariante> variantes) {
-        return atributosWoo(Map.of(), variantes, Map.of());
+        return atributosWoo(Map.of(), variantes, Map.of(), idsAtributosVariacion(variantes));
+    }
+
+    List<Map<String, Object>> atributosWoo(
+            List<ProductoVariante> variantes, Set<String> permitidos) {
+        return atributosWoo(
+                Map.of(), variantes, Map.of(),
+                idsAtributosVariacion(variantes, permitidos));
     }
 
     private List<Map<String, Object>> atributosWoo(Map<String, String> atributosGenerales,
                                                    List<ProductoVariante> variantes,
-                                                   Map<String, String> nombresAtributos) {
+                                                   Map<String, String> nombresAtributos,
+                                                   Set<String> atributosDeVariacion) {
         List<Map<String, Object>> atributos = new ArrayList<>();
         Map<String, LinkedHashSet<String>> opciones = opcionesAtributos(variantes);
         atributosGenerales.forEach((id, valor) ->
                 opciones.computeIfAbsent(id, ignorado -> new LinkedHashSet<>()).add(valor));
-        Set<String> atributosDeVariacion = idsAtributosVariacion(variantes);
         opciones.forEach((id, valores) -> atributos.add(Map.of("name", nombreAtributo(id, nombresAtributos),
                 "visible", true, "variation", atributosDeVariacion.contains(id),
                 "options", new ArrayList<>(valores))));
@@ -299,6 +310,13 @@ public class WooCommercePublicador implements PublicadorCanal {
         opcionesAtributos(variantes).forEach((id, valores) -> {
             if (valores.size() > 1) ids.add(id);
         });
+        return ids;
+    }
+
+    private Set<String> idsAtributosVariacion(
+            List<ProductoVariante> variantes, Set<String> permitidos) {
+        Set<String> ids = idsAtributosVariacion(variantes);
+        if (permitidos != null && !permitidos.isEmpty()) ids.retainAll(permitidos);
         return ids;
     }
 
@@ -440,7 +458,9 @@ public class WooCommercePublicador implements PublicadorCanal {
         Map<String, String> guardados = nombresAtributosPorCategoria.get(categoria);
         if (guardados != null) return guardados;
         try {
-            Map<String, String> nombres = atributosMercadoLibre.obtener(producto).atributos().stream()
+            List<com.sistema.dto.AtributoVarianteMl> metadata =
+                    atributosMercadoLibre.obtener(producto).atributos();
+            Map<String, String> nombres = metadata.stream()
                     .filter(atributo -> atributo.id() != null && atributo.nombre() != null
                             && !atributo.id().isBlank() && !atributo.nombre().isBlank())
                     .collect(Collectors.toMap(
@@ -448,7 +468,13 @@ public class WooCommercePublicador implements PublicadorCanal {
                             atributo -> atributo.nombre().trim(),
                             (primero, ignorado) -> primero,
                             LinkedHashMap::new));
+            Set<String> variables = metadata.stream()
+                    .filter(com.sistema.dto.AtributoVarianteMl::permiteVariar)
+                    .map(atributo -> atributo.id().toUpperCase(Locale.ROOT))
+                    .map(id -> ALIAS_ATRIBUTOS_WOO.getOrDefault(id, id))
+                    .collect(Collectors.toCollection(LinkedHashSet::new));
             if (!nombres.isEmpty()) nombresAtributosPorCategoria.put(categoria, Map.copyOf(nombres));
+            atributosVariablesPorCategoria.put(categoria, Set.copyOf(variables));
             return nombres;
         } catch (RuntimeException ignored) {
             // WooCommerce puede seguir publicando con las traducciones locales de respaldo.
@@ -514,6 +540,13 @@ public class WooCommercePublicador implements PublicadorCanal {
             Thread.currentThread().interrupt();
             throw new IllegalStateException("La publicación fue interrumpida mientras reintentaba comunicarse con WooCommerce", e);
         }
+    }
+
+    private Set<String> atributosVariablesPermitidos(Producto producto) {
+        String categoria = producto.getMercadoLibreCategoriaId();
+        if (categoria == null || categoria.isBlank() || atributosMercadoLibre == null) return Set.of();
+        if (!atributosVariablesPorCategoria.containsKey(categoria)) nombresAtributos(producto);
+        return atributosVariablesPorCategoria.getOrDefault(categoria, Set.of());
     }
 
     private static RestClient crearRestClient() {

@@ -62,7 +62,8 @@ public class MercadoLibreAtributosVarianteService {
                         valores,
                         unidades,
                         atributo.path("default_unit").asText(""),
-                        obligatorio));
+                        obligatorio,
+                        permiteVariar));
             }
         }
         return new Resultado(categoria, atributos);
