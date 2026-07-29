@@ -562,10 +562,15 @@ public class WooCommercePublicador implements PublicadorCanal {
     }
 
     private void agregarImagen(Map<String, Object> body, Producto p, ProductoVariante presentacionSimple) {
-        String src = presentacionSimple == null
+        LinkedHashSet<String> urls = new LinkedHashSet<>();
+        String principal = presentacionSimple == null
                 ? FotoCanalHelper.resolverUrlWooCommerce(p, publicBaseUrl)
                 : FotoCanalHelper.resolverUrlWooCommerce(presentacionSimple, publicBaseUrl);
-        if (src != null && !src.isBlank()) body.put("images", List.of(Map.of("src", src)));
+        if (principal != null && !principal.isBlank()) urls.add(principal);
+        urls.addAll(FotoCanalHelper.resolverUrlsAdicionalesWooCommerce(p, publicBaseUrl));
+        if (!urls.isEmpty()) {
+            body.put("images", urls.stream().map(url -> Map.of("src", url)).toList());
+        }
     }
     private String precio(Producto p) { return Optional.ofNullable(p.getPrecioContado()).orElseThrow(() -> new IllegalArgumentException("El producto no tiene precio de contado")).toPlainString(); }
     private String precio(ProductoVariante v) { return Optional.ofNullable(v.getPrecioContado()).orElse(v.getProducto().getPrecioContado()).toPlainString(); }

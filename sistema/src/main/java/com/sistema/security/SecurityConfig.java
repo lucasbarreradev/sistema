@@ -34,6 +34,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/webhooks/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/canales/woocommerce/callback").permitAll()
                 .requestMatchers(HttpMethod.GET, "/productos/*/foto", "/productos/*/foto/*").permitAll()
+                .requestMatchers(HttpMethod.GET, "/productos/*/fotos/*/*").permitAll()
                 .requestMatchers(HttpMethod.GET, "/productos/*/variantes/*/foto", "/productos/*/variantes/*/foto/*").permitAll()
 
                 //Roles

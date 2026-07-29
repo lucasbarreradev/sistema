@@ -9,6 +9,7 @@ import com.sistema.service.ProveedorService;
 import com.sistema.service.MercadoLibreAtributosProductoService;
 import com.sistema.service.TenantPublicResourceService;
 import com.sistema.service.ImagenWooCommerceService;
+import com.sistema.service.canal.FotoCanalHelper;
 import com.sistema.tenant.TenantContext;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -279,6 +280,32 @@ public class ProductoController {
                     .orElseGet(() -> ResponseEntity.notFound().build());
         }
         return cargarFoto(id, nombre);
+    }
+
+    @GetMapping("/{id}/fotos/{indice}/woocommerce.jpg")
+    @ResponseBody
+    public ResponseEntity<?> fotoAdicionalWooCommerce(
+            @PathVariable Long id, @PathVariable int indice) {
+        if (TenantContext.get() == null) {
+            return tenantPublicResourceService.buscarTenantProducto(id)
+                    .map(tenantId -> TenantContext.call(
+                            tenantId, () -> cargarFotoAdicionalWooCommerce(id, indice)))
+                    .orElseGet(() -> ResponseEntity.notFound().build());
+        }
+        return cargarFotoAdicionalWooCommerce(id, indice);
+    }
+
+    private ResponseEntity<?> cargarFotoAdicionalWooCommerce(Long id, int indice) {
+        Producto producto = productoService.getProductoById(id).orElse(null);
+        if (producto == null) return ResponseEntity.notFound().build();
+        List<String> urls = FotoCanalHelper.urlsAdicionales(producto);
+        if (indice < 0 || indice >= urls.size()) return ResponseEntity.notFound().build();
+        String url = urls.get(indice);
+        try {
+            return fotoWooCommerce(imagenWooCommerceService.normalizarDesdeUrl(url));
+        } catch (Exception ignored) {
+            return ResponseEntity.status(302).location(URI.create(url)).build();
+        }
     }
 
     private ResponseEntity<?> cargarFoto(Long id, String nombre) {

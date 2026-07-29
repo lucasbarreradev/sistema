@@ -201,6 +201,47 @@ class WooCommercePublicadorTest {
     }
 
     @Test
+    void enviaLaFotoPrincipalYLaGaleriaCompletaAWooCommerce() {
+        ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
+        WooCommerceCredencialesService credenciales = mock(WooCommerceCredencialesService.class);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        WooCommercePublicador publicador =
+                new WooCommercePublicador(variantes, credenciales, builder.build());
+        Producto producto = new Producto();
+        producto.setId(10L);
+        producto.setSku("ZAPA-001");
+        producto.setDescripcion("Zapatilla");
+        producto.setCantidad(3);
+        producto.setPrecioContado(new BigDecimal("150000"));
+        producto.setFotoUrlExterna("https://img.test/principal.jpg");
+        producto.setFotosUrlsExternas("""
+                https://img.test/dorso.webp
+                https://img.test/detalle.jpg
+                """);
+        when(variantes.findByProductoIdOrderByNombreAsc(10L)).thenReturn(List.of());
+        when(credenciales.configurado()).thenReturn(true);
+        when(credenciales.obtener()).thenReturn(
+                new WooCommerceCredencialesService.Credenciales(
+                        "https://woo.test", "ck_test", "cs_test"));
+
+        servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/500"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"src\":\"https://img.test/principal.jpg\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"src\":\"https://img.test/dorso.webp\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"src\":\"https://img.test/detalle.jpg\"")))
+                .andRespond(withSuccess("{\"id\":500}", MediaType.APPLICATION_JSON));
+
+        ResultadoPublicacion resultado = publicador.publicar(producto, "500");
+
+        assertEquals("500", resultado.idExterno());
+        servidor.verify();
+    }
+
+    @Test
     void reintentaUnaActualizacionCuandoWooCommerceCierraLaConexionSinResponder() {
         ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
         WooCommerceCredencialesService credenciales = mock(WooCommerceCredencialesService.class);
