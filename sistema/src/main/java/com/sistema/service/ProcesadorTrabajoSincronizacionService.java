@@ -2,6 +2,7 @@ package com.sistema.service;
 
 import com.sistema.dto.ResultadoImportacionCanal;
 import com.sistema.dto.ResultadoPublicacionLote;
+import com.sistema.dto.ProductoCanalImportado;
 import com.sistema.model.CanalVenta;
 import com.sistema.model.EstadoTrabajoSincronizacion;
 import com.sistema.model.TrabajoSincronizacion;
@@ -23,13 +24,19 @@ public class ProcesadorTrabajoSincronizacionService {
     private final TrabajoSincronizacionRepository repository;
     private final SincronizacionCanalesService sincronizacionCanalesService;
     private final PublicacionService publicacionService;
+    private final ImportacionCanalService importacionCanalService;
+    private final CatalogoImportacionService catalogoImportacionService;
 
     public ProcesadorTrabajoSincronizacionService(TrabajoSincronizacionRepository repository,
                                                   SincronizacionCanalesService sincronizacionCanalesService,
-                                                  PublicacionService publicacionService) {
+                                                  PublicacionService publicacionService,
+                                                  ImportacionCanalService importacionCanalService,
+                                                  CatalogoImportacionService catalogoImportacionService) {
         this.repository = repository;
         this.sincronizacionCanalesService = sincronizacionCanalesService;
         this.publicacionService = publicacionService;
+        this.importacionCanalService = importacionCanalService;
+        this.catalogoImportacionService = catalogoImportacionService;
     }
 
     @Async("sincronizacionTaskExecutor")
@@ -64,6 +71,47 @@ public class ProcesadorTrabajoSincronizacionService {
             } catch (Exception errorGuardando) {
                 log.error("No se pudo guardar el error del trabajo de publicación {}", trabajoId, errorGuardando);
             }
+        }
+    }
+
+    @Async("sincronizacionTaskExecutor")
+    public void ejecutarImportacionCompleta(Long trabajoId, long tenantId, CanalVenta canal) {
+        try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
+            actualizarAProcesando(trabajoId,
+                    "Trayendo todos los productos desde " + canal.getDescripcion() + "...");
+            List<ProductoCanalImportado> productos = importacionCanalService.obtenerProductos(canal);
+            catalogoImportacionService.guardar(canal, productos);
+            ResultadoImportacionCanal resultado = importacionCanalService.importar(canal, productos);
+            guardarResultadoImportacion(trabajoId, resultado);
+        } catch (Exception e) {
+            registrarFallo(trabajoId, tenantId, "importación completa", e);
+        }
+    }
+
+    @Async("sincronizacionTaskExecutor")
+    public void ejecutarPreparacionImportacion(Long trabajoId, long tenantId, CanalVenta canal) {
+        try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
+            actualizarAProcesando(trabajoId,
+                    "Preparando el catálogo de " + canal.getDescripcion() + "...");
+            List<ProductoCanalImportado> productos = importacionCanalService.obtenerProductos(canal);
+            catalogoImportacionService.guardar(canal, productos);
+            guardarCatalogoPreparado(trabajoId, productos.size());
+        } catch (Exception e) {
+            registrarFallo(trabajoId, tenantId, "preparación de catálogo", e);
+        }
+    }
+
+    @Async("sincronizacionTaskExecutor")
+    public void ejecutarImportacionSeleccionada(Long trabajoId, long tenantId, CanalVenta canal,
+                                                List<ProductoCanalImportado> productos) {
+        try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
+            actualizarAProcesando(trabajoId,
+                    "Importando " + productos.size() + " producto(s) desde "
+                            + canal.getDescripcion() + "...");
+            ResultadoImportacionCanal resultado = importacionCanalService.importar(canal, productos);
+            guardarResultadoImportacion(trabajoId, resultado);
+        } catch (Exception e) {
+            registrarFallo(trabajoId, tenantId, "importación seleccionada", e);
         }
     }
 
@@ -108,6 +156,36 @@ public class ProcesadorTrabajoSincronizacionService {
                 ? EstadoTrabajoSincronizacion.COMPLETADA
                 : EstadoTrabajoSincronizacion.COMPLETADA_CON_ERRORES);
         repository.save(trabajo);
+    }
+
+    private void guardarResultadoImportacion(Long trabajoId, ResultadoImportacionCanal resultado) {
+        TrabajoSincronizacion trabajo = buscar(trabajoId);
+        trabajo.setFinalizadoEn(LocalDateTime.now());
+        trabajo.setResumen("Importación: " + resultado.resumen() + ".");
+        trabajo.setDetalle(resultado.getErrores().isEmpty()
+                ? null : String.join("\n", resultado.getErrores()));
+        trabajo.setEstado(resultado.getErrores().isEmpty()
+                ? EstadoTrabajoSincronizacion.COMPLETADA
+                : EstadoTrabajoSincronizacion.COMPLETADA_CON_ERRORES);
+        repository.save(trabajo);
+    }
+
+    private void guardarCatalogoPreparado(Long trabajoId, int cantidad) {
+        TrabajoSincronizacion trabajo = buscar(trabajoId);
+        trabajo.setFinalizadoEn(LocalDateTime.now());
+        trabajo.setResumen(cantidad + " producto(s) listos para seleccionar.");
+        trabajo.setDetalle(null);
+        trabajo.setEstado(EstadoTrabajoSincronizacion.COMPLETADA);
+        repository.save(trabajo);
+    }
+
+    private void registrarFallo(Long trabajoId, long tenantId, String operacion, Exception error) {
+        log.error("Falló el trabajo de {} {} del tenant {}", operacion, trabajoId, tenantId, error);
+        try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
+            guardarError(trabajoId, mensajeExcepcion(error));
+        } catch (Exception errorGuardando) {
+            log.error("No se pudo guardar el error del trabajo {}", trabajoId, errorGuardando);
+        }
     }
 
     private void guardarError(Long trabajoId, String mensaje) {

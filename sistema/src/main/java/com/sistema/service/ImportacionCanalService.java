@@ -58,10 +58,19 @@ public class ImportacionCanalService {
     }
 
     public ResultadoImportacionCanal importar(CanalVenta canal) {
-        ImportadorCanal importador = importadores.get(canal);
-        if (importador == null || !importador.configurado()) throw new IllegalStateException(canal.getDescripcion() + " no está configurado");
+        return importar(canal, obtenerProductos(canal));
+    }
+
+    public List<ProductoCanalImportado> obtenerProductos(CanalVenta canal) {
+        return importadorConfigurado(canal).obtenerProductos();
+    }
+
+    public ResultadoImportacionCanal importar(CanalVenta canal,
+                                              Collection<ProductoCanalImportado> productos) {
+        importadorConfigurado(canal);
         ResultadoImportacionCanal resultado = new ResultadoImportacionCanal();
-        for (ProductoCanalImportado dato : importador.obtenerProductos()) {
+        if (productos == null) return resultado;
+        for (ProductoCanalImportado dato : productos) {
             try { guardar(canal, dato, resultado); }
             catch (Exception e) {
                 String referencia = dato.sku() == null || dato.sku().isBlank() ? dato.idExterno() : dato.sku();
@@ -69,6 +78,15 @@ public class ImportacionCanalService {
             }
         }
         return resultado;
+    }
+
+    private ImportadorCanal importadorConfigurado(CanalVenta canal) {
+        if (canal == null) throw new IllegalArgumentException("Falta el canal de origen");
+        ImportadorCanal importador = importadores.get(canal);
+        if (importador == null || !importador.configurado()) {
+            throw new IllegalStateException(canal.getDescripcion() + " no está configurado");
+        }
+        return importador;
     }
 
     private void guardar(CanalVenta canal, ProductoCanalImportado dato, ResultadoImportacionCanal resultado) {

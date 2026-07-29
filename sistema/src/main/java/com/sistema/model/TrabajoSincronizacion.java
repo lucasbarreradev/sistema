@@ -67,6 +67,11 @@ public class TrabajoSincronizacion extends TenantAwareEntity {
         if (tipoTrabajo == TipoTrabajoSincronizacion.PUBLICACION_SELECCIONADA) {
             return "Sistema \u2192 " + getDestinosDescripcion();
         }
+        if (tipoTrabajo == TipoTrabajoSincronizacion.IMPORTACION_COMPLETA
+                || tipoTrabajo == TipoTrabajoSincronizacion.PREPARACION_IMPORTACION
+                || tipoTrabajo == TipoTrabajoSincronizacion.IMPORTACION_SELECCIONADA) {
+            return getOrigenDescripcion() + " \u2192 Sistema";
+        }
         return getOrigenDescripcion() + " \u2192 " + getDestinosDescripcion();
     }
 

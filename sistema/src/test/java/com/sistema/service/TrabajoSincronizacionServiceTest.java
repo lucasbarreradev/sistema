@@ -93,4 +93,29 @@ class TrabajoSincronizacionServiceTest {
         verify(procesador).ejecutarPublicacion(
                 31L, 8L, List.of(4L, 5L), List.of(CanalVenta.WOOCOMMERCE));
     }
+
+    @Test
+    void creaImportacionCompletaEnSegundoPlano() {
+        TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
+        ProcesadorTrabajoSincronizacionService procesador = mock(ProcesadorTrabajoSincronizacionService.class);
+        when(repository.findByEstadoIn(anyCollection())).thenReturn(List.of());
+        when(repository.existsByEstadoIn(anyCollection())).thenReturn(false);
+        when(repository.save(any(TrabajoSincronizacion.class))).thenAnswer(invocacion -> {
+            TrabajoSincronizacion trabajo = invocacion.getArgument(0);
+            trabajo.setId(44L);
+            return trabajo;
+        });
+        TrabajoSincronizacionService service = new TrabajoSincronizacionService(repository, procesador);
+
+        TrabajoSincronizacion trabajo;
+        try (TenantContext.Scope ignored = TenantContext.use(8L)) {
+            trabajo = service.iniciarImportacionCompleta(CanalVenta.MERCADO_LIBRE);
+        }
+
+        assertEquals(TipoTrabajoSincronizacion.IMPORTACION_COMPLETA, trabajo.getTipoTrabajo());
+        assertEquals("Mercado Libre → Sistema", trabajo.getFlujoDescripcion());
+        assertEquals(EstadoTrabajoSincronizacion.PENDIENTE, trabajo.getEstado());
+        verify(procesador).ejecutarImportacionCompleta(
+                44L, 8L, CanalVenta.MERCADO_LIBRE);
+    }
 }

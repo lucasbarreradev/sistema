@@ -1,13 +1,13 @@
 package com.sistema.controller;
 
 import com.sistema.dto.ResultadoImportacion;
-import com.sistema.dto.ResultadoImportacionCanal;
 import com.sistema.model.CanalVenta;
 import com.sistema.service.ImportacionCsvService;
 import com.sistema.service.ProductoService;
 import com.sistema.service.PublicacionService;
 import com.sistema.service.ImportacionCanalService;
 import com.sistema.service.TrabajoSincronizacionService;
+import com.sistema.service.CatalogoImportacionService;
 import com.sistema.service.MercadoLibreTokenService;
 import com.sistema.service.TiendanubeCredencialesService;
 import com.sistema.service.WooCommerceCredencialesService;
@@ -28,6 +28,7 @@ public class CanalesController {
     private final PublicacionService publicacionService;
     private final ImportacionCanalService importacionCanalService;
     private final TrabajoSincronizacionService trabajoSincronizacionService;
+    private final CatalogoImportacionService catalogoImportacionService;
     private final MercadoLibreTokenService mercadoLibreTokenService;
     private final WooCommerceCredencialesService wooCommerceCredencialesService;
     private final TiendanubeCredencialesService tiendanubeCredencialesService;
@@ -37,6 +38,7 @@ public class CanalesController {
     public CanalesController(ProductoService productoService, ImportacionCsvService importacionCsvService,
                              PublicacionService publicacionService, ImportacionCanalService importacionCanalService,
                              TrabajoSincronizacionService trabajoSincronizacionService,
+                             CatalogoImportacionService catalogoImportacionService,
                              MercadoLibreTokenService mercadoLibreTokenService,
                              WooCommerceCredencialesService wooCommerceCredencialesService,
                              TiendanubeCredencialesService tiendanubeCredencialesService,
@@ -47,6 +49,7 @@ public class CanalesController {
         this.publicacionService = publicacionService;
         this.importacionCanalService = importacionCanalService;
         this.trabajoSincronizacionService = trabajoSincronizacionService;
+        this.catalogoImportacionService = catalogoImportacionService;
         this.mercadoLibreTokenService = mercadoLibreTokenService;
         this.wooCommerceCredencialesService = wooCommerceCredencialesService;
         this.tiendanubeCredencialesService = tiendanubeCredencialesService;
@@ -61,6 +64,9 @@ public class CanalesController {
         model.addAttribute("configuracion", publicacionService.estadoConfiguracion());
         model.addAttribute("configuracionImportacion", java.util.Arrays.stream(CanalVenta.values())
                 .collect(java.util.stream.Collectors.toMap(c -> c, importacionCanalService::configurado)));
+        model.addAttribute("catalogosImportacion", java.util.Arrays.stream(CanalVenta.values())
+                .collect(java.util.stream.Collectors.toMap(
+                        canal -> canal, catalogoImportacionService::disponible)));
         model.addAttribute("publicaciones", publicacionService.historial());
         model.addAttribute("trabajosSincronizacion", trabajoSincronizacionService.ultimos());
         model.addAttribute("sincronizacionActiva", trabajoSincronizacionService.hayTrabajoActivo());
@@ -83,9 +89,51 @@ public class CanalesController {
     @PostMapping("/importar/{canal}")
     public String importarCanal(@PathVariable CanalVenta canal, RedirectAttributes ra) {
         try {
-            ResultadoImportacionCanal resultado = importacionCanalService.importar(canal);
-            ra.addFlashAttribute("mensaje", canal.getDescripcion() + " → sistema: " + resultado.resumen());
-            if (!resultado.getErrores().isEmpty()) ra.addFlashAttribute("erroresImportacion", resultado.getErrores());
+            var trabajo = trabajoSincronizacionService.iniciarImportacionCompleta(canal);
+            ra.addFlashAttribute("mensaje", "Importación completa iniciada en segundo plano (trabajo #"
+                    + trabajo.getId() + "). Puede salir de esta página sin interrumpirla.");
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/canales";
+    }
+
+    @PostMapping("/importar/{canal}/preparar")
+    public String prepararSeleccionImportacion(@PathVariable CanalVenta canal,
+                                               RedirectAttributes ra) {
+        try {
+            var trabajo = trabajoSincronizacionService.iniciarPreparacionImportacion(canal);
+            ra.addFlashAttribute("mensaje", "Actualización de la lista iniciada en segundo plano (trabajo #"
+                    + trabajo.getId() + "). Puede seguir usando la lista que ya estaba guardada.");
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/canales";
+    }
+
+    @GetMapping("/importar/{canal}/seleccionar")
+    public String seleccionarImportacion(@PathVariable CanalVenta canal, Model model,
+                                         RedirectAttributes ra) {
+        try {
+            model.addAttribute("canal", canal);
+            model.addAttribute("productosRemotos", catalogoImportacionService.listar(canal));
+            return "canales/seleccionar_importacion";
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", e.getMessage());
+            return "redirect:/canales";
+        }
+    }
+
+    @PostMapping("/importar/{canal}/seleccionados")
+    public String importarSeleccionados(@PathVariable CanalVenta canal,
+                                        @RequestParam(required = false) List<String> idsExternos,
+                                        RedirectAttributes ra) {
+        try {
+            var seleccionados = catalogoImportacionService.seleccionar(canal, idsExternos);
+            var trabajo = trabajoSincronizacionService
+                    .iniciarImportacionSeleccionada(canal, seleccionados);
+            ra.addFlashAttribute("mensaje", "Importación de " + seleccionados.size()
+                    + " producto(s) iniciada en segundo plano (trabajo #" + trabajo.getId() + ").");
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
         }

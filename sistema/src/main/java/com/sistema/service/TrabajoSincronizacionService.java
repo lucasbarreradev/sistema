@@ -1,5 +1,6 @@
 package com.sistema.service;
 
+import com.sistema.dto.ProductoCanalImportado;
 import com.sistema.model.CanalVenta;
 import com.sistema.model.EstadoTrabajoSincronizacion;
 import com.sistema.model.TipoTrabajoSincronizacion;
@@ -91,6 +92,43 @@ public class TrabajoSincronizacionService {
         return trabajo;
     }
 
+    public TrabajoSincronizacion iniciarImportacionCompleta(CanalVenta canal) {
+        TrabajoSincronizacion trabajo = crearTrabajoImportacion(
+                canal, TipoTrabajoSincronizacion.IMPORTACION_COMPLETA,
+                "Esperando para traer todos los productos...");
+        procesador.ejecutarImportacionCompleta(
+                trabajo.getId(), trabajo.getTenantId(), canal);
+        return trabajo;
+    }
+
+    public TrabajoSincronizacion iniciarPreparacionImportacion(CanalVenta canal) {
+        TrabajoSincronizacion trabajo = crearTrabajoImportacion(
+                canal, TipoTrabajoSincronizacion.PREPARACION_IMPORTACION,
+                "Esperando para actualizar la lista de productos...");
+        procesador.ejecutarPreparacionImportacion(
+                trabajo.getId(), trabajo.getTenantId(), canal);
+        return trabajo;
+    }
+
+    public TrabajoSincronizacion iniciarImportacionSeleccionada(
+            CanalVenta canal, Collection<ProductoCanalImportado> productos) {
+        if (productos == null || productos.isEmpty()) {
+            throw new IllegalArgumentException("Seleccione al menos un producto para importar");
+        }
+        List<ProductoCanalImportado> seleccionados = productos.stream()
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (seleccionados.isEmpty()) {
+            throw new IllegalArgumentException("Seleccione al menos un producto para importar");
+        }
+        TrabajoSincronizacion trabajo = crearTrabajoImportacion(
+                canal, TipoTrabajoSincronizacion.IMPORTACION_SELECCIONADA,
+                "Esperando para importar " + seleccionados.size() + " producto(s)...");
+        procesador.ejecutarImportacionSeleccionada(
+                trabajo.getId(), trabajo.getTenantId(), canal, List.copyOf(seleccionados));
+        return trabajo;
+    }
+
     public List<TrabajoSincronizacion> ultimos() {
         cerrarTrabajosInterrumpidos();
         return repository.findTop10ByOrderByCreadoEnDesc();
@@ -106,6 +144,21 @@ public class TrabajoSincronizacionService {
         if (repository.existsByEstadoIn(ESTADOS_ACTIVOS)) {
             throw new IllegalStateException("Ya hay un trabajo en proceso para este negocio");
         }
+    }
+
+    private TrabajoSincronizacion crearTrabajoImportacion(
+            CanalVenta canal, TipoTrabajoSincronizacion tipo, String resumen) {
+        if (canal == null) throw new IllegalArgumentException("Seleccione un canal de origen");
+        verificarDisponibilidad();
+        TrabajoSincronizacion trabajo = new TrabajoSincronizacion();
+        trabajo.setTenantId(TenantContext.require());
+        trabajo.setOrigen(canal);
+        trabajo.setTipoTrabajo(tipo);
+        trabajo.setDestinos("SISTEMA");
+        trabajo.setEstado(EstadoTrabajoSincronizacion.PENDIENTE);
+        trabajo.setCreadoEn(LocalDateTime.now());
+        trabajo.setResumen(resumen);
+        return repository.save(trabajo);
     }
 
     private void cerrarTrabajosInterrumpidos() {

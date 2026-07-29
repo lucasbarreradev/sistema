@@ -20,6 +20,13 @@ public class MigracionEsquemaService implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         migrarTenants();
+        if (tipoColumna("trabajo_sincronizacion", "tipo_trabajo")
+                .map(tipo -> tipo.startsWith("enum(")).orElse(false)) {
+            jdbcTemplate.execute("""
+                    ALTER TABLE trabajo_sincronizacion
+                    MODIFY COLUMN tipo_trabajo VARCHAR(40) NULL
+                    """);
+        }
         List<String> tipos = jdbcTemplate.queryForList("""
                 SELECT COLUMN_TYPE
                 FROM information_schema.COLUMNS

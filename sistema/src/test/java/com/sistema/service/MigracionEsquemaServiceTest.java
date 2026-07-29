@@ -35,4 +35,28 @@ class MigracionEsquemaServiceTest {
 
         verify(jdbc, never()).execute("ALTER TABLE publicacion_canal MODIFY COLUMN estado VARCHAR(30) NOT NULL");
     }
+
+    @Test
+    void convierteElTipoDeTrabajoEnumParaAceptarNuevosFlujos() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForList(anyString(), eq(String.class))).thenReturn(List.of("varchar(30)"));
+        when(jdbc.queryForList(anyString(), eq(String.class), any(), any()))
+                .thenAnswer(invocacion -> {
+                    String tabla = invocacion.getArgument(2);
+                    String columna = invocacion.getArgument(3);
+                    if ("trabajo_sincronizacion".equals(tabla)
+                            && "tipo_trabajo".equals(columna)) {
+                        return List.of("enum('SINCRONIZACION_CANALES','PUBLICACION_SELECCIONADA')");
+                    }
+                    return List.of("varchar(30)");
+                });
+        when(jdbc.queryForObject(anyString(), eq(Integer.class), any(), any())).thenReturn(1);
+
+        new MigracionEsquemaService(jdbc).run(mock(ApplicationArguments.class));
+
+        verify(jdbc).execute("""
+                ALTER TABLE trabajo_sincronizacion
+                MODIFY COLUMN tipo_trabajo VARCHAR(40) NULL
+                """);
+    }
 }

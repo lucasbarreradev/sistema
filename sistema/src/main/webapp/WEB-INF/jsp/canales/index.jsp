@@ -139,13 +139,32 @@
                                                         </div>
                                                     </sec:authorize>
                                                 </c:if>
-                                                <form method="post" class="mt-3" action="${pageContext.request.contextPath}/canales/importar/${canal}">
-                                                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-                                                    <button type="submit" class="btn btn-sm btn-outline-primary"
-                                                            ${configuracionImportacion[canal] ? '' : 'disabled'}>
-                                                        Traer al sistema
-                                                    </button>
-                                                </form>
+                                                <div class="mt-3">
+                                                    <form method="post" class="d-inline" action="${pageContext.request.contextPath}/canales/importar/${canal}">
+                                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary"
+                                                                ${(configuracionImportacion[canal] && !sincronizacionActiva) ? '' : 'disabled'}>
+                                                            Traer todo
+                                                        </button>
+                                                    </form>
+                                                    <c:if test="${catalogosImportacion[canal]}">
+                                                        <a class="btn btn-sm btn-outline-success"
+                                                           href="${pageContext.request.contextPath}/canales/importar/${canal}/seleccionar">
+                                                            Seleccionar productos
+                                                        </a>
+                                                    </c:if>
+                                                    <form method="post" class="d-inline"
+                                                          action="${pageContext.request.contextPath}/canales/importar/${canal}/preparar">
+                                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                                                        <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                                                ${(configuracionImportacion[canal] && !sincronizacionActiva) ? '' : 'disabled'}>
+                                                            ${catalogosImportacion[canal] ? 'Actualizar lista' : 'Cargar lista para seleccionar'}
+                                                        </button>
+                                                    </form>
+                                                    <small class="text-muted d-block mt-2">
+                                                        La lista queda guardada y su actualización continúa en segundo plano.
+                                                    </small>
+                                                </div>
                                             </div>
                                         </div>
                                     </c:forEach>
