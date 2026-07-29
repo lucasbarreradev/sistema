@@ -272,6 +272,71 @@ class WooCommercePublicadorTest {
     }
 
     @Test
+    void recreaUnaVarianteCuandoElIdGuardadoYaNoExisteEnWooCommerce() {
+        ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
+        WooCommerceCredencialesService credenciales = mock(WooCommerceCredencialesService.class);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        WooCommercePublicador publicador =
+                new WooCommercePublicador(variantes, credenciales, builder.build());
+        Producto producto = new Producto();
+        producto.setId(40L);
+        producto.setSku("SALO-001");
+        producto.setDescripcion("Zapatillas Salomon");
+
+        ProductoVariante talle41 = variante("{\"COLOR\":\"Negro\",\"SIZE\":\"41\"}");
+        talle41.setProducto(producto);
+        talle41.setSku("SALO-001-41");
+        talle41.setStock(2);
+        talle41.setPrecioContado(new BigDecimal("200000"));
+        talle41.setWooCommerceVariationId("999");
+        ProductoVariante talle42 = variante("{\"COLOR\":\"Negro\",\"SIZE\":\"42\"}");
+        talle42.setProducto(producto);
+        talle42.setSku("SALO-001-42");
+        talle42.setStock(3);
+        talle42.setPrecioContado(new BigDecimal("200000"));
+        talle42.setWooCommerceVariationId("102");
+
+        when(variantes.findByProductoIdOrderByNombreAsc(40L))
+                .thenReturn(List.of(talle41, talle42));
+        when(credenciales.configurado()).thenReturn(true);
+        when(credenciales.obtener()).thenReturn(
+                new WooCommerceCredencialesService.Credenciales(
+                        "https://woo.test", "ck_test", "cs_test"));
+
+        servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/1147"))
+                .andExpect(method(HttpMethod.PUT))
+                .andRespond(withSuccess("{\"id\":1147}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(
+                        "https://woo.test/wp-json/wc/v3/products/1147/variations/999"))
+                .andExpect(method(HttpMethod.PUT))
+                .andRespond(withStatus(HttpStatus.NOT_FOUND)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"code\":\"woocommerce_rest_product_variation_invalid_id\","
+                                + "\"message\":\"ID no válido.\",\"data\":{\"status\":404}}"));
+        servidor.expect(requestTo(
+                        "https://woo.test/wp-json/wc/v3/products/1147/variations"
+                                + "?sku=SALO-001-41&per_page=100"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(
+                        "https://woo.test/wp-json/wc/v3/products/1147/variations"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"id\":301}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(
+                        "https://woo.test/wp-json/wc/v3/products/1147/variations/102"))
+                .andExpect(method(HttpMethod.PUT))
+                .andRespond(withSuccess("{\"id\":102}", MediaType.APPLICATION_JSON));
+
+        ResultadoPublicacion resultado = publicador.publicar(producto, "1147");
+
+        assertEquals("1147", resultado.idExterno());
+        assertEquals("301", talle41.getWooCommerceVariationId());
+        verify(variantes).save(talle41);
+        servidor.verify();
+    }
+
+    @Test
     void publicaUnaUnicaPresentacionComoSimpleConSuStockReal() {
         ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
         WooCommerceCredencialesService credenciales = mock(WooCommerceCredencialesService.class);

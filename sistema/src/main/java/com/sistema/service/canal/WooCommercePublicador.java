@@ -354,9 +354,25 @@ public class WooCommercePublicador implements PublicadorCanal {
             if (imagen != null && !imagen.isBlank()) body.put("image", Map.of("src", imagen));
             String actual = variante.getWooCommerceVariationId();
             if (actual == null || actual.isBlank()) actual = buscarVariacionPorSku(productoId, variante.getSku(), c);
-            JsonNode response = enviarVariacion(productoId, body, actual, c);
+            JsonNode response;
+            try {
+                response = enviarVariacion(productoId, body, actual, c);
+            } catch (RestClientResponseException e) {
+                if (!esVinculoVariacionInvalido(e) || actual == null || actual.isBlank()) throw e;
+                String recuperada = buscarVariacionPorSku(productoId, variante.getSku(), c);
+                actual = recuperada;
+                response = enviarVariacion(productoId, body, recuperada, c);
+            }
             if (response != null) { variante.setWooCommerceVariationId(response.path("id").asText(actual)); varianteRepository.save(variante); }
         }
+    }
+
+    private boolean esVinculoVariacionInvalido(RestClientResponseException error) {
+        if (error.getStatusCode() == HttpStatus.NOT_FOUND) return true;
+        if (error.getStatusCode() != HttpStatus.BAD_REQUEST) return false;
+        String respuesta = error.getResponseBodyAsString();
+        return respuesta != null && (respuesta.contains("woocommerce_rest_product_variation_invalid_id")
+                || respuesta.contains("woocommerce_rest_product_invalid_id"));
     }
 
     private JsonNode enviarProducto(Map<String, Object> body, String id,
