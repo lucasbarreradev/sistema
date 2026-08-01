@@ -21,8 +21,11 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpHeaders;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Controller
@@ -154,7 +157,7 @@ public class ProductoVarianteController {
         return "redirect:/productos/" + productoId + "/variantes";
     }
 
-    private void prepararAtributos(Producto producto, ProductoVariante variante, Model model) {
+    void prepararAtributos(Producto producto, ProductoVariante variante, Model model) {
         MercadoLibreAtributosVarianteService.Resultado resultado;
         try {
             resultado = atributosService.obtener(producto);
@@ -169,25 +172,66 @@ public class ProductoVarianteController {
             model.addAttribute("advertenciaAtributos", "No se pudieron consultar los atributos de Mercado Libre: " + e.getMessage());
         }
         Map<String, String> valores = leerAtributos(variante);
+        List<AtributoVarianteMl> atributos = new ArrayList<>(resultado.atributos());
+        Set<String> idsInformados = atributos.stream()
+                .map(AtributoVarianteMl::id)
+                .collect(Collectors.toCollection(HashSet::new));
+        valores.keySet().stream()
+                .filter(id -> !idsInformados.contains(id))
+                .forEach(id -> atributos.add(new AtributoVarianteMl(
+                        id, nombreAtributoGuardado(id), "string",
+                        List.of(), List.of(), "", false,
+                        permiteVariarAtributoGuardado(id))));
+        for (int i = 0; i < atributos.size(); i++) {
+            AtributoVarianteMl atributo = atributos.get(i);
+            String valorGuardado = valores.get(atributo.id());
+            if (valorGuardado == null || valorGuardado.isBlank()
+                    || atributo.valores().isEmpty()
+                    || atributo.valores().contains(valorGuardado)) {
+                continue;
+            }
+            List<String> opciones = new ArrayList<>(atributo.valores());
+            opciones.add(valorGuardado);
+            atributos.set(i, new AtributoVarianteMl(
+                    atributo.id(), atributo.nombre(), atributo.tipo(), opciones,
+                    atributo.unidades(), atributo.unidadPredeterminada(),
+                    atributo.obligatorio(), atributo.permiteVariar()));
+        }
         Map<String, String> anteriores = leerAtributosProducto(producto);
-        resultado.atributos().forEach(a -> {
-            if (variante.getId() == null || "BRAND".equals(a.id()) || "MODEL".equals(a.id())) {
+        atributos.forEach(a -> {
+            if (variante.getId() == null || a.obligatorio() || !a.permiteVariar()) {
                 String valor = anteriores.get(a.id());
                 if (valor != null && !valor.isBlank()) valores.putIfAbsent(a.id(), valor);
             }
         });
-        Map<String, String> unidades = separarUnidades(resultado.atributos(), valores);
-        model.addAttribute("atributosVariante", resultado.atributos());
+        Map<String, String> unidades = separarUnidades(atributos, valores);
+        model.addAttribute("atributosVariante", atributos);
         model.addAttribute("valoresAtributos", valores);
         model.addAttribute("unidadesAtributos", unidades);
         model.addAttribute("variante", variante);
     }
 
-    private void aplicarAtributosDinamicos(ProductoVariante variante, Map<String, String> parametros) {
-        Map<String, String> atributos = parametros.entrySet().stream()
-                .filter(e -> e.getKey().startsWith("atributo_") && e.getValue() != null && !e.getValue().isBlank())
-                .collect(Collectors.toMap(e -> e.getKey().substring("atributo_".length()),
-                        e -> e.getValue().trim(), (a, b) -> b, LinkedHashMap::new));
+    void aplicarAtributosDinamicos(ProductoVariante variante, Map<String, String> parametros) {
+        boolean recibioAtributos = parametros.keySet().stream()
+                .anyMatch(clave -> clave.startsWith("atributo_"));
+        if (!recibioAtributos) {
+            // El formulario alternativo envía talle y color directamente en el objeto.
+            // No deben borrarse si la API de Mercado Libre no devolvió campos dinámicos.
+            return;
+        }
+
+        Map<String, String> atributos = new LinkedHashMap<>();
+        if (variante.getId() != null) {
+            varianteService.buscar(variante.getId())
+                    .map(this::leerAtributos)
+                    .ifPresent(atributos::putAll);
+        }
+        parametros.forEach((clave, valor) -> {
+            if (!clave.startsWith("atributo_")) return;
+            String id = clave.substring("atributo_".length());
+            if (valor == null || valor.isBlank()) atributos.remove(id);
+            else atributos.put(id, valor.trim());
+        });
         atributos.replaceAll((id, valor) -> {
             String unidad = parametros.get("unidad_" + id);
             String normalizado = unidad == null ? valor : valor.replace(',', '.');
@@ -203,21 +247,76 @@ public class ProductoVarianteController {
         }
         variante.setTalle(atributos.get("SIZE"));
         variante.setColor(atributos.get("COLOR"));
-        variante.setNombre(String.join(" / ", atributos.values()));
+        Set<String> idsVariacion = parametros.keySet().stream()
+                .filter(clave -> clave.startsWith("es_variacion_"))
+                .map(clave -> clave.substring("es_variacion_".length()))
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        if (idsVariacion.isEmpty()) {
+            atributos.keySet().stream()
+                    .filter(this::permiteVariarAtributoGuardado)
+                    .forEach(idsVariacion::add);
+        }
+        java.util.LinkedHashSet<String> partesNombre = new java.util.LinkedHashSet<>();
+        atributos.forEach((id, valor) -> {
+            if (!idsVariacion.contains(id) || valor == null || valor.isBlank()) return;
+            if ("MAIN_COLOR".equals(id) && atributos.containsKey("COLOR")) return;
+            if ("FILTRABLE_SIZE".equals(id) && atributos.containsKey("SIZE")) return;
+            partesNombre.add(valor.trim());
+        });
+        if (!partesNombre.isEmpty()) {
+            variante.setNombre(String.join(" / ", partesNombre));
+        }
+    }
+
+    private String nombreAtributoGuardado(String id) {
+        if (id == null) return "Característica";
+        return switch (id) {
+            case "SIZE" -> "Talle";
+            case "COLOR", "COLOR_SECONDARY_COLOR" -> "Color";
+            case "BRAND" -> "Marca";
+            case "MODEL" -> "Modelo";
+            case "GTIN" -> "GTIN";
+            default -> {
+                String texto = id.replace('_', ' ').toLowerCase();
+                yield texto.isBlank()
+                        ? "Característica"
+                        : Character.toUpperCase(texto.charAt(0)) + texto.substring(1);
+            }
+        };
+    }
+
+    private boolean permiteVariarAtributoGuardado(String id) {
+        if (id == null || id.isBlank()) return false;
+        if (id.startsWith("SELLER_PACKAGE_")) return false;
+        return !Set.of(
+                "BRAND", "MODEL", "GARMENT_TYPE", "GTIN", "EMPTY_GTIN_REASON",
+                "VALUE_ADDED_TAX", "IMPORT_DUTY", "FILTRABLE_SIZE",
+                "ITEM_CONDITION", "GENDER", "SIZE_GRID_ID", "SIZE_GRID_ROW_ID",
+                "HAZMAT_TRANSPORTABILITY", "AGID", "MPN"
+        ).contains(id);
     }
 
     private Map<String, String> leerAtributos(ProductoVariante variante) {
+        Map<String, String> valores = new LinkedHashMap<>();
         if (variante.getMercadoLibreAtributosJson() == null || variante.getMercadoLibreAtributosJson().isBlank()) {
-            Map<String, String> valores = new LinkedHashMap<>();
             if (variante.getTalle() != null && !variante.getTalle().isBlank()) valores.put("SIZE", variante.getTalle());
             if (variante.getColor() != null && !variante.getColor().isBlank()) valores.put("COLOR", variante.getColor());
             return valores;
         }
         try {
-            return objectMapper.readValue(variante.getMercadoLibreAtributosJson(), new TypeReference<LinkedHashMap<String, String>>() {});
+            valores.putAll(objectMapper.readValue(
+                    variante.getMercadoLibreAtributosJson(),
+                    new TypeReference<LinkedHashMap<String, String>>() {}));
         } catch (Exception e) {
-            return Map.of();
+            // Los campos básicos de la variante todavía pueden recuperarse.
         }
+        if (variante.getTalle() != null && !variante.getTalle().isBlank()) {
+            valores.putIfAbsent("SIZE", variante.getTalle());
+        }
+        if (variante.getColor() != null && !variante.getColor().isBlank()) {
+            valores.putIfAbsent("COLOR", variante.getColor());
+        }
+        return valores;
     }
 
     private Map<String, String> leerAtributosProducto(Producto producto) {

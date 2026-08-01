@@ -125,19 +125,20 @@ public class RemitoService {
 
         for (RemitoItem remitoItem : remito.getItems()) {
             Producto pt = remitoItem.getProducto();
+            ProductoVariante variante = remitoItem.getVariante();
 
-            // Obtener precio según forma de pago
-            BigDecimal precio = switch (formaPago) {
-                case TARJETA -> pt.getPrecioTarjeta();
-                case CUENTA_CORRIENTE -> pt.getPrecioCuentaCorriente();
-                default -> pt.getPrecioContado();
-            };
+            BigDecimal precio = variante == null
+                    ? pt.getPrecioSegunFormaPago(formaPago)
+                    : variante.precio(formaPago);
 
             VentaItem ventaItem = new VentaItem();
             ventaItem.setProducto(pt);
+            ventaItem.setVariante(variante);
             ventaItem.setCantidad(remitoItem.getCantidad());
             ventaItem.setPrecioUnitario(precio);
-            ventaItem.setCostoUnitario(pt.getPrecioCompra());
+            ventaItem.setCostoUnitario(variante != null && variante.getPrecioCompra() != null
+                    ? variante.getPrecioCompra()
+                    : pt.getPrecioCompra() != null ? pt.getPrecioCompra() : BigDecimal.ZERO);
             ventaItem.setDescuentoPct(BigDecimal.ZERO);
             ventaItem.calcularSubtotal();
 

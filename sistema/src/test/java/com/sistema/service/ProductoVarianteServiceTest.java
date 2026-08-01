@@ -2,6 +2,7 @@ package com.sistema.service;
 
 import com.sistema.model.Producto;
 import com.sistema.model.ProductoVariante;
+import com.sistema.model.FormaPago;
 import com.sistema.repository.ProductoRepository;
 import com.sistema.repository.ProductoVarianteRepository;
 import org.junit.jupiter.api.Test;
@@ -12,7 +13,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.math.BigDecimal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -96,21 +97,69 @@ class ProductoVarianteServiceTest {
     }
 
     @Test
-    void exigePreciosEnLaVarianteCuandoElProductoNoTienePreciosGenerales() {
+    void permiteDejarPrecioCompraVacioAunqueElProductoNoTengaPrecioGeneral() {
+        ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
+        ProductoRepository productos = mock(ProductoRepository.class);
+        Producto producto = new Producto();
+        producto.setId(1L);
+        producto.setSku("REME-001");
+        producto.setPrecioContado(BigDecimal.TEN);
+        producto.setPrecioTarjeta(BigDecimal.TEN);
+        producto.setPrecioCuentaCorriente(BigDecimal.TEN);
+        when(productos.findById(1L)).thenReturn(Optional.of(producto));
+        when(variantes.save(any(ProductoVariante.class))).thenAnswer(i -> i.getArgument(0));
+        when(variantes.existsByProductoId(1L)).thenReturn(true);
+        ProductoVariante nueva = new ProductoVariante();
+        nueva.setTalle("M");
+        nueva.setStock(2);
+
+        ProductoVariante guardada =
+                new ProductoVarianteService(variantes, productos).guardar(1L, nueva);
+
+        assertNull(guardada.getPrecioCompra());
+    }
+
+    @Test
+    void permiteGuardarSinPreciosDeTarjetaNiCuentaCorriente() {
         ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
         ProductoRepository productos = mock(ProductoRepository.class);
         Producto producto = new Producto();
         producto.setId(1L);
         producto.setSku("REME-001");
         when(productos.findById(1L)).thenReturn(Optional.of(producto));
+        when(variantes.save(any(ProductoVariante.class))).thenAnswer(i -> i.getArgument(0));
+        when(variantes.existsByProductoId(1L)).thenReturn(true);
+        when(variantes.findByProductoIdOrderByNombreAsc(1L)).thenReturn(List.of());
+
         ProductoVariante nueva = new ProductoVariante();
         nueva.setTalle("M");
         nueva.setStock(2);
+        nueva.setPrecioContado(new BigDecimal("1500"));
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> new ProductoVarianteService(variantes, productos).guardar(1L, nueva));
+        ProductoVariante guardada =
+                new ProductoVarianteService(variantes, productos).guardar(1L, nueva);
 
-        assertEquals("Ingrese el precio de compra de la variante", error.getMessage());
+        assertNull(guardada.getPrecioCompra());
+        assertNull(guardada.getPrecioTarjeta());
+        assertNull(guardada.getPrecioCuentaCorriente());
+        assertEquals(new BigDecimal("1500"), guardada.precio(FormaPago.TARJETA));
+        assertEquals(new BigDecimal("1500"), guardada.precio(FormaPago.CUENTA_CORRIENTE));
+    }
+
+    @Test
+    void elListadoMuestraElRangoDePreciosDeLasVariantes() {
+        Producto producto = new Producto();
+        ProductoVariante primera = new ProductoVariante();
+        primera.setProducto(producto);
+        primera.setPrecioContado(new BigDecimal("1500"));
+        ProductoVariante segunda = new ProductoVariante();
+        segunda.setProducto(producto);
+        segunda.setPrecioContado(new BigDecimal("1800"));
+        producto.setVariantes(List.of(primera, segunda));
+
+        assertEquals("1500 - 1800", producto.getPrecioContadoListado());
+        assertEquals("1500 - 1800", producto.getPrecioTarjetaListado());
+        assertEquals("1500 - 1800", producto.getPrecioCuentaCorrienteListado());
     }
 
     private Producto producto(Long id, String sku) {

@@ -89,21 +89,9 @@ public class VentaService {
                 throw new IllegalArgumentException("Debe seleccionar una variante para " + producto.getDescripcion());
             }
 
-            BigDecimal precio;
-
-            switch (venta.getFormaPago()) {
-                    case CONTADO:
-                    precio = variante == null ? producto.getPrecioContado() : variante.precio(FormaPago.CONTADO);
-                    break;
-                case TARJETA:
-                    precio = variante == null ? producto.getPrecioTarjeta() : variante.precio(FormaPago.TARJETA);
-                    break;
-                case CUENTA_CORRIENTE:
-                    precio = variante == null ? producto.getPrecioCuentaCorriente() : variante.precio(FormaPago.CUENTA_CORRIENTE);
-                    break;
-                default:
-                    throw new RuntimeException("Forma de pago inválida");
-            }
+            BigDecimal precio = variante == null
+                    ? producto.getPrecioSegunFormaPago(venta.getFormaPago())
+                    : variante.precio(venta.getFormaPago());
 
             if (precio == null) {
                 throw new IllegalStateException("El producto no tiene precio configurado");

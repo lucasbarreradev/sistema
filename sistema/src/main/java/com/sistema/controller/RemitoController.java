@@ -5,12 +5,14 @@ import com.sistema.repository.ClienteRepository;
 import com.sistema.repository.VentaRepository;
 import com.sistema.service.RemitoImpresionService;
 import com.sistema.service.RemitoService;
+import com.sistema.service.ConfiguracionDocumentoService;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.OutputStream;
 import java.math.BigDecimal;
 import java.util.List;
@@ -23,14 +25,17 @@ public class RemitoController {
     private final ClienteRepository clienteRepo;
     private final RemitoImpresionService remitoImpresionService;
     private final VentaRepository ventaRepo;
+    private final ConfiguracionDocumentoService configuracionDocumentoService;
     public RemitoController(RemitoService remitoService,
                             ClienteRepository clienteRepo,
                             RemitoImpresionService remitoImpresionService,
-                            VentaRepository ventaRepo) {
+                            VentaRepository ventaRepo,
+                            ConfiguracionDocumentoService configuracionDocumentoService) {
         this.remitoService = remitoService;
         this.clienteRepo = clienteRepo;
         this.remitoImpresionService = remitoImpresionService;
         this.ventaRepo = ventaRepo;
+        this.configuracionDocumentoService = configuracionDocumentoService;
     }
 
     // ==========================================
@@ -63,6 +68,9 @@ public class RemitoController {
     // ==========================================
     @GetMapping("/nuevo")
     public String nuevo(Model model) {
+        if (!configuracionDocumentoService.configurada()) {
+            return "redirect:/datos-empresa?continuar=/remitos/nuevo";
+        }
         model.addAttribute("clientes", clienteRepo.findAll());
         return "remito/nuevo";
     }
@@ -82,6 +90,9 @@ public class RemitoController {
             @RequestParam(value = "descontarStock", defaultValue = "false") Boolean descontarStock,
             RedirectAttributes redirectAttributes) {
 
+        if (!configuracionDocumentoService.configurada()) {
+            return "redirect:/datos-empresa?continuar=/remitos/nuevo";
+        }
         try {
             Cliente cliente = null;
             if (clienteId != null) {
@@ -197,9 +208,15 @@ public class RemitoController {
     // IMPRIMIR REMITO (PDF)
     // ==========================================
     @GetMapping("/{id}/pdf")
-    public void imprimirPdf(@PathVariable Long id, HttpServletResponse response) {
+    public void imprimirPdf(@PathVariable Long id, HttpServletRequest request,
+                            HttpServletResponse response) {
 
         try {
+            if (!configuracionDocumentoService.configurada()) {
+                response.sendRedirect(request.getContextPath()
+                        + "/datos-empresa?continuar=/remitos/" + id + "/pdf");
+                return;
+            }
             Remito remito = remitoService.buscarPorId(id);
 
             response.setContentType("application/pdf");
@@ -215,9 +232,17 @@ public class RemitoController {
         }
     }
     @GetMapping("/venta/{ventaId}/pdf")
-    public void generarDesdeVenta(@PathVariable Long ventaId, HttpServletResponse response) {
+    public void generarDesdeVenta(@PathVariable Long ventaId,
+                                  HttpServletRequest request,
+                                  HttpServletResponse response) {
 
         try {
+            if (!configuracionDocumentoService.configurada()) {
+                response.sendRedirect(request.getContextPath()
+                        + "/datos-empresa?continuar=/remitos/venta/"
+                        + ventaId + "/pdf");
+                return;
+            }
             Remito remito = remitoService.buscarPorVentaId(ventaId);
 
             if (remito == null) {

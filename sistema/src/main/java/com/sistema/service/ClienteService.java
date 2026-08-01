@@ -25,6 +25,18 @@ public class ClienteService {
     }
 
     public Cliente saveCliente(Cliente cliente) {
+        if (cliente.getNombre() == null || cliente.getNombre().isBlank()) {
+            throw new IllegalArgumentException("Ingrese el nombre del cliente");
+        }
+        cliente.setNombre(cliente.getNombre().trim());
+        cliente.setApellido(limpiar(cliente.getApellido()));
+        cliente.setTelefono(limpiar(cliente.getTelefono()));
+        cliente.setDni(limpiar(cliente.getDni()));
+        cliente.setEmail(limpiar(cliente.getEmail()));
+        cliente.setDireccion(limpiar(cliente.getDireccion()));
+        if (cliente.getCondicionIva() == null) {
+            cliente.setCondicionIva(com.sistema.model.CondicionIva.CONSUMIDOR_FINAL);
+        }
         return clienteRepo.save(cliente);
     }
 
@@ -61,6 +73,10 @@ public class ClienteService {
                 .stream()
                 .limit(10)
                 .toList();
+    }
+
+    private String limpiar(String valor) {
+        return valor == null || valor.isBlank() ? null : valor.trim();
     }
 
 }

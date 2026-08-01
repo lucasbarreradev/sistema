@@ -55,7 +55,7 @@ public class MigracionEsquemaService implements ApplicationRunner {
                 "cliente", "gasto", "movimiento_inventario", "precio_producto",
                 "presupuesto", "presupuesto_detalle", "producto", "producto_variante",
                 "proveedor", "publicacion_canal", "orden_canal_procesada", "remito",
-                "remito_item", "venta", "venta_item");
+                "remito_item", "venta", "venta_item", "configuracion_documento");
         for (String tabla : tablasTenant) {
             if (columnaExiste(tabla, "tenant_id")) {
                 jdbcTemplate.update("UPDATE " + tabla + " SET tenant_id = 1 WHERE tenant_id IS NULL OR tenant_id = 0");

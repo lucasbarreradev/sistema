@@ -3,6 +3,7 @@ package com.sistema.service;
 import com.itextpdf.text.*;
 import com.itextpdf.text.pdf.*;
 import com.sistema.model.CondicionIva;
+import com.sistema.model.ConfiguracionDocumento;
 import com.sistema.model.DetallePresupuesto;
 import com.sistema.model.Presupuesto;
 import com.sistema.model.PresupuestoFooter;
@@ -21,17 +22,24 @@ public class PresupuestoPdfService {
 
     private static final DecimalFormat DF = new DecimalFormat("#,##0.00");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("dd MMM yyyy");
+    private final ConfiguracionDocumentoService configuracionDocumentoService;
+
+    public PresupuestoPdfService(ConfiguracionDocumentoService configuracionDocumentoService) {
+        this.configuracionDocumentoService = configuracionDocumentoService;
+    }
 
     public void generarPdf(Presupuesto p, OutputStream out) {
         Document document = new Document(PageSize.A4, 36, 36, 15, 80);
 
         try {
+            ConfiguracionDocumento configuracion =
+                    configuracionDocumentoService.obtenerRequerida();
             PdfWriter writer = PdfWriter.getInstance(document, out);
-            writer.setPageEvent(new PresupuestoFooter());
+            writer.setPageEvent(new PresupuestoFooter(configuracion));
 
             document.open();
 
-            agregarHeader(document, p);
+            agregarHeader(document, p, configuracion);
             agregarDatosCliente(document, p);
             agregarCajaInfo(document, p);
             agregarFormaPago(document, p);
@@ -48,7 +56,8 @@ public class PresupuestoPdfService {
     // ==========================================
 // HEADER: Título + Logo + Empresa
 // ==========================================
-    private void agregarHeader(Document document, Presupuesto p) throws Exception {
+    private void agregarHeader(Document document, Presupuesto p,
+                               ConfiguracionDocumento configuracion) throws Exception {
         Font titulo = FontFactory.getFont(FontFactory.HELVETICA, 16, Font.BOLD); // ← más chico
         Font empresaFont = FontFactory.getFont(FontFactory.HELVETICA, 8, Font.NORMAL, BaseColor.GRAY); // ← más chico
 
@@ -64,8 +73,8 @@ public class PresupuestoPdfService {
         table.addCell(tituloCell);
 
         // LOGO
-        try {
-            Image logo = Image.getInstance(getClass().getResource("/static/img/LOGO.jpg"));
+        if (configuracion.tieneLogo()) {
+            Image logo = Image.getInstance(configuracion.getLogoContenido());
             logo.scaleToFit(340, 140);
 
             PdfPCell logoCell = new PdfPCell(logo);
@@ -74,7 +83,7 @@ public class PresupuestoPdfService {
             logoCell.setVerticalAlignment(Element.ALIGN_MIDDLE);
             logoCell.setPadding(0);
             table.addCell(logoCell);
-        } catch (Exception e) {
+        } else {
             PdfPCell empty = new PdfPCell();
             empty.setBorder(Rectangle.NO_BORDER);
             table.addCell(empty);
@@ -83,12 +92,20 @@ public class PresupuestoPdfService {
         document.add(table);
 
         // DATOS EMPRESA
-        Paragraph empresa = new Paragraph(
-                "MOBEZA ELECTRICIDAD · Acceso Norte S/N · 2681 Etruria, Argentina",
-                empresaFont
-        );
+        StringBuilder datosEmpresa = new StringBuilder(configuracion.getNombreEmpresa());
+        agregarDato(datosEmpresa, configuracion.direccionCompleta());
+        if (configuracion.getCuit() != null && !configuracion.getCuit().isBlank()) {
+            agregarDato(datosEmpresa, "CUIT: " + configuracion.getCuit());
+        }
+        Paragraph empresa = new Paragraph(datosEmpresa.toString(), empresaFont);
         empresa.setSpacingAfter(4);
         document.add(empresa);
+    }
+
+    private void agregarDato(StringBuilder destino, String valor) {
+        if (valor != null && !valor.isBlank()) {
+            destino.append(" · ").append(valor);
+        }
     }
 
     // ==========================================
@@ -157,68 +174,49 @@ public class PresupuestoPdfService {
     }
 
     // ==========================================
-// CAJA AMARILLA
-// ==========================================
+    // RESUMEN DEL PRESUPUESTO
+    // ==========================================
     private void agregarCajaInfo(Document document, Presupuesto p) throws Exception {
-        Font white = FontFactory.getFont(FontFactory.HELVETICA, 8, Font.BOLD, BaseColor.WHITE);   // ← más chico
-        Font whiteSmall = FontFactory.getFont(FontFactory.HELVETICA, 7, Font.NORMAL, BaseColor.WHITE); // ← más chico
-
-        BaseColor amarillo = new BaseColor(218, 198, 125);
-
         PdfPTable table = new PdfPTable(4);
         table.setWidthPercentage(100);
         table.setWidths(new int[]{25, 25, 25, 25});
         table.setSpacingBefore(4);
-        table.setSpacingAfter(8);
+        table.setSpacingAfter(10);
 
-        // Presupuesto n°
-        PdfPCell cell1 = new PdfPCell();
-        cell1.setBackgroundColor(amarillo);
-        cell1.setBorder(Rectangle.NO_BORDER);
-        cell1.setPadding(5);
-        Paragraph p1 = new Paragraph();
-        p1.add(new Chunk("Presupuesto n°:\n", whiteSmall));
-        p1.add(new Chunk(p.getCodigo(), white));
-        cell1.addElement(p1);
-        table.addCell(cell1);
-
-        // Fecha emisión
-        PdfPCell cell2 = new PdfPCell();
-        cell2.setBackgroundColor(amarillo);
-        cell2.setBorder(Rectangle.NO_BORDER);
-        cell2.setPadding(5);
-        Paragraph p2 = new Paragraph();
-        p2.add(new Chunk("Fecha de emisión:\n", whiteSmall));
-        p2.add(new Chunk(p.getFecha().format(DATE_FMT), white));
-        cell2.addElement(p2);
-        table.addCell(cell2);
-
-        // Válido hasta
-        PdfPCell cell3 = new PdfPCell();
-        cell3.setBackgroundColor(amarillo);
-        cell3.setBorder(Rectangle.NO_BORDER);
-        cell3.setPadding(5);
-        Paragraph p3 = new Paragraph();
         String validoHasta = p.getFechaValidez() != null
                 ? p.getFechaValidez().format(DATE_FMT)
                 : p.getFecha().plusDays(30).format(DATE_FMT);
-        p3.add(new Chunk("Válido hasta:\n", whiteSmall));
-        p3.add(new Chunk(validoHasta, white));
-        cell3.addElement(p3);
-        table.addCell(cell3);
 
-        // Total a pagar
-        PdfPCell cell4 = new PdfPCell();
-        cell4.setBackgroundColor(amarillo);
-        cell4.setBorder(Rectangle.NO_BORDER);
-        cell4.setPadding(5);
-        Paragraph p4 = new Paragraph();
-        p4.add(new Chunk("Total a pagar:\n", whiteSmall));
-        p4.add(new Chunk(simbolo(p) + DF.format(convertir(p.getTotal(), p)), white));
-        cell4.addElement(p4);
-        table.addCell(cell4);
+        table.addCell(celdaResumen("Presupuesto n°", p.getCodigo(), false));
+        table.addCell(celdaResumen("Fecha de emisión",
+                p.getFecha().format(DATE_FMT), false));
+        table.addCell(celdaResumen("Válido hasta", validoHasta, false));
+        table.addCell(celdaResumen("Total a pagar",
+                simbolo(p) + DF.format(convertir(p.getTotal(), p)), true));
 
         document.add(table);
+    }
+
+    private PdfPCell celdaResumen(String etiqueta, String valor, boolean destacado) {
+        Font etiquetaFont = FontFactory.getFont(FontFactory.HELVETICA, 7,
+                Font.NORMAL, new BaseColor(105, 105, 105));
+        Font valorFont = FontFactory.getFont(FontFactory.HELVETICA,
+                destacado ? 10 : 9, Font.BOLD, BaseColor.DARK_GRAY);
+
+        Paragraph contenido = new Paragraph();
+        contenido.setLeading(12);
+        contenido.add(new Chunk(etiqueta + "\n", etiquetaFont));
+        contenido.add(new Chunk(valor, valorFont));
+
+        PdfPCell celda = new PdfPCell();
+        celda.setBackgroundColor(BaseColor.WHITE);
+        celda.setBorder(Rectangle.BOX);
+        celda.setBorderColor(new BaseColor(220, 220, 220));
+        celda.setBorderWidth(0.6f);
+        celda.setPadding(8);
+        celda.setVerticalAlignment(Element.ALIGN_MIDDLE);
+        celda.addElement(contenido);
+        return celda;
     }
 
     // ==========================================
@@ -247,22 +245,6 @@ public class PresupuestoPdfService {
         value.setPadding(2);
         table.addCell(value);
 
-        // ← AGREGAR TIPO DE CAMBIO SI ES USD
-        if (p.getMoneda() == Presupuesto.Moneda.USD
-                && p.getNotaTipoCambio() != null
-                && !p.getNotaTipoCambio().isBlank()) {
-
-            PdfPCell labelTC = new PdfPCell(new Phrase("Nota:", bold));
-            labelTC.setBorder(Rectangle.NO_BORDER);
-            labelTC.setPadding(2);
-            table.addCell(labelTC);
-
-            PdfPCell valueTC = new PdfPCell(new Phrase(p.getNotaTipoCambio(), normal));
-            valueTC.setBorder(Rectangle.NO_BORDER);
-            valueTC.setPadding(2);
-            table.addCell(valueTC);
-        }
-
         document.add(table);
     }
 
@@ -282,9 +264,9 @@ public class PresupuestoPdfService {
         // Headers
         table.addCell(celdaHeader("Descripción", header));
         table.addCell(celdaHeader("Cant.", header));
-        table.addCell(celdaHeader("Precio Unit. (" + (p.getMoneda() == Presupuesto.Moneda.USD ? "USD" : "ARS") + ")", header));
-        table.addCell(celdaHeader("IVA (" + (p.getMoneda() == Presupuesto.Moneda.USD ? "USD" : "ARS") + ")", header));
-        table.addCell(celdaHeader("Importe (" + (p.getMoneda() == Presupuesto.Moneda.USD ? "USD" : "ARS") + ")", header));
+        table.addCell(celdaHeader("Precio Unit. ($)", header));
+        table.addCell(celdaHeader("IVA ($)", header));
+        table.addCell(celdaHeader("Importe ($)", header));
 
         boolean esConsumidorFinal = p.getCliente() == null ||
                 p.getCliente().getCondicionIva() == CondicionIva.CONSUMIDOR_FINAL;
@@ -415,9 +397,7 @@ public class PresupuestoPdfService {
 
         if (esConsumidorFinal) {
 
-            String labelMoneda = "Total (" +
-                    (p.getMoneda() == Presupuesto.Moneda.USD ? "USD" : "ARS")
-                    + "):";
+            String labelMoneda = "Total ($):";
 
             PdfPCell labelTotal = new PdfPCell(new Phrase(labelMoneda, bold));
             labelTotal.setBorder(Rectangle.NO_BORDER);
@@ -469,9 +449,7 @@ public class PresupuestoPdfService {
             }
 
             // Total final
-            String labelMoneda = "Total (" +
-                    (p.getMoneda() == Presupuesto.Moneda.USD ? "USD" : "ARS")
-                    + "):";
+            String labelMoneda = "Total ($):";
 
             PdfPCell labelTotal = new PdfPCell(new Phrase(labelMoneda, bold));
             labelTotal.setBorder(Rectangle.NO_BORDER);
@@ -512,15 +490,10 @@ public class PresupuestoPdfService {
     }
 
     private String simbolo(Presupuesto p) {
-        return p.getMoneda() == Presupuesto.Moneda.USD ? "U$D " : "$ ";
+        return "$ ";
     }
 
     private BigDecimal convertir(BigDecimal monto, Presupuesto p) {
-        if (p.getMoneda() == Presupuesto.Moneda.USD
-                && p.getTipoCambio() != null
-                && p.getTipoCambio().compareTo(BigDecimal.ZERO) > 0) {
-            return monto.divide(p.getTipoCambio(), 2, RoundingMode.HALF_UP);
-        }
         return monto;
     }
 }

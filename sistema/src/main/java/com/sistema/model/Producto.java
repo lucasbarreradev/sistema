@@ -7,6 +7,7 @@ import lombok.*;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
@@ -125,19 +126,51 @@ public class Producto extends TenantAwareEntity {
             throw new IllegalArgumentException("Forma de pago no puede ser null");
         }
 
-        switch (formaPago) {
-            case CONTADO:
-                return this.precioContado;
+        return switch (formaPago) {
+            case CONTADO -> this.precioContado;
+            case TARJETA -> this.precioTarjeta != null
+                    ? this.precioTarjeta : this.precioContado;
+            case CUENTA_CORRIENTE -> this.precioCuentaCorriente != null
+                    ? this.precioCuentaCorriente : this.precioContado;
+        };
+    }
 
-            case TARJETA:
-                return this.precioTarjeta;
+    @Transient
+    public String getPrecioContadoListado() {
+        return precioListado(FormaPago.CONTADO);
+    }
 
-            case CUENTA_CORRIENTE:
-                return this.precioCuentaCorriente;
+    @Transient
+    public String getPrecioTarjetaListado() {
+        return precioListado(FormaPago.TARJETA);
+    }
 
-            default:
-                throw new IllegalArgumentException("Forma de pago inválida");
+    @Transient
+    public String getPrecioCuentaCorrienteListado() {
+        return precioListado(FormaPago.CUENTA_CORRIENTE);
+    }
+
+    private String precioListado(FormaPago formaPago) {
+        List<BigDecimal> precios = tieneVariantes()
+                ? variantes.stream()
+                    .map(variante -> variante.precio(formaPago))
+                    .filter(java.util.Objects::nonNull)
+                    .sorted(Comparator.naturalOrder())
+                    .toList()
+                : Optional.ofNullable(getPrecioSegunFormaPago(formaPago))
+                    .map(List::of)
+                    .orElseGet(List::of);
+
+        if (precios.isEmpty()) {
+            return "-";
         }
+        String minimo = formatearPrecio(precios.get(0));
+        String maximo = formatearPrecio(precios.get(precios.size() - 1));
+        return minimo.equals(maximo) ? minimo : minimo + " - " + maximo;
+    }
+
+    private String formatearPrecio(BigDecimal precio) {
+        return precio.stripTrailingZeros().toPlainString();
     }
 
 

@@ -9,6 +9,7 @@ import com.sistema.service.ProveedorService;
 import com.sistema.service.MercadoLibreAtributosProductoService;
 import com.sistema.service.TenantPublicResourceService;
 import com.sistema.service.ImagenWooCommerceService;
+import com.sistema.service.EdicionMasivaPrecioService;
 import com.sistema.service.canal.FotoCanalHelper;
 import com.sistema.tenant.TenantContext;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -27,6 +28,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.LinkedHashMap;
 import java.net.URI;
+import java.math.BigDecimal;
 
 @Controller
 @RequestMapping("/productos")
@@ -38,18 +40,21 @@ public class ProductoController {
     private final TenantPublicResourceService tenantPublicResourceService;
     private final ImagenWooCommerceService imagenWooCommerceService;
     private final ObjectMapper objectMapper;
+    private final EdicionMasivaPrecioService edicionMasivaPrecioService;
 
     public ProductoController(ProductoService productoService,
                               ProveedorService proveedorService,
                               MercadoLibreAtributosProductoService atributosProductoMlService,
                               TenantPublicResourceService tenantPublicResourceService,
                               ImagenWooCommerceService imagenWooCommerceService,
+                              EdicionMasivaPrecioService edicionMasivaPrecioService,
                               ObjectMapper objectMapper) {
         this.productoService = productoService;
         this.proveedorService = proveedorService;
         this.atributosProductoMlService = atributosProductoMlService;
         this.tenantPublicResourceService = tenantPublicResourceService;
         this.imagenWooCommerceService = imagenWooCommerceService;
+        this.edicionMasivaPrecioService = edicionMasivaPrecioService;
         this.objectMapper = objectMapper;
     }
 
@@ -251,6 +256,25 @@ public class ProductoController {
             productoService.deleteProducto(id);
             ra.addFlashAttribute("mensaje", "Producto eliminado");
         } catch (IllegalStateException e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/productos";
+    }
+
+    @PostMapping("/ajustar-precios")
+    public String ajustarPrecios(@RequestParam(required = false) List<Long> productoIds,
+                                 @RequestParam BigDecimal porcentaje,
+                                 RedirectAttributes ra) {
+        try {
+            var resultado = edicionMasivaPrecioService
+                    .ajustarProductos(productoIds, porcentaje);
+            ra.addFlashAttribute("mensaje",
+                    "Se ajustaron los precios de venta de " + resultado.productos()
+                            + " producto(s) y " + resultado.variantes()
+                            + " variante(s) en un "
+                            + porcentaje.stripTrailingZeros().toPlainString()
+                            + "%. Los canales externos no fueron modificados.");
+        } catch (IllegalArgumentException e) {
             ra.addFlashAttribute("error", e.getMessage());
         }
         return "redirect:/productos";

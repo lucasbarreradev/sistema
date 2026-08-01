@@ -44,6 +44,36 @@
 
                 </div>
 
+                <div class="card border-left-primary shadow mb-4">
+                    <div class="card-body">
+                        <form id="formEdicionMasiva" method="post"
+                              action="${pageContext.request.contextPath}/productos/ajustar-precios"
+                              class="row align-items-end">
+                            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                            <div class="col-md-4 mb-3 mb-md-0">
+                                <label for="porcentajeMasivo" class="font-weight-bold">
+                                    Ajustar precios seleccionados (%)
+                                </label>
+                                <input id="porcentajeMasivo" name="porcentaje" type="number"
+                                       class="form-control" step="0.01" min="-99.99" max="1000"
+                                       placeholder="-15 o 10" required>
+                            </div>
+                            <div class="col-md-5 mb-3 mb-md-0">
+                                <small class="text-muted">
+                                    Use -15 para reducir 15% o 10 para aumentar 10%. Se modifican
+                                    Contado, Tarjeta y Cuenta Corriente, también en las variantes.
+                                    El precio de compra y los canales externos no se modifican.
+                                </small>
+                            </div>
+                            <div class="col-md-3 text-md-right">
+                                <span id="cantidadProductosSeleccionados"
+                                      class="badge badge-info mr-2">0 seleccionados</span>
+                                <button class="btn btn-primary" type="submit">Aplicar ajuste</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
                 <!-- Card -->
                 <div class="card shadow mb-4">
 
@@ -82,6 +112,10 @@
 
                                 <thead class="table-dark">
                                 <tr>
+                                    <th style="width:42px">
+                                        <input type="checkbox" id="seleccionarTodosProductos"
+                                               title="Seleccionar todos los productos visibles">
+                                    </th>
                                     <th>Foto</th>
                                     <th>SKU</th>
                                     <th>Descripción</th>
@@ -98,6 +132,11 @@
                                 <c:forEach items="${productos}" var="p">
                                     <tr>
                                         <td class="text-center">
+                                            <input type="checkbox" class="producto-masivo"
+                                                   form="formEdicionMasiva"
+                                                   name="productoIds" value="${p.id}">
+                                        </td>
+                                        <td class="text-center">
                                             <c:choose>
                                                 <c:when test="${p.tieneFoto()}">
                                                     <img src="${pageContext.request.contextPath}/productos/${p.id}/foto"
@@ -109,9 +148,9 @@
                                         <td>${p.sku}</td>
                                         <td>${p.descripcion}</td>
                                         <td>${p.stockTotal}<c:if test="${p.tieneVariantes()}"><br><span class="badge badge-info">Variantes</span></c:if></td>
-                                        <td>${p.precioContado}</td>
-                                        <td>${p.precioCuentaCorriente}</td>
-                                        <td>${p.precioTarjeta}</td>
+                                        <td>${p.precioContadoListado}</td>
+                                        <td>${p.precioCuentaCorrienteListado}</td>
+                                        <td>${p.precioTarjetaListado}</td>
                                         <td>
                                             <c:choose>
                                                 <c:when test="${p.proveedor != null}">
@@ -169,3 +208,40 @@
 
     </div> <!-- content-wrapper -->
 </div> <!-- wrapper -->
+<script>
+(function () {
+    const checks = Array.from(document.querySelectorAll('.producto-masivo'));
+    const seleccionarTodos = document.getElementById('seleccionarTodosProductos');
+    const contador = document.getElementById('cantidadProductosSeleccionados');
+    const formulario = document.getElementById('formEdicionMasiva');
+
+    function actualizarContador() {
+        const cantidad = checks.filter(check => check.checked).length;
+        contador.textContent = cantidad + (cantidad === 1 ? ' seleccionado' : ' seleccionados');
+        seleccionarTodos.checked = checks.length > 0 && checks.every(check => check.checked);
+        seleccionarTodos.indeterminate = checks.some(check => check.checked)
+            && !seleccionarTodos.checked;
+    }
+
+    seleccionarTodos.addEventListener('change', function () {
+        checks.forEach(check => {
+            const fila = check.closest('tr');
+            if (fila.style.display !== 'none') check.checked = this.checked;
+        });
+        actualizarContador();
+    });
+    checks.forEach(check => check.addEventListener('change', actualizarContador));
+    formulario.addEventListener('submit', function (evento) {
+        if (!checks.some(check => check.checked)) {
+            evento.preventDefault();
+            window.alert('Seleccione al menos un producto.');
+            return;
+        }
+        const porcentaje = document.getElementById('porcentajeMasivo').value;
+        if (!window.confirm('¿Aplicar un ajuste de ' + porcentaje
+                + '% a los precios de venta seleccionados?')) {
+            evento.preventDefault();
+        }
+    });
+})();
+</script>

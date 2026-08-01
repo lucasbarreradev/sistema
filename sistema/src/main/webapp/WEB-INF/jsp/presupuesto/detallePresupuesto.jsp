@@ -113,30 +113,10 @@
                                     </span>
                                 </div>
 
-                            <div class="col-md-3">
-                                <div class="text-muted">Moneda</div>
-                                <div class="small">
-                                    <c:choose>
-                                        <c:when test="${presupuesto.moneda == 'USD'}">
-                                            🇺🇸 Dólares (USD)
-                                        </c:when>
-                                        <c:otherwise>
-                                            🇦🇷 Pesos (ARS)
-                                        </c:otherwise>
-                                    </c:choose>
-                                </div>
-                            </div>
-
                             </div>
 
                             <!-- TABLA DE ITEMS -->
-                            <c:set var="esUSD" value="${presupuesto.moneda == 'USD'}"/>
-
-                            <c:set var="simboloMoneda"
-                                   value="${esUSD ? 'U$D ' : '$ '}"/>
-
-                            <c:set var="tipoCambio"
-                                   value="${not empty presupuesto.tipoCambio ? presupuesto.tipoCambio : 1}"/>
+                            <c:set var="simboloMoneda" value="$ "/>
 
                             <table class="table table-hover table-striped">
                                 <thead class="table-dark">
@@ -156,13 +136,13 @@
                                         <td class="text-end">
                                             ${simboloMoneda}
                                             <fmt:formatNumber
-                                                value="${esUSD ? d.precioUnitario / tipoCambio : d.precioUnitario}"
+                                                value="${d.precioUnitario}"
                                                 minFractionDigits="2"/>
                                         </td>
                                         <td class="text-end fw-semibold">
                                             ${simboloMoneda}
                                             <fmt:formatNumber
-                                                value="${esUSD ? d.subtotal / tipoCambio : d.subtotal}"
+                                                value="${d.subtotal}"
                                                 minFractionDigits="2"/>
                                         </td>
                                     </tr>
@@ -179,7 +159,7 @@
                                             <td class="text-end">
                                                 ${simboloMoneda}
                                                 <fmt:formatNumber
-                                                    value="${esUSD ? totales.totalNeto / tipoCambio : totales.totalNeto}"
+                                                    value="${totales.totalNeto}"
                                                     minFractionDigits="2"/>
                                             </td>
                                         </tr>
@@ -192,7 +172,7 @@
                                                 <td class="text-end">
                                                     ${simboloMoneda}
                                                     <fmt:formatNumber
-                                                        value="${esUSD ? entry.value / tipoCambio : entry.value}"
+                                                        value="${entry.value}"
                                                         minFractionDigits="2"/>
                                                 </td>
                                             </tr>
@@ -203,7 +183,7 @@
                                             <td class="text-end fw-bold fs-5 text-success">
                                                 ${simboloMoneda}
                                                 <fmt:formatNumber
-                                                    value="${esUSD ? totales.total / tipoCambio : totales.total}"
+                                                    value="${totales.total}"
                                                     minFractionDigits="2"/>
                                             </td>
                                         </tr>
@@ -216,7 +196,7 @@
                                             <td class="text-end fw-bold fs-5 text-success">
                                                 ${simboloMoneda}
                                                 <fmt:formatNumber
-                                                    value="${esUSD ? totales.total / tipoCambio : totales.total}"
+                                                    value="${totales.total}"
                                                     minFractionDigits="2"/>
                                             </td>
                                         </tr>

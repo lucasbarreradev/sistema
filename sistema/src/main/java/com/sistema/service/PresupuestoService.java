@@ -51,9 +51,6 @@ public class PresupuestoService {
                              List<Integer> cantidades,
                              List<BigDecimal> descuentos,
                              LocalDate fechaValidez,
-                             Presupuesto.Moneda moneda,
-                             BigDecimal tipoCambio,
-                             String notaTipoCambio,
                              List<BigDecimal> precios) {
 
         // Validaciones
@@ -84,15 +81,9 @@ public class PresupuestoService {
                 fechaValidez != null ? fechaValidez : LocalDate.now().plusDays(30)
         );
 
-        presupuesto.setMoneda(moneda != null ? moneda : Presupuesto.Moneda.ARS);
-        presupuesto.setNotaTipoCambio(notaTipoCambio);
-
-
-        if (moneda == Presupuesto.Moneda.USD) {
-            presupuesto.setTipoCambio(tipoCambio);
-        } else {
-            presupuesto.setTipoCambio(null);
-        }
+        presupuesto.setMoneda(Presupuesto.Moneda.ARS);
+        presupuesto.setTipoCambio(null);
+        presupuesto.setNotaTipoCambio(null);
 
         // Agregar detalles
         for (int i = 0; i < productoIds.size(); i++) {
@@ -286,10 +277,7 @@ public class PresupuestoService {
                                   List<BigDecimal> precios,
                                   List<Long> actualizarPrecioProducto,
                                   FormaPago formaPago,
-                                  LocalDate fechaValidez,
-                                  Presupuesto.Moneda moneda,
-                                  BigDecimal tipoCambio,
-                                  String notaTipoCambio) {
+                                  LocalDate fechaValidez) {
 
         Presupuesto presupuesto = buscarPorId(id);
 
@@ -318,17 +306,9 @@ public class PresupuestoService {
             presupuesto.setFechaValidez(fechaValidez);
         }
 
-        if (moneda != null) {
-            presupuesto.setMoneda(moneda);
-        }
-
-        if (moneda == Presupuesto.Moneda.USD) {
-            presupuesto.setTipoCambio(tipoCambio);
-        } else {
-            presupuesto.setTipoCambio(null);
-        }
-
-        presupuesto.setNotaTipoCambio(notaTipoCambio);
+        presupuesto.setMoneda(Presupuesto.Moneda.ARS);
+        presupuesto.setTipoCambio(null);
+        presupuesto.setNotaTipoCambio(null);
 
         presupuestoRepo.saveAndFlush(presupuesto);
 

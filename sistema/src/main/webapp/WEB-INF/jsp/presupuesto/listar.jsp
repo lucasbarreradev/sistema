@@ -72,8 +72,7 @@
 
 
                 <!-- Tabla -->
-                <div class="card shadow mb-4">
-                    <div class="card-body">
+                    <div class="card-body pt-0">
                         <div class="table-responsive">
                             <table id="dataTable" class="table table-bordered table-hover">
                                 <thead class="thead-dark">
@@ -109,18 +108,10 @@
                                                 </td>
                                                 <td class="text-end">
 
-                                                    <c:set var="esUSD" value="${p.moneda == 'USD'}"/>
-
-                                                    <c:set var="simboloMoneda"
-                                                           value="${esUSD ? 'U$D ' : '$ '}"/>
-
-                                                    <c:set var="tipoCambio"
-                                                           value="${not empty p.tipoCambio ? p.tipoCambio : 1}"/>
-
                                                     <strong>
-                                                        ${simboloMoneda}
+                                                        $
                                                         <fmt:formatNumber
-                                                            value="${esUSD ? p.total / tipoCambio : p.total}"
+                                                            value="${p.total}"
                                                             minFractionDigits="2"/>
                                                     </strong>
 
@@ -154,19 +145,19 @@
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
+            </div> <!-- container-fluid -->
+        </div> <!-- content -->
 
         <!-- Footer -->
-                        <footer class="sticky-footer bg-white">
-                            <div class="container my-auto">
-                                <div class="copyright text-center my-auto">
-                                    <span>Copyright &copy;</span>
-                                </div>
-                            </div>
-                        </footer>
+        <footer class="sticky-footer bg-white">
+            <div class="container my-auto">
+                <div class="copyright text-center my-auto">
+                    <span>Copyright &copy;</span>
+                </div>
             </div>
-        </div>
+        </footer>
+    </div> <!-- content-wrapper -->
+</div> <!-- wrapper -->
 
 <script>
                     document.getElementById('searchInput').addEventListener('keyup', function () {
@@ -186,3 +177,5 @@
                             );
                     </c:if>
                     </script>
+</body>
+</html>

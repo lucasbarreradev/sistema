@@ -71,6 +71,13 @@
                 </a>
             </li>
 
+            <li class="nav-item">
+                <a class="nav-link" href="<c:url value='/datos-empresa' />">
+                    <i class="fa-solid fa-file-signature"></i>
+                    <span>Datos de la empresa</span>
+                </a>
+            </li>
+
             <!-- Nav Item - Proveedores -->
             <li class="nav-item">
                 <a class="nav-link" href="<c:url value='/proveedores' />">
@@ -86,15 +93,6 @@
                                 <span>Clientes</span>
                             </a>
                         </li>
-
-            <sec:authorize access="hasRole('ADMIN')">
-                <li class="nav-item">
-                    <a class="nav-link" href="<c:url value='/usuarios' />">
-                        <i class="fa-solid fa-users-gear"></i>
-                        <span>Usuarios</span>
-                    </a>
-                </li>
-            </sec:authorize>
 
             <sec:authorize access="hasRole('SUPERADMIN')">
                 <li class="nav-item">

@@ -1,5 +1,6 @@
 <%@ page contentType="text/html;charset=UTF-8" %>
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
+<%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
 <!DOCTYPE html><html lang="es"><head><jsp:include page="/WEB-INF/jsp/head.jsp"/></head>
 <body id="page-top"><div id="wrapper"><jsp:include page="/WEB-INF/jsp/nav_bar.jsp"/>
 <div id="content-wrapper" class="d-flex flex-column"><div class="container-fluid py-4">
@@ -19,6 +20,9 @@
                 <c:when test="${not empty atributosVariante}">
                     <c:forEach items="${atributosVariante}" var="atributo">
                         <div class="col-md-3 mb-3">
+                            <c:if test="${atributo.permiteVariar}">
+                                <input type="hidden" name="es_variacion_${atributo.id}" value="true">
+                            </c:if>
                             <label><c:out value="${atributo.nombre}"/></label>
                             <c:choose>
                                 <c:when test="${atributo.tipo == 'number_unit'}">
@@ -35,12 +39,23 @@
                                     </div>
                                 </c:when>
                                 <c:when test="${not empty atributo.valores}">
-                                    <select name="atributo_${atributo.id}" class="form-control" <c:if test="${atributo.obligatorio}">required</c:if>>
-                                        <option value="">Seleccionar</option>
-                                        <c:forEach items="${atributo.valores}" var="opcion">
-                                            <option value="${opcion}" <c:if test="${valoresAtributos[atributo.id] == opcion}">selected</c:if>><c:out value="${opcion}"/></option>
-                                        </c:forEach>
-                                    </select>
+                                    <div class="campo-opciones-buscables">
+                                        <input type="text"
+                                               class="form-control atributo-buscador"
+                                               value="${fn:escapeXml(valoresAtributos[atributo.id])}"
+                                               placeholder="Escribí para buscar..."
+                                               autocomplete="off"
+                                               <c:if test="${atributo.obligatorio}">required</c:if>>
+                                        <select name="atributo_${atributo.id}"
+                                                class="atributo-select-buscable d-none">
+                                            <option value="">Seleccionar</option>
+                                            <c:forEach items="${atributo.valores}" var="opcion">
+                                                <option value="${fn:escapeXml(opcion)}" <c:if test="${valoresAtributos[atributo.id] == opcion}">selected</c:if>><c:out value="${opcion}"/></option>
+                                            </c:forEach>
+                                        </select>
+                                        <div class="opciones-buscables list-group shadow-sm"></div>
+                                        <small class="form-text text-muted">Escribí y seleccioná una opción correcta.</small>
+                                    </div>
                                 </c:when>
                                 <c:otherwise>
                                     <input name="atributo_${atributo.id}" value="${valoresAtributos[atributo.id]}"
@@ -78,13 +93,13 @@
                 </c:if>
             </div>
             <div class="col-md-2 mb-3"><label>Stock</label><input type="number" min="0" name="stock" value="${empty variante.stock ? 0 : variante.stock}" class="form-control" required></div>
-            <div class="col-md-2 mb-3"><label>Precio compra</label><input name="precioCompra" value="${variante.precioCompra}" class="form-control" oninput="this.value = this.value.replace(',', '.')" pattern="^\d+(\.\d{0,2})?$" <c:if test="${empty producto.precioCompra}">required</c:if>></div>
+            <div class="col-md-2 mb-3"><label>Precio compra <span class="text-muted">(opcional)</span></label><input name="precioCompra" value="${variante.precioCompra}" class="form-control" oninput="this.value = this.value.replace(',', '.')" pattern="^\d+(\.\d{0,2})?$"></div>
             <div class="col-md-2 mb-3"><label>Precio contado</label><input name="precioContado" value="${variante.precioContado}" class="form-control" oninput="this.value = this.value.replace(',', '.')" pattern="^\d+(\.\d{0,2})?$" <c:if test="${empty producto.precioContado}">required</c:if>></div>
-            <div class="col-md-2 mb-3"><label>Precio tarjeta</label><input name="precioTarjeta" value="${variante.precioTarjeta}" class="form-control" oninput="this.value = this.value.replace(',', '.')" pattern="^\d+(\.\d{0,2})?$" <c:if test="${empty producto.precioTarjeta}">required</c:if>></div>
-            <div class="col-md-2 mb-3"><label>Precio C/C</label><input name="precioCuentaCorriente" value="${variante.precioCuentaCorriente}" class="form-control" oninput="this.value = this.value.replace(',', '.')" pattern="^\d+(\.\d{0,2})?$" <c:if test="${empty producto.precioCuentaCorriente}">required</c:if>></div>
+            <div class="col-md-2 mb-3"><label>Precio tarjeta <span class="text-muted">(opcional)</span></label><input name="precioTarjeta" value="${variante.precioTarjeta}" class="form-control" oninput="this.value = this.value.replace(',', '.')" pattern="^\d+(\.\d{0,2})?$"></div>
+            <div class="col-md-2 mb-3"><label>Precio C/C <span class="text-muted">(opcional)</span></label><input name="precioCuentaCorriente" value="${variante.precioCuentaCorriente}" class="form-control" oninput="this.value = this.value.replace(',', '.')" pattern="^\d+(\.\d{0,2})?$"></div>
             <div class="col-md-1 mb-3 d-flex align-items-end"><button class="btn btn-success">${empty variante.id ? 'Agregar' : 'Guardar'}</button></div>
         </form>
-        <small class="text-muted">Completá el stock y los precios de cada presentación.</small>
+        <small class="text-muted">El precio de compra, tarjeta y cuenta corriente son opcionales. Si tarjeta o cuenta corriente quedan vacíos, se usará el precio contado.</small>
     </div></div>
     <div class="card shadow"><div class="card-body table-responsive"><table class="table table-bordered">
         <thead><tr><th>Foto</th><th>Presentación</th><th>SKU</th><th>Código</th><th>Stock</th><th>Contado</th><th></th></tr></thead><tbody>
@@ -98,4 +113,162 @@
             </form></td></tr></c:forEach>
         <c:if test="${empty variantes}"><tr><td colspan="7" class="text-center text-muted">Todavía no hay presentaciones. Agregá al menos una para completar el producto.</td></tr></c:if>
         </tbody></table></div></div>
-</div></div></div></body></html>
+</div></div></div>
+<style>
+    .campo-opciones-buscables { position: relative; }
+    .opciones-buscables {
+        display: none;
+        position: absolute;
+        top: calc(100% - 22px);
+        left: 0;
+        right: 0;
+        max-height: 260px;
+        overflow-y: auto;
+        z-index: 1050;
+        background: #fff;
+    }
+    .opciones-buscables.mostrar { display: block; }
+    .opciones-buscables .opcion-buscable {
+        border: 0;
+        border-bottom: 1px solid #eaecf4;
+        border-radius: 0;
+        text-align: left;
+        cursor: pointer;
+    }
+    .opciones-buscables .opcion-buscable.activa {
+        color: #fff;
+        background: #4e73df;
+    }
+</style>
+<script>
+(function () {
+    const LIMITE_RESULTADOS = 50;
+
+    function normalizar(valor) {
+        return (valor || '').toLocaleLowerCase()
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+    }
+
+    document.querySelectorAll('.campo-opciones-buscables').forEach(function (campo) {
+        const entrada = campo.querySelector('.atributo-buscador');
+        const select = campo.querySelector('.atributo-select-buscable');
+        const lista = campo.querySelector('.opciones-buscables');
+        const opciones = Array.from(select.options)
+            .filter(function (opcion) { return opcion.value !== ''; })
+            .map(function (opcion) {
+                return { valor: opcion.value, busqueda: normalizar(opcion.textContent) };
+            });
+        let indiceActivo = -1;
+
+        function coincidenciaExacta() {
+            const buscado = normalizar(entrada.value);
+            return opciones.find(function (opcion) {
+                return normalizar(opcion.valor) === buscado;
+            });
+        }
+
+        function validar() {
+            const coincidencia = coincidenciaExacta();
+            select.value = coincidencia ? coincidencia.valor : '';
+            if (!entrada.value.trim() && !entrada.required) {
+                entrada.setCustomValidity('');
+            } else if (!coincidencia) {
+                entrada.setCustomValidity('Seleccioná una opción válida de Mercado Libre.');
+            } else {
+                entrada.value = coincidencia.valor;
+                entrada.setCustomValidity('');
+            }
+        }
+
+        function activar(indice) {
+            const botones = Array.from(lista.querySelectorAll('.opcion-buscable'));
+            botones.forEach(function (boton) { boton.classList.remove('activa'); });
+            if (!botones.length) {
+                indiceActivo = -1;
+                return;
+            }
+            indiceActivo = Math.max(0, Math.min(indice, botones.length - 1));
+            botones[indiceActivo].classList.add('activa');
+            botones[indiceActivo].scrollIntoView({ block: 'nearest' });
+        }
+
+        function seleccionar(valor) {
+            entrada.value = valor;
+            select.value = valor;
+            entrada.setCustomValidity('');
+            lista.classList.remove('mostrar');
+            indiceActivo = -1;
+        }
+
+        function mostrarOpciones() {
+            const consulta = normalizar(entrada.value);
+            const encontradas = opciones.filter(function (opcion) {
+                return !consulta || opcion.busqueda.includes(consulta);
+            }).slice(0, LIMITE_RESULTADOS);
+            lista.innerHTML = '';
+            encontradas.forEach(function (opcion) {
+                const boton = document.createElement('button');
+                boton.type = 'button';
+                boton.className = 'list-group-item list-group-item-action opcion-buscable';
+                boton.textContent = opcion.valor;
+                boton.addEventListener('mousedown', function (evento) {
+                    evento.preventDefault();
+                    seleccionar(opcion.valor);
+                });
+                lista.appendChild(boton);
+            });
+            if (!encontradas.length) {
+                const vacio = document.createElement('div');
+                vacio.className = 'list-group-item text-muted';
+                vacio.textContent = 'No hay opciones coincidentes.';
+                lista.appendChild(vacio);
+            }
+            lista.classList.add('mostrar');
+            indiceActivo = -1;
+        }
+
+        entrada.addEventListener('focus', mostrarOpciones);
+        entrada.addEventListener('input', function () {
+            select.value = '';
+            entrada.setCustomValidity('');
+            mostrarOpciones();
+        });
+        entrada.addEventListener('blur', function () {
+            validar();
+            window.setTimeout(function () { lista.classList.remove('mostrar'); }, 120);
+        });
+        entrada.addEventListener('keydown', function (evento) {
+            const botones = lista.querySelectorAll('.opcion-buscable');
+            if (evento.key === 'ArrowDown' && botones.length) {
+                evento.preventDefault();
+                activar(indiceActivo + 1);
+            } else if (evento.key === 'ArrowUp' && botones.length) {
+                evento.preventDefault();
+                activar(indiceActivo <= 0 ? botones.length - 1 : indiceActivo - 1);
+            } else if (evento.key === 'Enter' && indiceActivo >= 0 && botones[indiceActivo]) {
+                evento.preventDefault();
+                seleccionar(botones[indiceActivo].textContent);
+            } else if (evento.key === 'Escape') {
+                lista.classList.remove('mostrar');
+            }
+        });
+        validar();
+    });
+
+    const formulario = document.querySelector('form[action$="/variantes"]');
+    if (formulario) {
+        formulario.addEventListener('submit', function (evento) {
+            let valido = true;
+            formulario.querySelectorAll('.atributo-buscador').forEach(function (entrada) {
+                entrada.dispatchEvent(new Event('blur'));
+                if (!entrada.checkValidity()) valido = false;
+            });
+            if (!valido) {
+                evento.preventDefault();
+                formulario.reportValidity();
+            }
+        });
+    }
+})();
+</script>
+</body></html>

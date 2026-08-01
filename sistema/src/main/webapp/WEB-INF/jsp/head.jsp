@@ -13,3 +13,4 @@
       rel="stylesheet">
 
 <link href="${pageContext.request.contextPath}/css/sb-admin-2.min.css" rel="stylesheet">
+<script defer src="${pageContext.request.contextPath}/js/footer-global.js"></script>

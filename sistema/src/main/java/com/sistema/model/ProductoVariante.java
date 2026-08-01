@@ -79,6 +79,12 @@ public class ProductoVariante extends TenantAwareEntity {
             case TARJETA -> precioTarjeta;
             case CUENTA_CORRIENTE -> precioCuentaCorriente;
         };
-        return propio != null ? propio : producto.getPrecioSegunFormaPago(formaPago);
+        if (propio != null) {
+            return propio;
+        }
+        if (formaPago != FormaPago.CONTADO && precioContado != null) {
+            return precioContado;
+        }
+        return producto.getPrecioSegunFormaPago(formaPago);
     }
 }

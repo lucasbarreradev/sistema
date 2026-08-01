@@ -102,16 +102,24 @@
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
 
                     <!-- PASO 1: CLIENTE -->
-                    <div class="mb-3">
+                    <div class="mb-3 position-relative">
                         <label class="form-label fw-semibold">
                             <small class="badge bg-secondary">Paso 1</small>
                             Cliente (opcional)
                         </label>
-                        <input type="text"
-                               id="buscarCliente"
-                               class="form-control"
-                               placeholder="Buscar cliente..."
-                               autocomplete="off">
+                        <div class="input-group">
+                            <input type="text"
+                                   id="buscarCliente"
+                                   class="form-control"
+                                   placeholder="Buscar cliente..."
+                                   autocomplete="off">
+                            <div class="input-group-append">
+                                <button type="button" class="btn btn-outline-primary"
+                                        data-toggle="modal" data-target="#modalNuevoCliente">
+                                    + Nuevo
+                                </button>
+                            </div>
+                        </div>
                         <input type="hidden" name="clienteId" id="clienteId">
 
                         <div id="resultadosCliente"
@@ -208,6 +216,8 @@
     </div>
 
 </div>
+
+<jsp:include page="/WEB-INF/jsp/cliente/modal_rapido.jsp"/>
 
 <script>
 let items = [];

@@ -14,8 +14,15 @@ public class RemitoImpresionService {
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
+    private final ConfiguracionDocumentoService configuracionDocumentoService;
+
+    public RemitoImpresionService(ConfiguracionDocumentoService configuracionDocumentoService) {
+        this.configuracionDocumentoService = configuracionDocumentoService;
+    }
 
     public void generarRemitoPdf(Remito remito, OutputStream out) throws DocumentException {
+        ConfiguracionDocumento configuracion =
+                configuracionDocumentoService.obtenerRequerida();
 
         // Tamaño A4 horizontal para que sea más ancho
         Document document = new Document(PageSize.A4);
@@ -51,7 +58,10 @@ public class RemitoImpresionService {
         logoCell.setBorder(Rectangle.NO_BORDER);
 
         try {
-            Image logo = Image.getInstance(getClass().getResource("/static/img/LOGO.jpg"));
+            if (!configuracion.tieneLogo()) {
+                throw new IllegalStateException("Sin logo configurado");
+            }
+            Image logo = Image.getInstance(configuracion.getLogoContenido());
             logo.scaleToFit(100, 70);
             logoCell.addElement(logo);
         } catch (Exception e) {
@@ -64,11 +74,12 @@ public class RemitoImpresionService {
         PdfPCell dataCell = new PdfPCell();
         dataCell.setBorder(Rectangle.NO_BORDER);
 
-        dataCell.addElement(new Paragraph("MOBEZA ELECTRICIDAD", fontBold));
-        dataCell.addElement(new Paragraph("Acceso Norte, S/N", font));
-        dataCell.addElement(new Paragraph("CP 2681 Etruria, Argentina", font));
-        dataCell.addElement(new Paragraph("Tel: (03534) 082798", fontSmall));
-        dataCell.addElement(new Paragraph("Email: nerypelaye@gmail.com", fontSmall));
+        dataCell.addElement(new Paragraph(configuracion.getNombreEmpresa(), fontBold));
+        agregarDatoEmpresa(dataCell, configuracion.getDireccion(), font);
+        agregarDatoEmpresa(dataCell, configuracion.ubicacionCompleta(), font);
+        agregarDatoEmpresa(dataCell, prefijo("CUIT: ", configuracion.getCuit()), fontSmall);
+        agregarDatoEmpresa(dataCell, prefijo("Tel: ", configuracion.getTelefono()), fontSmall);
+        agregarDatoEmpresa(dataCell, prefijo("Email: ", configuracion.getEmail()), fontSmall);
 
         innerTable.addCell(dataCell);
 
@@ -367,5 +378,15 @@ public class RemitoImpresionService {
         document.add(firmasTable);
 
         document.close();
+    }
+
+    private void agregarDatoEmpresa(PdfPCell celda, String valor, Font fuente) {
+        if (valor != null && !valor.isBlank()) {
+            celda.addElement(new Paragraph(valor, fuente));
+        }
+    }
+
+    private String prefijo(String prefijo, String valor) {
+        return valor == null || valor.isBlank() ? null : prefijo + valor;
     }
 }

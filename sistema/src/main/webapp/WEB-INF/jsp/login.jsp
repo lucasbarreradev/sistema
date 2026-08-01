@@ -16,6 +16,8 @@
             display: flex;
             align-items: center;
             justify-content: center;
+            position: relative;
+            padding-bottom: 52px;
         }
         .login-card {
             max-width: 400px;
@@ -23,6 +25,15 @@
             background: white;
             border-radius: 15px;
             box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        .login-footer {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 18px;
+            color: rgba(255,255,255,.85);
+            text-align: center;
+            font-size: .8rem;
         }
     </style>
 </head>
@@ -66,5 +77,12 @@
             <p class="mb-0">Sistema de Gestión v1.0</p>
         </div>
     </div>
+    <footer class="login-footer">
+        Copyright &copy; <span id="loginCopyrightYear"></span>
+    </footer>
+    <script>
+        document.getElementById('loginCopyrightYear').textContent =
+            new Date().getFullYear();
+    </script>
 </body>
 </html>

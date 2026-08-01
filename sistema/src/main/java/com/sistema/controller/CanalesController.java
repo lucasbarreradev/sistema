@@ -8,6 +8,7 @@ import com.sistema.service.PublicacionService;
 import com.sistema.service.ImportacionCanalService;
 import com.sistema.service.TrabajoSincronizacionService;
 import com.sistema.service.CatalogoImportacionService;
+import com.sistema.service.EdicionMasivaPrecioService;
 import com.sistema.service.MercadoLibreTokenService;
 import com.sistema.service.TiendanubeCredencialesService;
 import com.sistema.service.WooCommerceCredencialesService;
@@ -19,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.util.List;
+import java.math.BigDecimal;
 
 @Controller
 @RequestMapping("/canales")
@@ -29,6 +31,7 @@ public class CanalesController {
     private final ImportacionCanalService importacionCanalService;
     private final TrabajoSincronizacionService trabajoSincronizacionService;
     private final CatalogoImportacionService catalogoImportacionService;
+    private final EdicionMasivaPrecioService edicionMasivaPrecioService;
     private final MercadoLibreTokenService mercadoLibreTokenService;
     private final WooCommerceCredencialesService wooCommerceCredencialesService;
     private final TiendanubeCredencialesService tiendanubeCredencialesService;
@@ -39,6 +42,7 @@ public class CanalesController {
                              PublicacionService publicacionService, ImportacionCanalService importacionCanalService,
                              TrabajoSincronizacionService trabajoSincronizacionService,
                              CatalogoImportacionService catalogoImportacionService,
+                             EdicionMasivaPrecioService edicionMasivaPrecioService,
                              MercadoLibreTokenService mercadoLibreTokenService,
                              WooCommerceCredencialesService wooCommerceCredencialesService,
                              TiendanubeCredencialesService tiendanubeCredencialesService,
@@ -50,6 +54,7 @@ public class CanalesController {
         this.importacionCanalService = importacionCanalService;
         this.trabajoSincronizacionService = trabajoSincronizacionService;
         this.catalogoImportacionService = catalogoImportacionService;
+        this.edicionMasivaPrecioService = edicionMasivaPrecioService;
         this.mercadoLibreTokenService = mercadoLibreTokenService;
         this.wooCommerceCredencialesService = wooCommerceCredencialesService;
         this.tiendanubeCredencialesService = tiendanubeCredencialesService;
@@ -127,9 +132,12 @@ public class CanalesController {
     @PostMapping("/importar/{canal}/seleccionados")
     public String importarSeleccionados(@PathVariable CanalVenta canal,
                                         @RequestParam(required = false) List<String> idsExternos,
+                                        @RequestParam(defaultValue = "0") BigDecimal ajustePrecioPorcentaje,
                                         RedirectAttributes ra) {
         try {
             var seleccionados = catalogoImportacionService.seleccionar(canal, idsExternos);
+            seleccionados = edicionMasivaPrecioService
+                    .ajustarImportados(seleccionados, ajustePrecioPorcentaje);
             var trabajo = trabajoSincronizacionService
                     .iniciarImportacionSeleccionada(canal, seleccionados);
             ra.addFlashAttribute("mensaje", "Importación de " + seleccionados.size()

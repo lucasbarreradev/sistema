@@ -5,6 +5,8 @@ import com.sistema.repository.*;
 import com.sistema.service.PresupuestoPdfService;
 import com.sistema.service.PresupuestoService;
 import com.sistema.service.RemitoService;
+import com.sistema.service.ConfiguracionDocumentoService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.stereotype.Controller;
@@ -28,19 +30,22 @@ public class PresupuestoController {
     private final PresupuestoRepository presupuestoRepo;
     private final PresupuestoPdfService presupuestoPdfService;
     private final RemitoService remitoService;
+    private final ConfiguracionDocumentoService configuracionDocumentoService;
 
     public PresupuestoController(PresupuestoService presupuestoService,
                                  ProductoRepository productoRepo,
                                  ClienteRepository clienteRepo,
                                  PresupuestoRepository presupuestoRepo,
                                  PresupuestoPdfService presupuestoPdfService,
-                                 RemitoService remitoService) {
+                                 RemitoService remitoService,
+                                 ConfiguracionDocumentoService configuracionDocumentoService) {
         this.presupuestoService = presupuestoService;
         this.productoRepo = productoRepo;
         this.clienteRepo = clienteRepo;
         this.presupuestoRepo = presupuestoRepo;
         this.presupuestoPdfService = presupuestoPdfService;
         this.remitoService = remitoService;
+        this.configuracionDocumentoService = configuracionDocumentoService;
     }
 
     // ==========================================
@@ -71,6 +76,9 @@ public class PresupuestoController {
     // ==========================================
     @GetMapping("/nuevo")
     public String nuevo(Model model) {
+        if (!configuracionDocumentoService.configurada()) {
+            return "redirect:/datos-empresa?continuar=/presupuestos/nuevo";
+        }
         model.addAttribute("productos", productoRepo.findAll());
         model.addAttribute("clientes", clienteRepo.findAll());
 
@@ -89,12 +97,12 @@ public class PresupuestoController {
             @RequestParam List<Integer> cantidades,
             @RequestParam(required = false) List<BigDecimal> descuentos,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaValidez,
-            @RequestParam(required = false, defaultValue = "ARS") Presupuesto.Moneda moneda,
-            @RequestParam(required = false) BigDecimal tipoCambio,
-            @RequestParam(required = false) String notaTipoCambio,
             @RequestParam(required = false) List<BigDecimal> precios,
             RedirectAttributes ra
     ) {
+        if (!configuracionDocumentoService.configurada()) {
+            return "redirect:/datos-empresa?continuar=/presupuestos/nuevo";
+        }
         try {
             Presupuesto presupuesto = presupuestoService.crear(
                     clienteId,
@@ -104,9 +112,6 @@ public class PresupuestoController {
                     cantidades,
                     descuentos,
                     fechaValidez,
-                    moneda,
-                    tipoCambio,
-                    notaTipoCambio,
                     precios
             );
 
@@ -221,15 +226,12 @@ public class PresupuestoController {
             @RequestParam(required = false) List<Long> actualizarPrecioProducto,
             @RequestParam FormaPago formaPago,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fechaValidez,
-            @RequestParam(required = false, defaultValue = "ARS") Presupuesto.Moneda moneda,
-            @RequestParam(required = false) BigDecimal tipoCambio,
-            @RequestParam(required = false) String notaTipoCambio,
             RedirectAttributes ra) {
 
         try {
             presupuestoService.actualizar(
                     id, clienteId, productoIds, varianteIds, cantidades,
-                    descuentos, precios, actualizarPrecioProducto, formaPago, fechaValidez, moneda, tipoCambio, notaTipoCambio);
+                    descuentos, precios, actualizarPrecioProducto, formaPago, fechaValidez);
 
             ra.addFlashAttribute("mensaje", "Presupuesto actualizado exitosamente");
             return "redirect:/presupuestos/detalle/" + id;
@@ -301,9 +303,15 @@ public class PresupuestoController {
     @GetMapping("/{id}/pdf")
     public void generarPdf(
             @PathVariable Long id,
+            HttpServletRequest request,
             HttpServletResponse response
     ) {
         try {
+        if (!configuracionDocumentoService.configurada()) {
+            response.sendRedirect(request.getContextPath()
+                    + "/datos-empresa?continuar=/presupuestos/" + id + "/pdf");
+            return;
+        }
 
         Presupuesto presupuesto = presupuestoService.buscarPorId(id);
 

@@ -85,6 +85,22 @@
                                 </table>
                             </div>
                         </div>
+                        <div class="card-body border-top">
+                            <div class="row align-items-end">
+                                <div class="col-md-5">
+                                    <label for="ajustePrecioPorcentaje" class="font-weight-bold">
+                                        Ajuste de precio al importar (%)
+                                    </label>
+                                    <input id="ajustePrecioPorcentaje" name="ajustePrecioPorcentaje"
+                                           type="number" class="form-control" value="0"
+                                           step="0.01" min="-99.99" max="1000">
+                                    <small class="text-muted">
+                                        Use -15 para reducir 15% o 10 para aumentar 10%. Solo modifica
+                                        los precios guardados en el sistema, incluidas las variantes.
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
                         <div class="card-footer d-flex align-items-center justify-content-between">
                             <small class="text-muted">
                                 Esta lista queda guardada. Use “Actualizar lista” únicamente cuando haya cambios en el canal.

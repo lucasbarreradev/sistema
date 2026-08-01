@@ -153,10 +153,7 @@ public class ProductoVarianteService {
                 throw new IllegalArgumentException("Antes de agregar otra presentación, edite la existente y complete sus características");
             }
         }
-        validarPrecio(variante.getPrecioCompra(), producto.getPrecioCompra(), "compra");
         validarPrecio(variante.getPrecioContado(), producto.getPrecioContado(), "contado");
-        validarPrecio(variante.getPrecioTarjeta(), producto.getPrecioTarjeta(), "tarjeta");
-        validarPrecio(variante.getPrecioCuentaCorriente(), producto.getPrecioCuentaCorriente(), "cuenta corriente");
     }
 
     private void validarPrecio(java.math.BigDecimal precioVariante, java.math.BigDecimal precioGeneral, String nombre) {
