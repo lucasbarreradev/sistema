@@ -19,6 +19,15 @@ import static org.mockito.Mockito.when;
 class TenantContextFilterTest {
     @Test
     void estableceTenantAntesDeContinuarConWebhookMercadoLibreYSinConsumirElBody() throws Exception {
+        verificarWebhookMercadoLibre("/webhooks/mercadolibre");
+    }
+
+    @Test
+    void estableceTenantEnElCallbackAnteriorDeMercadoLibre() throws Exception {
+        verificarWebhookMercadoLibre("/canales/mercadolibre/callback");
+    }
+
+    private void verificarWebhookMercadoLibre(String ruta) throws Exception {
         MercadoLibreTokenService mercadoLibre = mock(MercadoLibreTokenService.class);
         when(mercadoLibre.resolverTenantPorUsuario(3543745002L)).thenReturn(5L);
         TenantContextFilter filtro = new TenantContextFilter(new ObjectMapper(), mercadoLibre,
@@ -26,8 +35,8 @@ class TenantContextFilterTest {
         String payload = """
                 {"user_id":3543745002,"topic":"orders_v2","resource":"/orders/20000175644537"}
                 """;
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/webhooks/mercadolibre");
-        request.setServletPath("/webhooks/mercadolibre");
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", ruta);
+        request.setServletPath(ruta);
         request.setContentType("application/json");
         request.setContent(payload.getBytes(StandardCharsets.UTF_8));
 

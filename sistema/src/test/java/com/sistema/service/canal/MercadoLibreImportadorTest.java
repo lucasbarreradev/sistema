@@ -14,6 +14,7 @@ import java.math.BigDecimal;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.mock;
@@ -23,6 +24,44 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class MercadoLibreImportadorTest {
+
+    @Test
+    void consultaSoloPublicacionesActivasPorDefecto() {
+        verificarUrlBusqueda(false,
+                "https://api.mercadolibre.com/users/123/items/search?status=active&limit=50&offset=0");
+    }
+
+    @Test
+    void omiteElFiltroDeEstadoCuandoSeSolicitanPublicacionesInactivas() {
+        verificarUrlBusqueda(true,
+                "https://api.mercadolibre.com/users/123/items/search?limit=50&offset=0");
+    }
+
+    @Test
+    void detieneLaDescargaAntesDeConsultarElSiguienteProducto() {
+        MercadoLibreTokenService tokenService = mock(MercadoLibreTokenService.class);
+        when(tokenService.obtenerAccessToken()).thenReturn("token");
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        MercadoLibreImportador importador = new MercadoLibreImportador(
+                tokenService, new ObjectMapper(), builder.build());
+        servidor.expect(requestTo("https://api.mercadolibre.com/users/me"))
+                .andRespond(withSuccess("{\"id\":123}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://api.mercadolibre.com/users/123/items/search?status=active&limit=50&offset=0"))
+                .andRespond(withSuccess(
+                        "{\"results\":[\"MLA1\",\"MLA2\"],\"paging\":{\"total\":2}}",
+                        MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://api.mercadolibre.com/items/MLA1?include_attributes=all"))
+                .andRespond(withSuccess("{\"id\":\"MLA1\",\"title\":\"Producto 1\",\"price\":10}",
+                        MediaType.APPLICATION_JSON));
+        AtomicInteger controles = new AtomicInteger();
+
+        List<ProductoCanalImportado> productos = importador.obtenerProductos(
+                false, () -> controles.incrementAndGet() > 3);
+
+        assertTrue(productos.isEmpty());
+        servidor.verify();
+    }
 
     @Test
     void agrupaItemsUserProductsComoVariantesDeUnaFamilia() {
@@ -199,6 +238,9 @@ class MercadoLibreImportadorTest {
         servidor.expect(requestTo("https://api.mercadolibre.com/items/MLA1/description"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("{\"plain_text\":\"Zapatilla\"}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://api.mercadolibre.com/categories/MLA109027"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"name\":\"Zapatillas\"}", MediaType.APPLICATION_JSON));
         servidor.expect(requestTo(
                         "https://api.mercadolibre.com/items/MLA1/variations/501?include_attributes=all"))
                 .andExpect(method(HttpMethod.GET))
@@ -214,6 +256,27 @@ class MercadoLibreImportadorTest {
         assertEquals(1, resultado.variantes().size());
         assertEquals("41 AR", resultado.variantes().get(0).talle());
         assertEquals(4, resultado.variantes().get(0).stock());
+        assertEquals("Zapatillas", resultado.datosCanal().get("categoriaNombre"));
+        servidor.verify();
+    }
+
+    private void verificarUrlBusqueda(boolean incluirInactivas, String urlEsperada) {
+        MercadoLibreTokenService tokenService = mock(MercadoLibreTokenService.class);
+        when(tokenService.obtenerAccessToken()).thenReturn("token");
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        MercadoLibreImportador importador = new MercadoLibreImportador(
+                tokenService, new ObjectMapper(), builder.build());
+        servidor.expect(requestTo("https://api.mercadolibre.com/users/me"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"id\":123}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(urlEsperada))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(
+                        "{\"results\":[],\"paging\":{\"total\":0}}",
+                        MediaType.APPLICATION_JSON));
+
+        assertTrue(importador.obtenerProductos(incluirInactivas).isEmpty());
         servidor.verify();
     }
 

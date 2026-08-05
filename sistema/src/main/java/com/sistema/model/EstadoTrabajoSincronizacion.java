@@ -3,6 +3,7 @@ package com.sistema.model;
 public enum EstadoTrabajoSincronizacion {
     PENDIENTE("Pendiente"),
     PROCESANDO("Procesando"),
+    CANCELADO("Cancelado"),
     COMPLETADA("Completada"),
     COMPLETADA_CON_ERRORES("Completada con errores"),
     ERROR("Error");

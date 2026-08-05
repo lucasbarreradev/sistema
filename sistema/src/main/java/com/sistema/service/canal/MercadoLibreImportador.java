@@ -15,6 +15,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.util.*;
+import java.util.function.BooleanSupplier;
 
 @Component
 public class MercadoLibreImportador implements ImportadorCanal {
@@ -26,6 +27,7 @@ public class MercadoLibreImportador implements ImportadorCanal {
     private final MercadoLibreTokenService tokenService;
     private final ObjectMapper objectMapper;
     private final Object bloqueoConsultasStock = new Object();
+    private final Map<String, String> nombresCategorias = new java.util.concurrent.ConcurrentHashMap<>();
     private long proximaConsultaStockNanos;
 
     @Autowired
@@ -44,23 +46,45 @@ public class MercadoLibreImportador implements ImportadorCanal {
     public boolean configurado() { return tokenService.configurado(); }
 
     public List<ProductoCanalImportado> obtenerProductos() {
+        return obtenerProductos(false, () -> false);
+    }
+
+    @Override
+    public List<ProductoCanalImportado> obtenerProductos(boolean incluirInactivas) {
+        return obtenerProductos(incluirInactivas, () -> false);
+    }
+
+    @Override
+    public List<ProductoCanalImportado> obtenerProductos(
+            boolean incluirInactivas, BooleanSupplier cancelacionSolicitada) {
+        if (cancelacionSolicitada.getAsBoolean()) return List.of();
         JsonNode usuario = get("/users/me");
         String userId = usuario.path("id").asText();
         if (userId.isBlank()) throw new IllegalStateException("No se pudo identificar la cuenta de Mercado Libre");
         List<ProductoCanalImportado> productos = new ArrayList<>();
         Map<String, String> familiasPorUserProduct = new HashMap<>();
         for (int offset = 0; ; offset += 50) {
-            JsonNode pagina = get("/users/" + userId + "/items/search?status=active&limit=50&offset=" + offset);
+            if (cancelacionSolicitada.getAsBoolean()) break;
+            String filtroEstado = incluirInactivas ? "" : "status=active&";
+            JsonNode pagina = get("/users/" + userId
+                    + "/items/search?" + filtroEstado + "limit=50&offset=" + offset);
             JsonNode ids = pagina.path("results");
             if (!ids.isArray() || ids.isEmpty()) break;
             for (JsonNode id : ids) {
+                if (cancelacionSolicitada.getAsBoolean()) return agruparUserProducts(productos);
                 JsonNode item = get("/items/" + id.asText() + "?include_attributes=all");
-                ProductoCanalImportado importado = mapear(item);
+                if (cancelacionSolicitada.getAsBoolean()) return agruparUserProducts(productos);
+                ProductoCanalImportado importado = mapear(item, cancelacionSolicitada);
+                if (cancelacionSolicitada.getAsBoolean()) return agruparUserProducts(productos);
                 String familyName = item.path("family_name").asText("");
                 String userProductId = item.path("user_product_id").asText("");
                 if (!userProductId.isBlank()) {
-                    String familyId = familiasPorUserProduct.computeIfAbsent(userProductId,
-                            clave -> resolverFamilyId(clave));
+                    if (cancelacionSolicitada.getAsBoolean()) return agruparUserProducts(productos);
+                    String familyId = familiasPorUserProduct.get(userProductId);
+                    if (familyId == null) {
+                        familyId = resolverFamilyId(userProductId);
+                        familiasPorUserProduct.put(userProductId, familyId);
+                    }
                     if (!familyId.isBlank()) {
                         importado.datosCanal().put("familyId", familyId);
                         if (!familyName.isBlank()) importado.datosCanal().put("familyName", familyName);
@@ -77,7 +101,7 @@ public class MercadoLibreImportador implements ImportadorCanal {
         if (itemId == null || itemId.isBlank()) {
             throw new IllegalArgumentException("Falta el identificador de la publicación de Mercado Libre");
         }
-        return mapear(get("/items/" + itemId.trim() + "?include_attributes=all"));
+        return mapear(get("/items/" + itemId.trim() + "?include_attributes=all"), () -> false);
     }
 
     private JsonNode get(String endpoint) {
@@ -102,7 +126,8 @@ public class MercadoLibreImportador implements ImportadorCanal {
                 .headers(h -> h.setBearerAuth(token)).retrieve().body(JsonNode.class);
     }
 
-    private ProductoCanalImportado mapear(JsonNode producto) {
+    private ProductoCanalImportado mapear(JsonNode producto,
+                                           BooleanSupplier cancelacionSolicitada) {
         Map<String, JsonNode> atributos = indexarAtributos(producto.path("attributes"));
         String sku = valorAtributo(atributos, "SELLER_SKU");
         if (sku.isBlank()) sku = textoJson(producto.get("seller_sku"));
@@ -140,17 +165,38 @@ public class MercadoLibreImportador implements ImportadorCanal {
         ponerSiTieneTexto(datos, "tiempoDisponibilidad", valorTermino(producto.path("sale_terms"), "MANUFACTURING_TIME"));
         if (fotos.size() > 1) datos.put("fotosUrlsExternas", String.join(System.lineSeparator(), fotos.subList(1, fotos.size())));
 
+        if (cancelacionSolicitada.getAsBoolean()) return productoCancelado(producto);
         JsonNode descripcion = getOpcional("/items/" + producto.path("id").asText() + "/description");
         if (descripcion != null) ponerSiTieneTexto(datos, "descripcion", descripcion.path("plain_text").asText());
         String atributosJson = serializarAtributosAdicionales(producto.path("attributes"));
         ponerSiTieneTexto(datos, "atributosJson", atributosJson);
         datos.put("atributosItem", valoresAtributos(producto.path("attributes")));
+        String categoriaId = producto.path("category_id").asText("");
+        if (!categoriaId.isBlank()) {
+            datos.put("categoriaNombre", nombresCategorias.computeIfAbsent(
+                    categoriaId, this::obtenerNombreCategoria));
+        }
 
         return new ProductoCanalImportado(producto.path("id").asText(), sku, producto.path("title").asText(),
-                stockDisponible(producto), producto.path("price").decimalValue(),
-                fotos.isEmpty() ? null : fotos.get(0), producto.path("category_id").asText(null), datos,
+                stockDisponible(producto, cancelacionSolicitada), producto.path("price").decimalValue(),
+                fotos.isEmpty() ? null : fotos.get(0), categoriaId.isBlank() ? null : categoriaId, datos,
                 mapearVariantes(producto.path("variations"), producto.path("pictures"),
-                        producto.path("id").asText()));
+                        producto.path("id").asText(), cancelacionSolicitada));
+    }
+
+    private ProductoCanalImportado productoCancelado(JsonNode producto) {
+        return new ProductoCanalImportado(producto.path("id").asText(), null,
+                producto.path("title").asText(), 0, producto.path("price").decimalValue(),
+                null, null, new LinkedHashMap<>(), List.of());
+    }
+
+    private String obtenerNombreCategoria(String categoriaId) {
+        try {
+            String nombre = get("/categories/" + categoriaId).path("name").asText("").trim();
+            return nombre.isBlank() ? categoriaId : nombre;
+        } catch (RuntimeException e) {
+            return categoriaId;
+        }
     }
 
     private String resolverFamilyId(String userProductId) {
@@ -255,15 +301,17 @@ public class MercadoLibreImportador implements ImportadorCanal {
     }
 
     List<VarianteCanalImportada> mapearVariantes(JsonNode lista, JsonNode fotosProducto) {
-        return mapearVariantes(lista, fotosProducto, "");
+        return mapearVariantes(lista, fotosProducto, "", () -> false);
     }
 
     private List<VarianteCanalImportada> mapearVariantes(JsonNode lista, JsonNode fotosProducto,
-                                                          String itemId) {
+                                                          String itemId,
+                                                          BooleanSupplier cancelacionSolicitada) {
         List<VarianteCanalImportada> resultado = new ArrayList<>();
         if (!lista.isArray()) return resultado;
         Map<String, String> fotosPorId = indexarFotos(fotosProducto);
         for (JsonNode v : lista) {
+            if (cancelacionSolicitada.getAsBoolean()) return resultado;
             String talle = "", color = "";
             Map<String, String> atributosVariante = new LinkedHashMap<>();
             for (JsonNode atributo : v.path("attribute_combinations")) {
@@ -282,20 +330,24 @@ public class MercadoLibreImportador implements ImportadorCanal {
             if (gtin.isBlank()) gtin = valorAtributo(atributosPropios, "UPC");
             String nombre = String.join(" / ", atributosVariante.values());
             String fotoUrl = primeraFoto(v.path("picture_ids"), fotosPorId);
-            JsonNode detalleStock = completarDetalleStockVariacion(itemId, v);
+            JsonNode detalleStock = completarDetalleStockVariacion(
+                    itemId, v, cancelacionSolicitada);
             resultado.add(new VarianteCanalImportada(v.path("id").asText(),
                     sku, nombre, talle, color,
-                    stockDisponible(detalleStock), v.path("price").decimalValue(), null,
+                    stockDisponible(detalleStock, cancelacionSolicitada),
+                    v.path("price").decimalValue(), null,
                     v.path("product_id").asText(null), gtin, atributosVariante, fotoUrl, false));
         }
         return resultado;
     }
 
-    private JsonNode completarDetalleStockVariacion(String itemId, JsonNode variacion) {
+    private JsonNode completarDetalleStockVariacion(String itemId, JsonNode variacion,
+                                                     BooleanSupplier cancelacionSolicitada) {
         if (variacion.path("available_quantity").asInt(0) > 0
                 || itemId == null || itemId.isBlank()) {
             return variacion;
         }
+        if (cancelacionSolicitada.getAsBoolean()) return variacion;
         String variacionId = variacion.path("id").asText("");
         if (variacionId.isBlank()) return variacion;
         JsonNode detalle = getOpcional("/items/" + itemId + "/variations/" + variacionId
@@ -306,25 +358,29 @@ public class MercadoLibreImportador implements ImportadorCanal {
         return combinado;
     }
 
-    private int stockDisponible(JsonNode itemOVariacion) {
+    private int stockDisponible(JsonNode itemOVariacion,
+                                BooleanSupplier cancelacionSolicitada) {
         int stockItem = itemOVariacion.path("available_quantity").asInt(0);
         String userProductId = itemOVariacion.path("user_product_id").asText("");
         String inventoryId = itemOVariacion.path("inventory_id").asText("");
         if (stockItem > 0) return stockItem;
+        if (cancelacionSolicitada.getAsBoolean()) return stockItem;
         if (!userProductId.isBlank()) {
             try {
                 JsonNode stock = obtenerStockConReintentos(
-                        "/user-products/" + userProductId + "/stock");
+                        "/user-products/" + userProductId + "/stock", cancelacionSolicitada);
                 Integer distribuido = sumarStockUbicaciones(stock);
                 if (distribuido != null) return distribuido;
             } catch (RestClientResponseException e) {
                 if (!recursoStockNoDisponible(e)) throw e;
             }
         }
+        if (cancelacionSolicitada.getAsBoolean()) return stockItem;
         if (!inventoryId.isBlank()) {
             try {
                 JsonNode stock = obtenerStockConReintentos(
-                        "/inventories/" + inventoryId + "/stock/fulfillment");
+                        "/inventories/" + inventoryId + "/stock/fulfillment",
+                        cancelacionSolicitada);
                 Integer fulfillment = stockFulfillment(stock);
                 if (fulfillment != null) return fulfillment;
             } catch (RestClientResponseException e) {
@@ -340,26 +396,32 @@ public class MercadoLibreImportador implements ImportadorCanal {
                 || error.getStatusCode() == HttpStatus.NOT_FOUND;
     }
 
-    private JsonNode obtenerStockConReintentos(String endpoint) {
+    private JsonNode obtenerStockConReintentos(String endpoint,
+                                                BooleanSupplier cancelacionSolicitada) {
         RestClientResponseException ultimoError = null;
         for (int intento = 1; intento <= 4; intento++) {
-            esperarTurnoConsultaStock();
+            if (cancelacionSolicitada.getAsBoolean()) return null;
+            esperarTurnoConsultaStock(cancelacionSolicitada);
+            if (cancelacionSolicitada.getAsBoolean()) return null;
             try {
                 return get(endpoint);
             } catch (RestClientResponseException e) {
                 ultimoError = e;
                 if (e.getStatusCode() != HttpStatus.TOO_MANY_REQUESTS || intento == 4) throw e;
-                esperar(retryAfterMs(e));
+                esperar(retryAfterMs(e), cancelacionSolicitada);
             }
         }
         throw ultimoError;
     }
 
-    private void esperarTurnoConsultaStock() {
+    private void esperarTurnoConsultaStock(BooleanSupplier cancelacionSolicitada) {
         synchronized (bloqueoConsultasStock) {
             long ahora = System.nanoTime();
             long esperaNanos = Math.max(0L, proximaConsultaStockNanos - ahora);
-            if (esperaNanos > 0) esperar((esperaNanos + 999_999L) / 1_000_000L);
+            if (esperaNanos > 0) {
+                esperar((esperaNanos + 999_999L) / 1_000_000L,
+                        cancelacionSolicitada);
+            }
             proximaConsultaStockNanos = System.nanoTime() + INTERVALO_STOCK_MS * 1_000_000L;
         }
     }
@@ -375,12 +437,17 @@ public class MercadoLibreImportador implements ImportadorCanal {
         }
     }
 
-    private void esperar(long milisegundos) {
-        try {
-            Thread.sleep(milisegundos);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("Se interrumpió la consulta de stock de Mercado Libre", e);
+    private void esperar(long milisegundos, BooleanSupplier cancelacionSolicitada) {
+        long pendiente = milisegundos;
+        while (pendiente > 0 && !cancelacionSolicitada.getAsBoolean()) {
+            long tramo = Math.min(200L, pendiente);
+            try {
+                Thread.sleep(tramo);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Se interrumpió la consulta de stock de Mercado Libre", e);
+            }
+            pendiente -= tramo;
         }
     }
 

@@ -57,8 +57,11 @@ public class TenantContextFilter extends OncePerRequestFilter {
             tenantId = usuario.getTenantId();
         }
 
+        boolean callbackMercadoLibreAnterior = "/canales/mercadolibre/callback"
+                .equals(request.getServletPath());
         if (tenantId == null && "POST".equalsIgnoreCase(request.getMethod())
-                && request.getServletPath().startsWith("/webhooks/")) {
+                && (request.getServletPath().startsWith("/webhooks/")
+                || callbackMercadoLibreAnterior)) {
             if (request.getServletPath().endsWith("/woocommerce")) {
                 tenantId = wooCredenciales.resolverTenantPorUrl(request.getHeader("X-WC-Webhook-Source"));
             } else {
@@ -88,7 +91,8 @@ public class TenantContextFilter extends OncePerRequestFilter {
     private Long resolverTenantWebhook(String path, byte[] cuerpo) {
         try {
             JsonNode aviso = objectMapper.readTree(cuerpo);
-            if (path.endsWith("/mercadolibre")) {
+            if (path.endsWith("/mercadolibre")
+                    || "/canales/mercadolibre/callback".equals(path)) {
                 return mercadoLibreTokenService.resolverTenantPorUsuario(
                         aviso.path("user_id").canConvertToLong() ? aviso.path("user_id").asLong() : null);
             }

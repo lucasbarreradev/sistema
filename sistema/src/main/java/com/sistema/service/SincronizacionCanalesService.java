@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 @Service
 public class SincronizacionCanalesService {
@@ -19,10 +20,21 @@ public class SincronizacionCanalesService {
     }
 
     public Resultado sincronizar(CanalVenta origen, Collection<CanalVenta> destinos) {
+        return sincronizar(origen, destinos, () -> false);
+    }
+
+    public Resultado sincronizar(CanalVenta origen, Collection<CanalVenta> destinos,
+                                  BooleanSupplier cancelacionSolicitada) {
         List<CanalVenta> destinosValidos = destinos.stream().filter(c -> c != origen).distinct().toList();
         if (destinosValidos.isEmpty()) throw new IllegalArgumentException("Seleccione al menos un destino diferente del origen");
-        ResultadoImportacionCanal importacion = importacionCanalService.importar(origen);
-        ResultadoPublicacionLote publicacion = publicacionService.publicar(importacion.getProductoIds(), destinosValidos);
+        List<com.sistema.dto.ProductoCanalImportado> productos = importacionCanalService
+                .obtenerProductos(origen, false, cancelacionSolicitada);
+        ResultadoImportacionCanal importacion = cancelacionSolicitada.getAsBoolean()
+                ? new ResultadoImportacionCanal()
+                : importacionCanalService.importar(origen, productos, cancelacionSolicitada);
+        ResultadoPublicacionLote publicacion = cancelacionSolicitada.getAsBoolean()
+                ? new ResultadoPublicacionLote()
+                : publicacionService.publicar(importacion.getProductoIds(), destinosValidos, cancelacionSolicitada);
         return new Resultado(importacion, publicacion);
     }
 

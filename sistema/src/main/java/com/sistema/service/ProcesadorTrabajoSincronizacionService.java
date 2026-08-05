@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BooleanSupplier;
 
 @Service
 public class ProcesadorTrabajoSincronizacionService {
@@ -42,8 +43,9 @@ public class ProcesadorTrabajoSincronizacionService {
     @Async("sincronizacionTaskExecutor")
     public void ejecutar(Long trabajoId, long tenantId, CanalVenta origen, List<CanalVenta> destinos) {
         try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
-            actualizarAProcesando(trabajoId);
-            SincronizacionCanalesService.Resultado resultado = sincronizacionCanalesService.sincronizar(origen, destinos);
+            if (!actualizarAProcesando(trabajoId)) return;
+            SincronizacionCanalesService.Resultado resultado = sincronizacionCanalesService
+                    .sincronizar(origen, destinos, verificadorCancelacion(trabajoId));
             guardarResultado(trabajoId, resultado);
         } catch (Exception e) {
             log.error("Falló el trabajo de sincronización {} del tenant {}", trabajoId, tenantId, e);
@@ -59,10 +61,11 @@ public class ProcesadorTrabajoSincronizacionService {
     public void ejecutarPublicacion(Long trabajoId, long tenantId, List<Long> productoIds,
                                     List<CanalVenta> canales) {
         try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
-            actualizarAProcesando(trabajoId,
+            if (!actualizarAProcesando(trabajoId,
                     "Publicando " + productoIds.size() + " producto(s) en "
-                            + descripcionCanales(canales) + "...");
-            ResultadoPublicacionLote resultado = publicacionService.publicar(productoIds, canales);
+                            + descripcionCanales(canales) + "...")) return;
+            ResultadoPublicacionLote resultado = publicacionService
+                    .publicar(productoIds, canales, verificadorCancelacion(trabajoId));
             guardarResultadoPublicacion(trabajoId, resultado);
         } catch (Exception e) {
             log.error("Falló el trabajo de publicación {} del tenant {}", trabajoId, tenantId, e);
@@ -75,13 +78,20 @@ public class ProcesadorTrabajoSincronizacionService {
     }
 
     @Async("sincronizacionTaskExecutor")
-    public void ejecutarImportacionCompleta(Long trabajoId, long tenantId, CanalVenta canal) {
+    public void ejecutarImportacionCompleta(Long trabajoId, long tenantId, CanalVenta canal,
+                                            boolean incluirInactivas) {
         try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
-            actualizarAProcesando(trabajoId,
-                    "Trayendo todos los productos desde " + canal.getDescripcion() + "...");
-            List<ProductoCanalImportado> productos = importacionCanalService.obtenerProductos(canal);
+            if (!actualizarAProcesando(trabajoId,
+                    "Trayendo productos " + (incluirInactivas ? "activos e inactivos" : "activos")
+                            + " desde " + canal.getDescripcion() + "...")) return;
+            BooleanSupplier cancelacion = verificadorCancelacion(trabajoId);
+            List<ProductoCanalImportado> productos = importacionCanalService
+                    .obtenerProductos(canal, incluirInactivas, cancelacion);
+            if (finalizarCanceladoSiSolicitado(trabajoId,
+                    "Cancelado por el usuario antes de importar los productos descargados.", List.of())) return;
             catalogoImportacionService.guardar(canal, productos);
-            ResultadoImportacionCanal resultado = importacionCanalService.importar(canal, productos);
+            ResultadoImportacionCanal resultado = importacionCanalService
+                    .importar(canal, productos, cancelacion);
             guardarResultadoImportacion(trabajoId, resultado);
         } catch (Exception e) {
             registrarFallo(trabajoId, tenantId, "importación completa", e);
@@ -89,11 +99,17 @@ public class ProcesadorTrabajoSincronizacionService {
     }
 
     @Async("sincronizacionTaskExecutor")
-    public void ejecutarPreparacionImportacion(Long trabajoId, long tenantId, CanalVenta canal) {
+    public void ejecutarPreparacionImportacion(Long trabajoId, long tenantId, CanalVenta canal,
+                                               boolean incluirInactivas) {
         try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
-            actualizarAProcesando(trabajoId,
-                    "Preparando el catálogo de " + canal.getDescripcion() + "...");
-            List<ProductoCanalImportado> productos = importacionCanalService.obtenerProductos(canal);
+            if (!actualizarAProcesando(trabajoId,
+                    "Preparando el catálogo "
+                            + (incluirInactivas ? "con publicaciones inactivas" : "de publicaciones activas")
+                            + " de " + canal.getDescripcion() + "...")) return;
+            List<ProductoCanalImportado> productos = importacionCanalService
+                    .obtenerProductos(canal, incluirInactivas, verificadorCancelacion(trabajoId));
+            if (finalizarCanceladoSiSolicitado(trabajoId,
+                    "Cancelado por el usuario antes de actualizar la lista guardada.", List.of())) return;
             catalogoImportacionService.guardar(canal, productos);
             guardarCatalogoPreparado(trabajoId, productos.size());
         } catch (Exception e) {
@@ -103,30 +119,49 @@ public class ProcesadorTrabajoSincronizacionService {
 
     @Async("sincronizacionTaskExecutor")
     public void ejecutarImportacionSeleccionada(Long trabajoId, long tenantId, CanalVenta canal,
-                                                List<ProductoCanalImportado> productos) {
+                                                List<ProductoCanalImportado> productos,
+                                                List<CanalVenta> destinos) {
         try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
-            actualizarAProcesando(trabajoId,
-                    "Importando " + productos.size() + " producto(s) desde "
-                            + canal.getDescripcion() + "...");
-            ResultadoImportacionCanal resultado = importacionCanalService.importar(canal, productos);
-            guardarResultadoImportacion(trabajoId, resultado);
+            if (!actualizarAProcesando(trabajoId,
+                    "Transfiriendo " + productos.size() + " producto(s) desde "
+                            + canal.getDescripcion()
+                            + (destinos.isEmpty() ? " al sistema..."
+                            : " hacia " + descripcionCanales(destinos) + "..."))) return;
+            BooleanSupplier cancelacion = verificadorCancelacion(trabajoId);
+            ResultadoImportacionCanal importacion = importacionCanalService
+                    .importar(canal, productos, cancelacion);
+            if (destinos.isEmpty()) {
+                guardarResultadoImportacion(trabajoId, importacion);
+            } else {
+                ResultadoPublicacionLote publicacion = publicacionService
+                        .publicar(importacion.getProductoIds(), destinos, cancelacion);
+                guardarResultado(trabajoId,
+                        new SincronizacionCanalesService.Resultado(importacion, publicacion));
+            }
         } catch (Exception e) {
             registrarFallo(trabajoId, tenantId, "importación seleccionada", e);
         }
     }
 
-    private void actualizarAProcesando(Long trabajoId) {
+    private boolean actualizarAProcesando(Long trabajoId) {
         TrabajoSincronizacion trabajo = buscar(trabajoId);
-        actualizarAProcesando(trabajoId,
+        return actualizarAProcesando(trabajoId,
                 "Importando productos desde " + trabajo.getOrigenDescripcion() + "...");
     }
 
-    private void actualizarAProcesando(Long trabajoId, String resumen) {
+    private boolean actualizarAProcesando(Long trabajoId, String resumen) {
         TrabajoSincronizacion trabajo = buscar(trabajoId);
+        if (trabajo.isCancelacionSolicitada()
+                || trabajo.getEstado() == EstadoTrabajoSincronizacion.CANCELADO) {
+            aplicarCancelacion(trabajo, "Cancelado por el usuario antes de comenzar.", List.of());
+            repository.save(trabajo);
+            return false;
+        }
         trabajo.setEstado(EstadoTrabajoSincronizacion.PROCESANDO);
         trabajo.setIniciadoEn(LocalDateTime.now());
         trabajo.setResumen(resumen);
         repository.saveAndFlush(trabajo);
+        return true;
     }
 
     private void guardarResultado(Long trabajoId, SincronizacionCanalesService.Resultado resultado) {
@@ -136,6 +171,14 @@ public class ProcesadorTrabajoSincronizacionService {
         errores.addAll(publicacion.getErrores());
 
         TrabajoSincronizacion trabajo = buscar(trabajoId);
+        if (trabajo.isCancelacionSolicitada()) {
+            aplicarCancelacion(trabajo,
+                    "Cancelado por el usuario. Importación parcial: " + importacion.resumen()
+                            + ". Publicaciones procesadas correctamente: " + publicacion.getExitosas() + ".",
+                    errores);
+            repository.save(trabajo);
+            return;
+        }
         trabajo.setFinalizadoEn(LocalDateTime.now());
         trabajo.setResumen("Importación: " + importacion.resumen()
                 + ". Publicaciones procesadas correctamente: " + publicacion.getExitosas() + ".");
@@ -148,6 +191,14 @@ public class ProcesadorTrabajoSincronizacionService {
 
     private void guardarResultadoPublicacion(Long trabajoId, ResultadoPublicacionLote resultado) {
         TrabajoSincronizacion trabajo = buscar(trabajoId);
+        if (trabajo.isCancelacionSolicitada()) {
+            aplicarCancelacion(trabajo,
+                    "Cancelado por el usuario. Publicaciones procesadas correctamente: "
+                            + resultado.getExitosas() + ".",
+                    resultado.getErrores());
+            repository.save(trabajo);
+            return;
+        }
         trabajo.setFinalizadoEn(LocalDateTime.now());
         trabajo.setResumen("Publicaciones procesadas correctamente: " + resultado.getExitosas() + ".");
         trabajo.setDetalle(resultado.getErrores().isEmpty()
@@ -160,6 +211,13 @@ public class ProcesadorTrabajoSincronizacionService {
 
     private void guardarResultadoImportacion(Long trabajoId, ResultadoImportacionCanal resultado) {
         TrabajoSincronizacion trabajo = buscar(trabajoId);
+        if (trabajo.isCancelacionSolicitada()) {
+            aplicarCancelacion(trabajo,
+                    "Cancelado por el usuario. Importación parcial: " + resultado.resumen() + ".",
+                    resultado.getErrores());
+            repository.save(trabajo);
+            return;
+        }
         trabajo.setFinalizadoEn(LocalDateTime.now());
         trabajo.setResumen("Importación: " + resultado.resumen() + ".");
         trabajo.setDetalle(resultado.getErrores().isEmpty()
@@ -172,6 +230,12 @@ public class ProcesadorTrabajoSincronizacionService {
 
     private void guardarCatalogoPreparado(Long trabajoId, int cantidad) {
         TrabajoSincronizacion trabajo = buscar(trabajoId);
+        if (trabajo.isCancelacionSolicitada()) {
+            aplicarCancelacion(trabajo,
+                    "Cancelado por el usuario después de actualizar la lista guardada.", List.of());
+            repository.save(trabajo);
+            return;
+        }
         trabajo.setFinalizadoEn(LocalDateTime.now());
         trabajo.setResumen(cantidad + " producto(s) listos para seleccionar.");
         trabajo.setDetalle(null);
@@ -190,11 +254,47 @@ public class ProcesadorTrabajoSincronizacionService {
 
     private void guardarError(Long trabajoId, String mensaje) {
         TrabajoSincronizacion trabajo = buscar(trabajoId);
+        if (trabajo.isCancelacionSolicitada()
+                || trabajo.getEstado() == EstadoTrabajoSincronizacion.CANCELADO) {
+            aplicarCancelacion(trabajo, "Cancelado por el usuario.", List.of());
+            repository.save(trabajo);
+            return;
+        }
         trabajo.setEstado(EstadoTrabajoSincronizacion.ERROR);
         trabajo.setFinalizadoEn(LocalDateTime.now());
         trabajo.setResumen("El trabajo no pudo completarse.");
         trabajo.setDetalle(mensaje);
         repository.save(trabajo);
+    }
+
+    private BooleanSupplier verificadorCancelacion(Long trabajoId) {
+        return () -> cancelacionSolicitada(trabajoId);
+    }
+
+    private boolean cancelacionSolicitada(Long trabajoId) {
+        return repository.findById(trabajoId)
+                .map(trabajo -> trabajo.isCancelacionSolicitada()
+                        || trabajo.getEstado() == EstadoTrabajoSincronizacion.CANCELADO)
+                .orElse(true);
+    }
+
+    private boolean finalizarCanceladoSiSolicitado(Long trabajoId, String resumen,
+                                                    List<String> errores) {
+        TrabajoSincronizacion trabajo = buscar(trabajoId);
+        if (!trabajo.isCancelacionSolicitada()
+                && trabajo.getEstado() != EstadoTrabajoSincronizacion.CANCELADO) return false;
+        aplicarCancelacion(trabajo, resumen, errores);
+        repository.save(trabajo);
+        return true;
+    }
+
+    private void aplicarCancelacion(TrabajoSincronizacion trabajo, String resumen,
+                                    List<String> errores) {
+        trabajo.setCancelacionSolicitada(true);
+        trabajo.setEstado(EstadoTrabajoSincronizacion.CANCELADO);
+        trabajo.setFinalizadoEn(LocalDateTime.now());
+        trabajo.setResumen(resumen);
+        trabajo.setDetalle(errores == null || errores.isEmpty() ? null : String.join("\n", errores));
     }
 
     private TrabajoSincronizacion buscar(Long trabajoId) {

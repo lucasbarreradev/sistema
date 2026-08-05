@@ -9,6 +9,7 @@ import com.sistema.model.Producto;
 import com.sistema.model.ProductoVariante;
 import com.sistema.repository.ProductoVarianteRepository;
 import com.sistema.service.MercadoLibreTokenService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -22,7 +23,7 @@ import java.util.*;
 public class MercadoLibrePublicador implements PublicadorCanal {
     private static final String ITEM_CONDITION_NEW = "2230284";
 
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient;
     private final MercadoLibreTokenService tokenService;
     private final ObjectMapper objectMapper;
     private final ProductoVarianteRepository varianteRepository;
@@ -32,11 +33,18 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     @Value("${integraciones.mercadolibre.user-products:true}") private boolean userProducts;
     @Value("${integraciones.public-base-url:}") private String publicBaseUrl;
 
+    @Autowired
     public MercadoLibrePublicador(MercadoLibreTokenService tokenService, ObjectMapper objectMapper,
                                   ProductoVarianteRepository varianteRepository) {
+        this(tokenService, objectMapper, varianteRepository, RestClient.create());
+    }
+
+    MercadoLibrePublicador(MercadoLibreTokenService tokenService, ObjectMapper objectMapper,
+                           ProductoVarianteRepository varianteRepository, RestClient restClient) {
         this.tokenService = tokenService;
         this.objectMapper = objectMapper;
         this.varianteRepository = varianteRepository;
+        this.restClient = restClient;
     }
 
     public CanalVenta canal() { return CanalVenta.MERCADO_LIBRE; }
@@ -48,12 +56,14 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         List<ProductoVariante> variantes = varianteRepository.findByProductoIdOrderByNombreAsc(producto.getId());
         validarFormatoGtins(producto, variantes);
         validarAtributosObligatorios(producto, variantes);
-        detectarGuiaTallesSiCorresponde(producto, variantes);
+        long sellerId = obtenerSellerIdActual();
+        prepararGuiaTallesParaCuentaConectada(producto, variantes);
         if (debePublicarVariantesComoUserProducts(variantes, idActual, producto)) {
             validarFotosDeVariantesVisuales(producto, variantes);
-            return publicarVariantesComoUserProducts(producto, variantes);
+            return publicarVariantesComoUserProducts(producto, variantes, sellerId);
         }
         String id = resolverId(producto, idActual);
+        if (id != null && requiereNuevaPublicacion(id, sellerId)) id = null;
         JsonNode response = publicarItemConFallbackGtin(construirPayload(producto, id == null), id);
         String idPublicado = response == null ? id : response.path("id").asText(id);
         if (idPublicado == null || idPublicado.isBlank()) {
@@ -110,6 +120,31 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         }
         throw new IllegalArgumentException("No se encontró en la cuenta una guía de " + producto.getMercadoLibreMarca()
                 + " para " + producto.getMercadoLibreGenero() + " que contenga todos los talles del producto");
+    }
+
+    private void prepararGuiaTallesParaCuentaConectada(
+            Producto producto,
+            List<ProductoVariante> variantes) {
+        if (tieneTexto(producto.getMercadoLibreGuiaTallesId())) {
+            try {
+                consultarGuiaConRenovacion(producto.getMercadoLibreGuiaTallesId().trim());
+            } catch (RestClientResponseException e) {
+                if (e.getStatusCode() != HttpStatus.FORBIDDEN) throw e;
+                // Las guías específicas pertenecen al vendedor que las creó. Si el producto
+                // fue importado desde otra cuenta, no se puede reutilizar ese identificador.
+                producto.setMercadoLibreGuiaTallesId(null);
+                producto.setMercadoLibreGuiaTallesFilaId(null);
+            }
+        }
+        detectarGuiaTallesSiCorresponde(producto, variantes);
+    }
+
+    private long obtenerSellerIdActual() {
+        Long sellerId = tokenService.obtenerUsuarioExternoId();
+        if (sellerId == null || sellerId <= 0) {
+            throw new IllegalStateException("No se pudo identificar la cuenta conectada de Mercado Libre");
+        }
+        return sellerId;
     }
 
     private JsonNode buscarGuiasConRenovacion(Map<String, Object> body) {
@@ -322,13 +357,14 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     }
 
     private ResultadoPublicacion publicarVariantesComoUserProducts(Producto producto,
-                                                                    List<ProductoVariante> variantes) {
+                                                                    List<ProductoVariante> variantes,
+                                                                    long sellerId) {
         String primerId = null;
         Map<Long, FilaGuiaAsignada> filasGuia = resolverFilasGuia(producto, variantes);
         for (ProductoVariante variante : variantes) {
             String id = tieneTexto(variante.getMercadoLibreItemId())
                     ? variante.getMercadoLibreItemId().trim() : null;
-            if (id != null && requiereNuevaPublicacion(id)) id = null;
+            if (id != null && requiereNuevaPublicacion(id, sellerId)) id = null;
             boolean nueva = id == null;
             Map<String, Object> payload = construirPayloadVarianteUserProduct(producto, variante, nueva,
                     filasGuia.get(variante.getId()));
@@ -348,12 +384,16 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         return new ResultadoPublicacion(primerId);
     }
 
-    private boolean requiereNuevaPublicacion(String itemId) {
+    boolean requiereNuevaPublicacion(String itemId, long sellerId) {
         try {
             JsonNode item = getMercadoLibreConRenovacion("/items/" + itemId);
-            return "closed".equalsIgnoreCase(item.path("status").asText());
+            long propietario = item.path("seller_id").asLong(0);
+            return "closed".equalsIgnoreCase(item.path("status").asText())
+                    || propietario <= 0
+                    || propietario != sellerId;
         } catch (RestClientResponseException e) {
-            if (e.getStatusCode() == HttpStatus.NOT_FOUND) return true;
+            if (e.getStatusCode() == HttpStatus.NOT_FOUND
+                    || e.getStatusCode() == HttpStatus.FORBIDDEN) return true;
             throw e;
         }
     }
@@ -420,6 +460,9 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         try {
             return publicarItemConRenovacion(payload, id);
         } catch (RestClientResponseException e) {
+            if (tieneTexto(id) && payload.containsKey("pictures") && esErrorFotosNoModificables(e)) {
+                return publicarItemConFallbackGtin(prepararReintentoSinFotos(payload), id);
+            }
             if (!esErrorGtinRequerido(e)) throw e;
             if (!tieneTexto(id)) {
                 boolean envioMotivo = objectMapper.valueToTree(payload).toString()
@@ -433,6 +476,20 @@ public class MercadoLibrePublicador implements PublicadorCanal {
             }
             return publicarItemConRenovacion(prepararReintentoSinAtributos(payload), id);
         }
+    }
+
+    Map<String, Object> prepararReintentoSinFotos(Map<String, Object> payload) {
+        Map<String, Object> reintento = new LinkedHashMap<>(payload);
+        reintento.remove("pictures");
+        return reintento;
+    }
+
+    private boolean esErrorFotosNoModificables(RestClientResponseException e) {
+        String respuesta = e.getResponseBodyAsString();
+        return respuesta != null
+                && respuesta.contains("pictures")
+                && (respuesta.contains("field_not_updatable")
+                || respuesta.contains("not_modifiable"));
     }
 
     Map<String, Object> prepararReintentoSinAtributos(Map<String, Object> payload) {
@@ -502,7 +559,9 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         }
         AtributosVarianteHelper.obtener(variante).forEach((id, valor) ->
         {
-            if (!esSoloLectura(producto, id)) agregarAtributo(atributos, id, null, valor);
+            if (!esSoloLectura(producto, id) && !esAtributoGuiaImportado(id)) {
+                agregarAtributo(atributos, id, null, valor);
+            }
         });
         if (tieneTexto(producto.getMercadoLibreGuiaTallesId())) {
             if (filaGuia != null && tieneTexto(filaGuia.tallePrincipal())) {
@@ -689,7 +748,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
                 atributosImportados.put("SIZE", filaGuia.tallePrincipal());
             }
             atributosImportados.forEach((id, valor) -> {
-                if (!esSoloLectura(variante.getProducto(), id)) {
+                if (!esSoloLectura(variante.getProducto(), id) && !esAtributoGuiaImportado(id)) {
                     combinaciones.add(Map.of("id", id, "value_name", valor));
                 }
             });
@@ -744,6 +803,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
                         throw new IllegalArgumentException("El atributo " + id + " debe tener value_id o value_name");
                     }
                     if (!esSoloLectura(producto, id.toString())
+                            && !esAtributoGuiaImportado(id.toString())
                             && !("EMPTY_GTIN_REASON".equals(id.toString()) && tieneTexto(producto.getMercadoLibreGtin()))) {
                         atributos.put(id.toString(), new LinkedHashMap<>(atributo));
                     }
@@ -759,6 +819,10 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         return producto != null && producto.getMercadoLibreCategoriaId() != null
                 && atributosSoloLecturaPorCategoria
                 .getOrDefault(producto.getMercadoLibreCategoriaId(), Set.of()).contains(id);
+    }
+
+    private boolean esAtributoGuiaImportado(String id) {
+        return "SIZE_GRID_ID".equals(id) || "SIZE_GRID_ROW_ID".equals(id);
     }
 
     private void agregarAtributo(Map<String, Map<String, Object>> atributos, String id,

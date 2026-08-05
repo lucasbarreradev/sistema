@@ -92,9 +92,12 @@ public class CanalesController {
     }
 
     @PostMapping("/importar/{canal}")
-    public String importarCanal(@PathVariable CanalVenta canal, RedirectAttributes ra) {
+    public String importarCanal(@PathVariable CanalVenta canal,
+                                @RequestParam(defaultValue = "false") boolean incluirInactivas,
+                                RedirectAttributes ra) {
         try {
-            var trabajo = trabajoSincronizacionService.iniciarImportacionCompleta(canal);
+            var trabajo = trabajoSincronizacionService
+                    .iniciarImportacionCompleta(canal, incluirInactivas);
             ra.addFlashAttribute("mensaje", "Importación completa iniciada en segundo plano (trabajo #"
                     + trabajo.getId() + "). Puede salir de esta página sin interrumpirla.");
         } catch (Exception e) {
@@ -105,9 +108,11 @@ public class CanalesController {
 
     @PostMapping("/importar/{canal}/preparar")
     public String prepararSeleccionImportacion(@PathVariable CanalVenta canal,
+                                               @RequestParam(defaultValue = "false") boolean incluirInactivas,
                                                RedirectAttributes ra) {
         try {
-            var trabajo = trabajoSincronizacionService.iniciarPreparacionImportacion(canal);
+            var trabajo = trabajoSincronizacionService
+                    .iniciarPreparacionImportacion(canal, incluirInactivas);
             ra.addFlashAttribute("mensaje", "Actualización de la lista iniciada en segundo plano (trabajo #"
                     + trabajo.getId() + "). Puede seguir usando la lista que ya estaba guardada.");
         } catch (Exception e) {
@@ -122,6 +127,9 @@ public class CanalesController {
         try {
             model.addAttribute("canal", canal);
             model.addAttribute("productosRemotos", catalogoImportacionService.listar(canal));
+            model.addAttribute("categoriasRemotas", catalogoImportacionService.listarCategorias(canal));
+            model.addAttribute("canales", CanalVenta.values());
+            model.addAttribute("configuracion", publicacionService.estadoConfiguracion());
             return "canales/seleccionar_importacion";
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
@@ -132,6 +140,7 @@ public class CanalesController {
     @PostMapping("/importar/{canal}/seleccionados")
     public String importarSeleccionados(@PathVariable CanalVenta canal,
                                         @RequestParam(required = false) List<String> idsExternos,
+                                        @RequestParam(required = false) List<CanalVenta> destinos,
                                         @RequestParam(defaultValue = "0") BigDecimal ajustePrecioPorcentaje,
                                         RedirectAttributes ra) {
         try {
@@ -139,9 +148,10 @@ public class CanalesController {
             seleccionados = edicionMasivaPrecioService
                     .ajustarImportados(seleccionados, ajustePrecioPorcentaje);
             var trabajo = trabajoSincronizacionService
-                    .iniciarImportacionSeleccionada(canal, seleccionados);
-            ra.addFlashAttribute("mensaje", "Importación de " + seleccionados.size()
-                    + " producto(s) iniciada en segundo plano (trabajo #" + trabajo.getId() + ").");
+                    .iniciarImportacionSeleccionada(canal, seleccionados, destinos);
+            ra.addFlashAttribute("mensaje", "Transferencia de " + seleccionados.size()
+                    + " producto(s) iniciada en segundo plano (trabajo #" + trabajo.getId()
+                    + "): " + trabajo.getFlujoDescripcion() + ".");
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
         }
@@ -189,6 +199,18 @@ public class CanalesController {
             var trabajo = trabajoSincronizacionService.iniciarPublicacion(productoIds, canales);
             ra.addFlashAttribute("mensaje", "Publicación iniciada en segundo plano (trabajo #"
                     + trabajo.getId() + "). Puede salir de esta página sin interrumpirla.");
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/canales";
+    }
+
+    @PostMapping("/trabajos/{trabajoId}/cancelar")
+    public String cancelarTrabajo(@PathVariable Long trabajoId, RedirectAttributes ra) {
+        try {
+            trabajoSincronizacionService.solicitarCancelacion(trabajoId);
+            ra.addFlashAttribute("mensaje", "Cancelación solicitada para el trabajo #" + trabajoId
+                    + ". La operación actual puede tardar unos instantes en terminar.");
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
         }

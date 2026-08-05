@@ -17,6 +17,8 @@ import static org.mockito.Mockito.*;
 class WebhookVentasServiceTest {
     private OrdenCanalProcesadaRepository ordenes;
     private ProductoVarianteRepository variantes;
+    private ProductoRepository productos;
+    private VentaRepository ventas;
     private MovimientoInventarioService movimientos;
     private WebhookVentasService service;
 
@@ -24,10 +26,12 @@ class WebhookVentasServiceTest {
     void preparar() {
         ordenes = mock(OrdenCanalProcesadaRepository.class);
         variantes = mock(ProductoVarianteRepository.class);
+        productos = mock(ProductoRepository.class);
+        ventas = mock(VentaRepository.class);
         movimientos = mock(MovimientoInventarioService.class);
         service = new WebhookVentasService(new ObjectMapper(), mock(MercadoLibreTokenService.class), ordenes,
-                mock(PublicacionCanalRepository.class), mock(ProductoRepository.class), variantes, movimientos,
-                mock(TiendanubeCredencialesService.class));
+                mock(PublicacionCanalRepository.class), productos, variantes, movimientos,
+                mock(TiendanubeCredencialesService.class), ventas);
     }
 
     @Test
@@ -38,6 +42,8 @@ class WebhookVentasServiceTest {
         variante.setId(20L);
         variante.setProducto(producto);
         when(variantes.findByWooCommerceVariationId("77")).thenReturn(Optional.of(variante));
+        when(variantes.findById(20L)).thenReturn(Optional.of(variante));
+        when(productos.findById(10L)).thenReturn(Optional.of(producto));
 
         service.procesarWooCommerce("""
                 {"id":500,"status":"processing","line_items":[
@@ -48,6 +54,9 @@ class WebhookVentasServiceTest {
         verify(movimientos).registrarVentaExterna(10L, 20L, 2,
                 "Venta WooCommerce / orden 500", CanalVenta.WOOCOMMERCE);
         verify(ordenes).save(any(OrdenCanalProcesada.class));
+        verify(ventas).save(argThat(v -> v.getCanalVenta() == CanalVenta.WOOCOMMERCE
+                && "500".equals(v.getOrdenExternaId()) && v.getItems().size() == 1
+                && v.getItems().get(0).getCantidad() == 2));
     }
 
     @Test

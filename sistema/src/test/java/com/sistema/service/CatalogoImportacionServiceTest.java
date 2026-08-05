@@ -69,6 +69,32 @@ class CatalogoImportacionServiceTest {
         assertEquals("SKU-NUEVO", vigente.getSku());
     }
 
+    @Test
+    void exponeLasCategoriasGuardadasParaFiltrarLaLista() throws Exception {
+        ProductoCatalogoCanalRepository repository =
+                mock(ProductoCatalogoCanalRepository.class);
+        ObjectMapper objectMapper = new ObjectMapper();
+        ProductoCanalImportado remoto = new ProductoCanalImportado(
+                "MLA1", "SKU-1", "Remera", 4, new BigDecimal("1500"),
+                null, "MLA109042", Map.of(
+                        "categoriaNombre", "Remeras", "estado", "paused"), List.of());
+        ProductoCatalogoCanal entidad = entidad("MLA1");
+        entidad.setDescripcion("Remera");
+        entidad.setProductoJson(objectMapper.writeValueAsString(remoto));
+        when(repository.findByCanalOrderByDescripcionAsc(CanalVenta.MERCADO_LIBRE))
+                .thenReturn(List.of(entidad));
+        CatalogoImportacionService service =
+                new CatalogoImportacionService(repository, objectMapper);
+
+        var productos = service.listar(CanalVenta.MERCADO_LIBRE);
+        var categorias = service.listarCategorias(CanalVenta.MERCADO_LIBRE);
+
+        assertEquals("Remeras", productos.get(0).getCategorias().get(0).getNombre());
+        assertEquals("|MLA109042|", productos.get(0).getCategoriaIdsFiltro());
+        assertEquals("Pausada", productos.get(0).getEstadoDescripcion());
+        assertEquals("MLA109042", categorias.get(0).getId());
+    }
+
     private ProductoCatalogoCanal entidad(String idExterno) {
         ProductoCatalogoCanal entidad = new ProductoCatalogoCanal();
         entidad.setCanal(CanalVenta.MERCADO_LIBRE);

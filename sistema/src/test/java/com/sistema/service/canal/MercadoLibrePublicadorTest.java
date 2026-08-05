@@ -7,7 +7,12 @@ import com.sistema.service.MercadoLibreTokenService;
 import com.sistema.repository.ProductoVarianteRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
@@ -17,16 +22,23 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 class MercadoLibrePublicadorTest {
     private MercadoLibrePublicador publicador;
     private ProductoVarianteRepository variantes;
+    private MercadoLibreTokenService tokens;
 
     @BeforeEach
     void configurar() {
         variantes = mock(ProductoVarianteRepository.class);
+        tokens = mock(MercadoLibreTokenService.class);
+        when(tokens.obtenerAccessToken()).thenReturn("token");
         when(variantes.findByProductoIdOrderByNombreAsc(any())).thenReturn(List.of());
-        publicador = new MercadoLibrePublicador(mock(MercadoLibreTokenService.class), new ObjectMapper(), variantes);
+        publicador = new MercadoLibrePublicador(tokens, new ObjectMapper(), variantes);
         ReflectionTestUtils.setField(publicador, "categoryId", "");
         ReflectionTestUtils.setField(publicador, "listingTypeId", "gold_special");
         ReflectionTestUtils.setField(publicador, "userProducts", false);
@@ -240,6 +252,54 @@ class MercadoLibrePublicadorTest {
         assertEquals(2, reintento.get("available_quantity"));
         assertFalse(reintento.containsKey("attributes"));
         assertFalse(reintento.containsKey("variations"));
+    }
+
+    @Test
+    void alActualizarCatalogoPuedeReintentarSinFotos() {
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("price", BigDecimal.TEN);
+        payload.put("available_quantity", 2);
+        payload.put("pictures", List.of(Map.of("source", "https://img.test/foto.jpg")));
+
+        Map<String, Object> reintento = publicador.prepararReintentoSinFotos(payload);
+
+        assertEquals(BigDecimal.TEN, reintento.get("price"));
+        assertEquals(2, reintento.get("available_quantity"));
+        assertFalse(reintento.containsKey("pictures"));
+    }
+
+    @Test
+    void noIntentaModificarUnaPublicacionDeOtroVendedor() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        MercadoLibrePublicador publicadorConApi = new MercadoLibrePublicador(
+                tokens, new ObjectMapper(), variantes, builder.build());
+
+        servidor.expect(requestTo("https://api.mercadolibre.com/items/MLA123"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(
+                        "{\"id\":\"MLA123\",\"seller_id\":111,\"status\":\"active\"}",
+                        MediaType.APPLICATION_JSON));
+
+        assertTrue(publicadorConApi.requiereNuevaPublicacion("MLA123", 222L));
+        servidor.verify();
+    }
+
+    @Test
+    void creaOtraPublicacionSiLaCuentaNoPuedeConsultarElItemImportado() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        MercadoLibrePublicador publicadorConApi = new MercadoLibrePublicador(
+                tokens, new ObjectMapper(), variantes, builder.build());
+
+        servidor.expect(requestTo("https://api.mercadolibre.com/items/MLA403"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withStatus(HttpStatus.FORBIDDEN)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error\":\"access_denied\",\"status\":403}"));
+
+        assertTrue(publicadorConApi.requiereNuevaPublicacion("MLA403", 222L));
+        servidor.verify();
     }
 
     @Test

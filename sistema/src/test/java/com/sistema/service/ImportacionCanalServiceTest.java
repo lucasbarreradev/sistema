@@ -25,6 +25,30 @@ import static org.mockito.Mockito.*;
 
 class ImportacionCanalServiceTest {
     @Test
+    void noImportaProductosCuandoLaCancelacionYaFueSolicitada() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        ProductoService productoService = mock(ProductoService.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        ImportadorCanal importador = mock(ImportadorCanal.class);
+        when(importador.canal()).thenReturn(CanalVenta.WOOCOMMERCE);
+        when(importador.configurado()).thenReturn(true);
+        ProductoCanalImportado producto = new ProductoCanalImportado(
+                "55", "SKU-1", "Producto", 8, BigDecimal.TEN,
+                null, null, Map.of(), List.of());
+        ImportacionCanalService service = new ImportacionCanalService(
+                productos, productoService, publicaciones, List.of(importador),
+                mock(ProductoVarianteRepository.class), mock(ProductoVarianteService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper());
+
+        ResultadoImportacionCanal resultado = service.importar(
+                CanalVenta.WOOCOMMERCE, List.of(producto), () -> true);
+
+        assertEquals(0, resultado.getCreados());
+        assertEquals(0, resultado.getActualizados());
+        verifyNoInteractions(productoService, publicaciones);
+    }
+
+    @Test
     void noImportaVariantesEnCeroSiMercadoLibreInformaStockGeneral() {
         ProductoRepository productos = mock(ProductoRepository.class);
         ProductoService productoService = mock(ProductoService.class);

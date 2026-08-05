@@ -6,7 +6,7 @@ import com.sistema.model.Producto;
 import com.sistema.model.PublicacionCanal;
 import com.sistema.repository.ProductoRepository;
 import com.sistema.repository.PublicacionCanalRepository;
-import com.sistema.service.canal.MercadoLibrePublicador;
+import com.sistema.service.canal.TiendanubePublicador;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -15,11 +15,11 @@ import java.util.Optional;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
-class SincronizacionStockMercadoLibreServiceTest {
+class SincronizacionStockTiendaNubeServiceTest {
     private ProductoRepository productos;
     private PublicacionCanalRepository publicaciones;
-    private MercadoLibrePublicador publicador;
-    private SincronizacionStockMercadoLibreService service;
+    private TiendanubePublicador publicador;
+    private SincronizacionStockTiendaNubeService service;
     private Producto producto;
     private PublicacionCanal publicacion;
 
@@ -27,45 +27,41 @@ class SincronizacionStockMercadoLibreServiceTest {
     void configurar() {
         productos = mock(ProductoRepository.class);
         publicaciones = mock(PublicacionCanalRepository.class);
-        publicador = mock(MercadoLibrePublicador.class);
-        service = new SincronizacionStockMercadoLibreService(productos, publicaciones, publicador);
-
+        publicador = mock(TiendanubePublicador.class);
+        service = new SincronizacionStockTiendaNubeService(productos, publicaciones, publicador);
         producto = new Producto();
         producto.setId(10L);
-        producto.setMercadoLibreId("MLA123");
-        producto.setCantidad(3);
+        producto.setCantidad(6);
         publicacion = new PublicacionCanal();
         publicacion.setProducto(producto);
-        publicacion.setCanal(CanalVenta.MERCADO_LIBRE);
-        publicacion.setIdExterno("MLA123");
-        publicacion.setEstado(EstadoPublicacion.IMPORTADO);
-
+        publicacion.setCanal(CanalVenta.TIENDANUBE);
+        publicacion.setIdExterno("88");
+        publicacion.setEstado(EstadoPublicacion.PUBLICADO);
         when(productos.findById(10L)).thenReturn(Optional.of(producto));
-        when(publicaciones.findByProductoIdAndCanal(10L, CanalVenta.MERCADO_LIBRE))
+        when(publicaciones.findByProductoIdAndCanal(10L, CanalVenta.TIENDANUBE))
                 .thenReturn(Optional.of(publicacion));
         when(publicador.configurado()).thenReturn(true);
     }
 
     @Test
-    void actualizaElStockYRegistraLaSincronizacion() {
+    void enviaElNuevoStockDespuesDeLaVenta() {
         service.sincronizar(new StockProductoCambiadoEvent(10L));
 
-        verify(publicador).sincronizarStock(producto, "MLA123");
+        verify(publicador).sincronizarStock(producto, "88");
         verify(publicaciones).save(publicacion);
-        assertEquals(EstadoPublicacion.IMPORTADO, publicacion.getEstado());
         assertNull(publicacion.getUltimoError());
         assertNotNull(publicacion.getFechaActualizacion());
     }
 
     @Test
-    void conservaLaVentaYRegistraElErrorDelCanal() {
-        doThrow(new IllegalStateException("API no disponible"))
-                .when(publicador).sincronizarStock(producto, "MLA123");
+    void registraElErrorSinPropagarloALaVenta() {
+        doThrow(new IllegalStateException("Tiendanube no disponible"))
+                .when(publicador).sincronizarStock(producto, "88");
 
         service.sincronizar(new StockProductoCambiadoEvent(10L));
 
         assertEquals(EstadoPublicacion.ERROR, publicacion.getEstado());
-        assertTrue(publicacion.getUltimoError().contains("API no disponible"));
+        assertTrue(publicacion.getUltimoError().contains("Tiendanube no disponible"));
         verify(publicaciones).save(publicacion);
     }
 
@@ -77,7 +73,7 @@ class SincronizacionStockMercadoLibreServiceTest {
 
         verifyNoInteractions(productos, publicaciones);
         verify(publicador, never()).sincronizarStock(any(), anyString());
-        assertEquals(EstadoPublicacion.IMPORTADO, publicacion.getEstado());
+        assertEquals(EstadoPublicacion.PUBLICADO, publicacion.getEstado());
         assertNull(publicacion.getUltimoError());
     }
 }

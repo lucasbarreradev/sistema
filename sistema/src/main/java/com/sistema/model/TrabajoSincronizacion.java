@@ -47,6 +47,9 @@ public class TrabajoSincronizacion extends TenantAwareEntity {
     @Column(name = "finalizado_en")
     private LocalDateTime finalizadoEn;
 
+    @Column(name = "cancelacion_solicitada", nullable = false)
+    private boolean cancelacionSolicitada;
+
     @Column(length = 1000)
     private String resumen;
 
@@ -66,6 +69,9 @@ public class TrabajoSincronizacion extends TenantAwareEntity {
     public String getFlujoDescripcion() {
         if (tipoTrabajo == TipoTrabajoSincronizacion.PUBLICACION_SELECCIONADA) {
             return "Sistema \u2192 " + getDestinosDescripcion();
+        }
+        if (tipoTrabajo == TipoTrabajoSincronizacion.SINCRONIZACION_SELECCIONADA) {
+            return getOrigenDescripcion() + " \u2192 Sistema \u2192 " + getDestinosDescripcion();
         }
         if (tipoTrabajo == TipoTrabajoSincronizacion.IMPORTACION_COMPLETA
                 || tipoTrabajo == TipoTrabajoSincronizacion.PREPARACION_IMPORTACION

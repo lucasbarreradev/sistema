@@ -16,6 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.function.BooleanSupplier;
 
 @Service
 public class ImportacionCanalService {
@@ -65,12 +66,31 @@ public class ImportacionCanalService {
         return importadorConfigurado(canal).obtenerProductos();
     }
 
+    public List<ProductoCanalImportado> obtenerProductos(
+            CanalVenta canal, boolean incluirInactivas) {
+        return obtenerProductos(canal, incluirInactivas, () -> false);
+    }
+
+    public List<ProductoCanalImportado> obtenerProductos(
+            CanalVenta canal, boolean incluirInactivas,
+            BooleanSupplier cancelacionSolicitada) {
+        ImportadorCanal importador = importadorConfigurado(canal);
+        return importador.obtenerProductos(incluirInactivas, cancelacionSolicitada);
+    }
+
     public ResultadoImportacionCanal importar(CanalVenta canal,
                                               Collection<ProductoCanalImportado> productos) {
+        return importar(canal, productos, () -> false);
+    }
+
+    public ResultadoImportacionCanal importar(CanalVenta canal,
+                                              Collection<ProductoCanalImportado> productos,
+                                              BooleanSupplier cancelacionSolicitada) {
         importadorConfigurado(canal);
         ResultadoImportacionCanal resultado = new ResultadoImportacionCanal();
         if (productos == null) return resultado;
         for (ProductoCanalImportado dato : productos) {
+            if (cancelacionSolicitada.getAsBoolean()) return resultado;
             try { guardar(canal, dato, resultado); }
             catch (Exception e) {
                 String referencia = dato.sku() == null || dato.sku().isBlank() ? dato.idExterno() : dato.sku();

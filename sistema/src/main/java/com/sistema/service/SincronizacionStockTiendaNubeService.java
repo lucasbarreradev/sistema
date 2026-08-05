@@ -31,7 +31,7 @@ public class SincronizacionStockTiendaNubeService {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void sincronizar(StockProductoCambiadoEvent evento) {
-        if (evento.canalOrigen() == CanalVenta.TIENDANUBE) return;
+        if (evento.canalOrigen() == CanalVenta.TIENDANUBE || !publicador.configurado()) return;
         Producto producto = productoRepository.findById(evento.productoId()).orElse(null);
         if (producto == null) return;
         PublicacionCanal publicacion = publicacionRepository

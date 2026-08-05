@@ -34,7 +34,7 @@ public class SincronizacionStockWooCommerceService {
     @Async
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void sincronizar(StockProductoCambiadoEvent evento) {
-        if (evento.canalOrigen() == CanalVenta.WOOCOMMERCE) return;
+        if (evento.canalOrigen() == CanalVenta.WOOCOMMERCE || !wooCommercePublicador.configurado()) return;
         Producto producto = productoRepository.findById(evento.productoId()).orElse(null);
         if (producto == null) return;
         PublicacionCanal publicacion = publicacionRepository

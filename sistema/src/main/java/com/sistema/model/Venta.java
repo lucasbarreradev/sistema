@@ -14,8 +14,11 @@ import java.util.List;
 import java.util.Objects;
 
 @Entity
-@Table(uniqueConstraints =
-        @UniqueConstraint(name = "uk_venta_tenant_codigo", columnNames = {"tenant_id", "codigo"}))
+@Table(uniqueConstraints = {
+        @UniqueConstraint(name = "uk_venta_tenant_codigo", columnNames = {"tenant_id", "codigo"}),
+        @UniqueConstraint(name = "uk_venta_tenant_canal_orden",
+                columnNames = {"tenant_id", "canal_venta", "orden_externa_id"})
+})
 @ToString(exclude = {"items", "cliente"})
 @Getter
 @Setter
@@ -36,7 +39,10 @@ public class Venta extends TenantAwareEntity {
     // ==========================================
     public enum Origen {
         DIRECTA,
-        PRESUPUESTO
+        PRESUPUESTO,
+        MERCADO_LIBRE,
+        WOOCOMMERCE,
+        TIENDANUBE
     }
 
     @Id
@@ -58,6 +64,8 @@ public class Venta extends TenantAwareEntity {
 
     private String cae;
     private LocalDate fechaVencimientoCae;
+    @Column(name = "fecha_comprobante")
+    private LocalDate fechaComprobante;
 
     // Origen de la venta
     @Enumerated(EnumType.STRING)
@@ -76,6 +84,22 @@ public class Venta extends TenantAwareEntity {
     // Referencia al presupuesto si aplica
     @Column(name = "presupuesto_codigo", length = 20)
     private String presupuestoCodigo;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "canal_venta", length = 30)
+    private CanalVenta canalVenta;
+
+    @Column(name = "orden_externa_id", length = 120)
+    private String ordenExternaId;
+
+    @Column(name = "cliente_nombre_externo", length = 250)
+    private String clienteNombreExterno;
+
+    @Column(name = "cliente_documento_externo", length = 40)
+    private String clienteDocumentoExterno;
+
+    @Column(name = "cliente_email_externo", length = 180)
+    private String clienteEmailExterno;
 
     // Nota
     @Column(name = "nota", length = 500)
@@ -256,6 +280,21 @@ public class Venta extends TenantAwareEntity {
         return fechaVenta != null
                 ? fechaVenta.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
                 : "";
+    }
+
+    @Transient
+    public String getOrigenDescripcion() {
+        if (canalVenta != null) return canalVenta.getDescripcion();
+        return origen == Origen.PRESUPUESTO ? "Presupuesto" : "Sistema";
+    }
+
+    @Transient
+    public String getClienteDescripcion() {
+        if (cliente != null) {
+            return (cliente.getNombre() + " " + (cliente.getApellido() == null ? "" : cliente.getApellido())).trim();
+        }
+        return clienteNombreExterno == null || clienteNombreExterno.isBlank()
+                ? "Consumidor Final" : clienteNombreExterno;
     }
 
 

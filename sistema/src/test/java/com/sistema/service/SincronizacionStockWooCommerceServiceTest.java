@@ -37,6 +37,7 @@ class SincronizacionStockWooCommerceServiceTest {
         when(productos.findById(10L)).thenReturn(Optional.of(producto));
         when(publicaciones.findByProductoIdAndCanal(10L, CanalVenta.WOOCOMMERCE))
                 .thenReturn(Optional.of(publicacion));
+        when(publicador.configurado()).thenReturn(true);
     }
 
     @Test
@@ -56,5 +57,17 @@ class SincronizacionStockWooCommerceServiceTest {
         assertEquals(EstadoPublicacion.ERROR, publicacion.getEstado());
         assertTrue(publicacion.getUltimoError().contains("Woo no disponible"));
         verify(publicaciones).save(publicacion);
+    }
+
+    @Test
+    void omiteLaSincronizacionSiLaCuentaEstaDesconectada() {
+        when(publicador.configurado()).thenReturn(false);
+
+        service.sincronizar(new StockProductoCambiadoEvent(10L));
+
+        verifyNoInteractions(productos, publicaciones);
+        verify(publicador, never()).sincronizarStock(any(), anyString());
+        assertEquals(EstadoPublicacion.PUBLICADO, publicacion.getEstado());
+        assertNull(publicacion.getUltimoError());
     }
 }

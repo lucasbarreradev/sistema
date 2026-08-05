@@ -116,6 +116,99 @@ class TrabajoSincronizacionServiceTest {
         assertEquals("Mercado Libre → Sistema", trabajo.getFlujoDescripcion());
         assertEquals(EstadoTrabajoSincronizacion.PENDIENTE, trabajo.getEstado());
         verify(procesador).ejecutarImportacionCompleta(
-                44L, 8L, CanalVenta.MERCADO_LIBRE);
+                44L, 8L, CanalVenta.MERCADO_LIBRE, false);
+    }
+
+    @Test
+    void propagaLaSeleccionDePublicacionesInactivasAlTrabajo() {
+        TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
+        ProcesadorTrabajoSincronizacionService procesador = mock(ProcesadorTrabajoSincronizacionService.class);
+        when(repository.findByEstadoIn(anyCollection())).thenReturn(List.of());
+        when(repository.existsByEstadoIn(anyCollection())).thenReturn(false);
+        when(repository.save(any(TrabajoSincronizacion.class))).thenAnswer(invocacion -> {
+            TrabajoSincronizacion trabajo = invocacion.getArgument(0);
+            trabajo.setId(45L);
+            return trabajo;
+        });
+        TrabajoSincronizacionService service = new TrabajoSincronizacionService(repository, procesador);
+
+        try (TenantContext.Scope ignored = TenantContext.use(8L)) {
+            service.iniciarPreparacionImportacion(CanalVenta.MERCADO_LIBRE, true);
+        }
+
+        verify(procesador).ejecutarPreparacionImportacion(
+                45L, 8L, CanalVenta.MERCADO_LIBRE, true);
+    }
+
+    @Test
+    void creaTransferenciaSeleccionadaDesdeUnCanalHaciaLosDestinos() {
+        TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
+        ProcesadorTrabajoSincronizacionService procesador = mock(ProcesadorTrabajoSincronizacionService.class);
+        when(repository.findByEstadoIn(anyCollection())).thenReturn(List.of());
+        when(repository.existsByEstadoIn(anyCollection())).thenReturn(false);
+        when(repository.save(any(TrabajoSincronizacion.class))).thenAnswer(invocacion -> {
+            TrabajoSincronizacion trabajo = invocacion.getArgument(0);
+            trabajo.setId(52L);
+            return trabajo;
+        });
+        TrabajoSincronizacionService service = new TrabajoSincronizacionService(repository, procesador);
+        com.sistema.dto.ProductoCanalImportado producto = new com.sistema.dto.ProductoCanalImportado(
+                "MLA1", "SKU-1", "Remera", 2, java.math.BigDecimal.TEN,
+                null, "MLA1", java.util.Map.of(), List.of());
+
+        TrabajoSincronizacion trabajo;
+        try (TenantContext.Scope ignored = TenantContext.use(8L)) {
+            trabajo = service.iniciarImportacionSeleccionada(
+                    CanalVenta.MERCADO_LIBRE, List.of(producto),
+                    List.of(CanalVenta.MERCADO_LIBRE, CanalVenta.WOOCOMMERCE,
+                            CanalVenta.TIENDANUBE, CanalVenta.WOOCOMMERCE));
+        }
+
+        assertEquals(TipoTrabajoSincronizacion.SINCRONIZACION_SELECCIONADA,
+                trabajo.getTipoTrabajo());
+        assertEquals("WOOCOMMERCE,TIENDANUBE", trabajo.getDestinos());
+        assertEquals("Mercado Libre \u2192 Sistema \u2192 WooCommerce, Tiendanube",
+                trabajo.getFlujoDescripcion());
+        verify(procesador).ejecutarImportacionSeleccionada(
+                52L, 8L, CanalVenta.MERCADO_LIBRE, List.of(producto),
+                List.of(CanalVenta.WOOCOMMERCE, CanalVenta.TIENDANUBE));
+    }
+
+    @Test
+    void solicitaCancelarUnTrabajoActivoDelTenantActual() {
+        TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
+        ProcesadorTrabajoSincronizacionService procesador = mock(ProcesadorTrabajoSincronizacionService.class);
+        TrabajoSincronizacion trabajo = new TrabajoSincronizacion();
+        trabajo.setId(61L);
+        trabajo.setTenantId(8L);
+        trabajo.setEstado(EstadoTrabajoSincronizacion.PROCESANDO);
+        when(repository.findById(61L)).thenReturn(java.util.Optional.of(trabajo));
+        TrabajoSincronizacionService service = new TrabajoSincronizacionService(repository, procesador);
+
+        try (TenantContext.Scope ignored = TenantContext.use(8L)) {
+            service.solicitarCancelacion(61L);
+        }
+
+        assertTrue(trabajo.isCancelacionSolicitada());
+        assertTrue(trabajo.getResumen().contains("Cancelación solicitada"));
+        verify(repository).save(trabajo);
+    }
+
+    @Test
+    void noPermiteCancelarUnTrabajoDeOtroTenant() {
+        TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
+        TrabajoSincronizacion trabajo = new TrabajoSincronizacion();
+        trabajo.setId(62L);
+        trabajo.setTenantId(9L);
+        trabajo.setEstado(EstadoTrabajoSincronizacion.PROCESANDO);
+        when(repository.findById(62L)).thenReturn(java.util.Optional.of(trabajo));
+        TrabajoSincronizacionService service = new TrabajoSincronizacionService(
+                repository, mock(ProcesadorTrabajoSincronizacionService.class));
+
+        try (TenantContext.Scope ignored = TenantContext.use(8L)) {
+            assertThrows(IllegalArgumentException.class, () -> service.solicitarCancelacion(62L));
+        }
+
+        verify(repository, never()).save(any());
     }
 }

@@ -65,6 +65,13 @@
             </li>
 
             <li class="nav-item">
+                <a class="nav-link" href="<c:url value='/facturacion' />">
+                    <i class="fa-solid fa-file-invoice-dollar"></i>
+                    <span>Facturaci&oacute;n electr&oacute;nica</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
                 <a class="nav-link" href="<c:url value='/guias-talles' />">
                     <i class="fa-solid fa-ruler-combined"></i>
                     <span>Guías de talles</span>

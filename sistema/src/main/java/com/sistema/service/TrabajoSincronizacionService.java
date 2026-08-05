@@ -8,6 +8,7 @@ import com.sistema.model.TrabajoSincronizacion;
 import com.sistema.repository.TrabajoSincronizacionRepository;
 import com.sistema.tenant.TenantContext;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Collection;
@@ -93,25 +94,45 @@ public class TrabajoSincronizacionService {
     }
 
     public TrabajoSincronizacion iniciarImportacionCompleta(CanalVenta canal) {
+        return iniciarImportacionCompleta(canal, false);
+    }
+
+    public TrabajoSincronizacion iniciarImportacionCompleta(
+            CanalVenta canal, boolean incluirInactivas) {
         TrabajoSincronizacion trabajo = crearTrabajoImportacion(
                 canal, TipoTrabajoSincronizacion.IMPORTACION_COMPLETA,
-                "Esperando para traer todos los productos...");
+                incluirInactivas
+                        ? "Esperando para traer productos activos e inactivos..."
+                        : "Esperando para traer los productos activos...");
         procesador.ejecutarImportacionCompleta(
-                trabajo.getId(), trabajo.getTenantId(), canal);
+                trabajo.getId(), trabajo.getTenantId(), canal, incluirInactivas);
         return trabajo;
     }
 
     public TrabajoSincronizacion iniciarPreparacionImportacion(CanalVenta canal) {
+        return iniciarPreparacionImportacion(canal, false);
+    }
+
+    public TrabajoSincronizacion iniciarPreparacionImportacion(
+            CanalVenta canal, boolean incluirInactivas) {
         TrabajoSincronizacion trabajo = crearTrabajoImportacion(
                 canal, TipoTrabajoSincronizacion.PREPARACION_IMPORTACION,
-                "Esperando para actualizar la lista de productos...");
+                incluirInactivas
+                        ? "Esperando para actualizar la lista con publicaciones inactivas..."
+                        : "Esperando para actualizar la lista de productos activos...");
         procesador.ejecutarPreparacionImportacion(
-                trabajo.getId(), trabajo.getTenantId(), canal);
+                trabajo.getId(), trabajo.getTenantId(), canal, incluirInactivas);
         return trabajo;
     }
 
     public TrabajoSincronizacion iniciarImportacionSeleccionada(
             CanalVenta canal, Collection<ProductoCanalImportado> productos) {
+        return iniciarImportacionSeleccionada(canal, productos, List.of());
+    }
+
+    public TrabajoSincronizacion iniciarImportacionSeleccionada(
+            CanalVenta canal, Collection<ProductoCanalImportado> productos,
+            Collection<CanalVenta> destinos) {
         if (productos == null || productos.isEmpty()) {
             throw new IllegalArgumentException("Seleccione al menos un producto para importar");
         }
@@ -121,11 +142,25 @@ public class TrabajoSincronizacionService {
         if (seleccionados.isEmpty()) {
             throw new IllegalArgumentException("Seleccione al menos un producto para importar");
         }
+        List<CanalVenta> destinosValidos = destinos == null ? List.of() : destinos.stream()
+                .filter(java.util.Objects::nonNull)
+                .filter(destino -> destino != canal)
+                .distinct()
+                .toList();
+        TipoTrabajoSincronizacion tipo = destinosValidos.isEmpty()
+                ? TipoTrabajoSincronizacion.IMPORTACION_SELECCIONADA
+                : TipoTrabajoSincronizacion.SINCRONIZACION_SELECCIONADA;
         TrabajoSincronizacion trabajo = crearTrabajoImportacion(
-                canal, TipoTrabajoSincronizacion.IMPORTACION_SELECCIONADA,
-                "Esperando para importar " + seleccionados.size() + " producto(s)...");
+                canal, tipo,
+                "Esperando para transferir " + seleccionados.size() + " producto(s)...");
+        if (!destinosValidos.isEmpty()) {
+            trabajo.setDestinos(destinosValidos.stream().map(Enum::name)
+                    .collect(Collectors.joining(",")));
+            trabajo = repository.save(trabajo);
+        }
         procesador.ejecutarImportacionSeleccionada(
-                trabajo.getId(), trabajo.getTenantId(), canal, List.copyOf(seleccionados));
+                trabajo.getId(), trabajo.getTenantId(), canal, List.copyOf(seleccionados),
+                List.copyOf(destinosValidos));
         return trabajo;
     }
 
@@ -137,6 +172,24 @@ public class TrabajoSincronizacionService {
     public boolean hayTrabajoActivo() {
         cerrarTrabajosInterrumpidos();
         return repository.existsByEstadoIn(ESTADOS_ACTIVOS);
+    }
+
+    @Transactional
+    public TrabajoSincronizacion solicitarCancelacion(Long trabajoId) {
+        if (trabajoId == null) throw new IllegalArgumentException("Falta indicar el trabajo");
+        long tenantId = TenantContext.require();
+        TrabajoSincronizacion trabajo = repository.findById(trabajoId)
+                .filter(item -> item.getTenantId() != null && item.getTenantId() == tenantId)
+                .orElseThrow(() -> new IllegalArgumentException("No se encontró el trabajo solicitado"));
+        if (!trabajo.isActivo()) {
+            throw new IllegalStateException("El trabajo ya finalizó y no se puede cancelar");
+        }
+        if (!trabajo.isCancelacionSolicitada()) {
+            trabajo.setCancelacionSolicitada(true);
+            trabajo.setResumen("Cancelación solicitada. Terminando la operación actual...");
+            repository.save(trabajo);
+        }
+        return trabajo;
     }
 
     private void verificarDisponibilidad() {
@@ -168,10 +221,16 @@ public class TrabajoSincronizacionService {
         if (interrumpidos.isEmpty()) return;
         LocalDateTime ahora = LocalDateTime.now();
         for (TrabajoSincronizacion trabajo : interrumpidos) {
-            trabajo.setEstado(EstadoTrabajoSincronizacion.ERROR);
             trabajo.setFinalizadoEn(ahora);
-            trabajo.setResumen("El trabajo fue interrumpido por un reinicio de la aplicación.");
-            trabajo.setDetalle("Puede iniciar un nuevo trabajo.");
+            if (trabajo.isCancelacionSolicitada()) {
+                trabajo.setEstado(EstadoTrabajoSincronizacion.CANCELADO);
+                trabajo.setResumen("El trabajo cancelado terminó al reiniciarse la aplicación.");
+                trabajo.setDetalle("Los productos procesados antes de la cancelación no se revirtieron.");
+            } else {
+                trabajo.setEstado(EstadoTrabajoSincronizacion.ERROR);
+                trabajo.setResumen("El trabajo fue interrumpido por un reinicio de la aplicación.");
+                trabajo.setDetalle("Puede iniciar un nuevo trabajo.");
+            }
         }
         repository.saveAll(interrumpidos);
     }

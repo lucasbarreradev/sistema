@@ -100,6 +100,14 @@ public class MercadoLibreTokenService {
         return token;
     }
 
+    public synchronized Long obtenerUsuarioExternoId() {
+        // obtenerAccessToken también completa usuario_externo_id para credenciales antiguas.
+        obtenerAccessToken();
+        return repository.findByTenantId(TenantContext.require())
+                .map(CredencialMercadoLibre::getUsuarioExternoId)
+                .orElse(null);
+    }
+
     public synchronized void invalidarAccessToken() {
         repository.findByTenantId(TenantContext.require()).ifPresent(credencial -> {
             credencial.setVenceEn(Instant.EPOCH);

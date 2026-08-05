@@ -10,6 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -24,6 +25,7 @@ public class WebhookVentasService {
     private final ProductoVarianteRepository varianteRepository;
     private final MovimientoInventarioService movimientoService;
     private final TiendanubeCredencialesService tiendaNubeCredenciales;
+    private final VentaRepository ventaRepository;
 
     public WebhookVentasService(
             ObjectMapper objectMapper,
@@ -33,7 +35,8 @@ public class WebhookVentasService {
             ProductoRepository productoRepository,
             ProductoVarianteRepository varianteRepository,
             MovimientoInventarioService movimientoService,
-            TiendanubeCredencialesService tiendaNubeCredenciales) {
+            TiendanubeCredencialesService tiendaNubeCredenciales,
+            VentaRepository ventaRepository) {
         this.objectMapper = objectMapper;
         this.tokenService = tokenService;
         this.ordenRepository = ordenRepository;
@@ -42,6 +45,7 @@ public class WebhookVentasService {
         this.varianteRepository = varianteRepository;
         this.movimientoService = movimientoService;
         this.tiendaNubeCredenciales = tiendaNubeCredenciales;
+        this.ventaRepository = ventaRepository;
     }
 
     @Transactional
@@ -63,9 +67,15 @@ public class WebhookVentasService {
         for (JsonNode linea : orden.path("order_items")) {
             JsonNode item = linea.path("item");
             lineas.add(new LineaExterna(item.path("id").asText(), item.path("variation_id").asText(null),
-                    item.path("seller_sku").asText(null), linea.path("quantity").asInt(0)));
+                    item.path("seller_sku").asText(null), linea.path("quantity").asInt(0),
+                    decimal(linea, "unit_price")));
         }
-        procesarOrden(CanalVenta.MERCADO_LIBRE, ordenId, lineas);
+        JsonNode comprador = orden.path("buyer");
+        procesarOrden(CanalVenta.MERCADO_LIBRE, ordenId, lineas,
+                new CompradorExterno(nombre(comprador, "first_name", "last_name",
+                                comprador.path("nickname").asText(null)),
+                        texto(comprador, "billing_info", "doc_number"), null),
+                primero(decimal(orden, "paid_amount"), decimal(orden, "total_amount")));
     }
 
     @Transactional
@@ -80,9 +90,14 @@ public class WebhookVentasService {
         for (JsonNode linea : orden.path("line_items")) {
             lineas.add(new LineaExterna(linea.path("product_id").asText(),
                     linea.path("variation_id").asLong(0) == 0 ? null : linea.path("variation_id").asText(),
-                    linea.path("sku").asText(null), linea.path("quantity").asInt(0)));
+                    linea.path("sku").asText(null), linea.path("quantity").asInt(0),
+                    precioWoo(linea)));
         }
-        procesarOrden(CanalVenta.WOOCOMMERCE, ordenId, lineas);
+        JsonNode comprador = orden.path("billing");
+        procesarOrden(CanalVenta.WOOCOMMERCE, ordenId, lineas,
+                new CompradorExterno(nombre(comprador, "first_name", "last_name", null),
+                        comprador.path("dni").asText(null), comprador.path("email").asText(null)),
+                decimal(orden, "total"));
     }
 
     @Transactional
@@ -107,13 +122,20 @@ public class WebhookVentasService {
         for (JsonNode linea : orden.path("products")) {
             lineas.add(new LineaExterna(linea.path("product_id").asText(),
                     linea.path("variant_id").asText(null), linea.path("sku").asText(null),
-                    linea.path("quantity").asInt(0)));
+                    linea.path("quantity").asInt(0), decimal(linea, "price")));
         }
-        procesarOrden(CanalVenta.TIENDANUBE, ordenId, lineas);
+        JsonNode comprador = orden.path("customer");
+        procesarOrden(CanalVenta.TIENDANUBE, ordenId, lineas,
+                new CompradorExterno(nombre(comprador, "name", "last_name", null),
+                        comprador.path("identification").asText(null),
+                        orden.path("contact_email").asText(comprador.path("email").asText(null))),
+                decimal(orden, "total"));
     }
 
-    private void procesarOrden(CanalVenta canal, String ordenId, List<LineaExterna> lineas) {
+    private void procesarOrden(CanalVenta canal, String ordenId, List<LineaExterna> lineas,
+                               CompradorExterno comprador, BigDecimal totalOrden) {
         if (ordenRepository.existsByCanalAndOrdenId(canal, ordenId)) return;
+        if (ventaRepository.existsByCanalVentaAndOrdenExternaId(canal, ordenId)) return;
         if (lineas.isEmpty()) throw new IllegalArgumentException("La orden " + ordenId + " no contiene productos");
 
         Map<String, LineaResuelta> acumuladas = new LinkedHashMap<>();
@@ -122,7 +144,8 @@ public class WebhookVentasService {
             LineaResuelta resuelta = resolver(canal, linea);
             String clave = resuelta.productoId() + ":" + Objects.toString(resuelta.varianteId(), "");
             acumuladas.merge(clave, resuelta,
-                    (a, b) -> new LineaResuelta(a.productoId(), a.varianteId(), a.cantidad() + b.cantidad()));
+                    (a, b) -> new LineaResuelta(a.productoId(), a.varianteId(),
+                            a.cantidad() + b.cantidad(), a.precioUnitario()));
         }
         if (acumuladas.isEmpty()) throw new IllegalArgumentException("No se pudieron vincular productos de la orden " + ordenId);
 
@@ -130,6 +153,7 @@ public class WebhookVentasService {
             movimientoService.registrarVentaExterna(linea.productoId(), linea.varianteId(), linea.cantidad(),
                     "Venta " + canal.getDescripcion() + " / orden " + ordenId, canal);
         }
+        Venta venta = crearVentaExterna(canal, ordenId, acumuladas.values(), comprador, totalOrden);
         OrdenCanalProcesada procesada = new OrdenCanalProcesada();
         procesada.setCanal(canal);
         procesada.setOrdenId(ordenId);
@@ -155,7 +179,7 @@ public class WebhookVentasService {
         }
         if (variante.isPresent()) {
             ProductoVariante v = variante.get();
-            return new LineaResuelta(v.getProducto().getId(), v.getId(), linea.cantidad());
+            return new LineaResuelta(v.getProducto().getId(), v.getId(), linea.cantidad(), linea.precioUnitario());
         }
 
         Producto producto = null;
@@ -173,12 +197,82 @@ public class WebhookVentasService {
         List<ProductoVariante> presentaciones =
                 varianteRepository.findByProductoIdOrderByNombreAsc(producto.getId());
         if (presentaciones.size() == 1) {
-            return new LineaResuelta(producto.getId(), presentaciones.get(0).getId(), linea.cantidad());
+            return new LineaResuelta(producto.getId(), presentaciones.get(0).getId(), linea.cantidad(), linea.precioUnitario());
         }
         if (!presentaciones.isEmpty()) {
             throw new IllegalArgumentException("La orden no identificó la presentación del producto " + producto.getSku());
         }
-        return new LineaResuelta(producto.getId(), null, linea.cantidad());
+        return new LineaResuelta(producto.getId(), null, linea.cantidad(), linea.precioUnitario());
+    }
+
+    private Venta crearVentaExterna(CanalVenta canal, String ordenId,
+                                     Collection<LineaResuelta> lineas,
+                                     CompradorExterno comprador,
+                                     BigDecimal totalOrden) {
+        Venta venta = new Venta();
+        venta.setCodigo("EXT-" + UUID.randomUUID().toString().replace("-", "").substring(0, 16));
+        venta.setOrigen(switch (canal) {
+            case MERCADO_LIBRE -> Venta.Origen.MERCADO_LIBRE;
+            case WOOCOMMERCE -> Venta.Origen.WOOCOMMERCE;
+            case TIENDANUBE -> Venta.Origen.TIENDANUBE;
+        });
+        venta.setCanalVenta(canal);
+        venta.setOrdenExternaId(ordenId);
+        venta.setClienteNombreExterno(limpiar(comprador == null ? null : comprador.nombre()));
+        venta.setClienteDocumentoExterno(soloDigitos(comprador == null ? null : comprador.documento()));
+        venta.setClienteEmailExterno(limpiar(comprador == null ? null : comprador.email()));
+        venta.setFormaPago(FormaPago.TARJETA);
+        venta.setEstado(Venta.Estado.COMPLETADA);
+        venta.setFechaVenta(LocalDateTime.now());
+        venta.setNota("Orden " + canal.getDescripcion() + " " + ordenId);
+
+        for (LineaResuelta linea : lineas) {
+            Producto producto = productoRepository.findById(linea.productoId())
+                    .orElseThrow(() -> new IllegalArgumentException("Producto no encontrado"));
+            ProductoVariante variante = linea.varianteId() == null ? null
+                    : varianteRepository.findById(linea.varianteId()).orElse(null);
+            BigDecimal precio = linea.precioUnitario();
+            if (precio == null || precio.signum() < 0) {
+                precio = variante == null ? producto.getPrecioContado() : variante.getPrecioContado();
+            }
+            if (precio == null) precio = BigDecimal.ZERO;
+
+            VentaItem item = new VentaItem();
+            item.setProducto(producto);
+            item.setVariante(variante);
+            item.setCantidad(linea.cantidad());
+            item.setPrecioUnitario(precio);
+            item.setCostoUnitario(variante != null && variante.getPrecioCompra() != null
+                    ? variante.getPrecioCompra()
+                    : producto.getPrecioCompra() == null ? BigDecimal.ZERO : producto.getPrecioCompra());
+            item.setDescuentoPct(BigDecimal.ZERO);
+            item.setAlicuotaIva(producto.getTipoIva() == null
+                    ? new BigDecimal("21.00") : producto.getTipoIva().getPorcentaje());
+            item.calcularSubtotal();
+            venta.agregarItem(item);
+        }
+        ajustarTotalExterno(venta, totalOrden);
+        venta.calcularTotales();
+        return ventaRepository.save(venta);
+    }
+
+    private void ajustarTotalExterno(Venta venta, BigDecimal totalOrden) {
+        if (totalOrden == null || totalOrden.signum() <= 0 || venta.getItems().isEmpty()) return;
+        BigDecimal actual = venta.getItems().stream().map(VentaItem::getSubtotal)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        if (actual.signum() <= 0 || actual.compareTo(totalOrden) == 0) return;
+        BigDecimal factor = totalOrden.divide(actual, 12, java.math.RoundingMode.HALF_UP);
+        BigDecimal acumulado = BigDecimal.ZERO;
+        for (int i = 0; i < venta.getItems().size(); i++) {
+            VentaItem item = venta.getItems().get(i);
+            BigDecimal subtotal = i == venta.getItems().size() - 1
+                    ? totalOrden.subtract(acumulado)
+                    : item.getSubtotal().multiply(factor).setScale(2, java.math.RoundingMode.HALF_UP);
+            item.setSubtotal(subtotal);
+            item.setPrecioUnitario(subtotal.divide(BigDecimal.valueOf(item.getCantidad()),
+                    2, java.math.RoundingMode.HALF_UP));
+            acumulado = acumulado.add(subtotal);
+        }
     }
 
     private JsonNode getMercadoLibre(String resource) {
@@ -204,6 +298,44 @@ public class WebhookVentasService {
         }
     }
 
-    private record LineaExterna(String productoExternoId, String varianteExternaId, String sku, int cantidad) {}
-    private record LineaResuelta(Long productoId, Long varianteId, int cantidad) {}
+    private BigDecimal precioWoo(JsonNode linea) {
+        BigDecimal total = decimal(linea, "total");
+        int cantidad = linea.path("quantity").asInt(0);
+        if (total != null && cantidad > 0) return total.divide(BigDecimal.valueOf(cantidad), 2, java.math.RoundingMode.HALF_UP);
+        return decimal(linea, "price");
+    }
+
+    private BigDecimal decimal(JsonNode nodo, String campo) {
+        String valor = nodo.path(campo).asText();
+        try { return valor == null || valor.isBlank() ? null : new BigDecimal(valor); }
+        catch (NumberFormatException e) { return null; }
+    }
+
+    private BigDecimal primero(BigDecimal principal, BigDecimal respaldo) {
+        return principal == null ? respaldo : principal;
+    }
+
+    private String nombre(JsonNode nodo, String campoNombre, String campoApellido, String respaldo) {
+        String nombre = nodo.path(campoNombre).asText("").trim();
+        String apellido = nodo.path(campoApellido).asText("").trim();
+        String completo = (nombre + " " + apellido).trim();
+        return completo.isBlank() ? respaldo : completo;
+    }
+
+    private String texto(JsonNode nodo, String objeto, String campo) {
+        String valor = nodo.path(objeto).path(campo).asText(null);
+        return limpiar(valor);
+    }
+
+    private String limpiar(String valor) { return valor == null || valor.isBlank() ? null : valor.trim(); }
+    private String soloDigitos(String valor) {
+        String limpio = valor == null ? null : valor.replaceAll("\\D", "");
+        return limpio == null || limpio.isBlank() ? null : limpio;
+    }
+
+    private record CompradorExterno(String nombre, String documento, String email) {}
+    private record LineaExterna(String productoExternoId, String varianteExternaId, String sku,
+                                int cantidad, BigDecimal precioUnitario) {}
+    private record LineaResuelta(Long productoId, Long varianteId, int cantidad,
+                                 BigDecimal precioUnitario) {}
 }

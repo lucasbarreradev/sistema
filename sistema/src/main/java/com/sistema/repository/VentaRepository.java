@@ -48,5 +48,8 @@ public interface VentaRepository extends JpaRepository<Venta, Long> {
 
     @Query("SELECT v FROM Venta v WHERE v.presupuestoCodigo = :codigo")
     List<Venta> findAllByPresupuestoCodigo(@Param("codigo") String codigo);
+
+    boolean existsByCanalVentaAndOrdenExternaId(com.sistema.model.CanalVenta canalVenta,
+                                                 String ordenExternaId);
 }
 

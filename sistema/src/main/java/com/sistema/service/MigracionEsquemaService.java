@@ -20,11 +20,22 @@ public class MigracionEsquemaService implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         migrarTenants();
+        if (tipoColumna("venta", "origen")
+                .map(tipo -> tipo.startsWith("enum(")).orElse(false)) {
+            jdbcTemplate.execute("ALTER TABLE venta MODIFY COLUMN origen VARCHAR(30) NOT NULL");
+        }
         if (tipoColumna("trabajo_sincronizacion", "tipo_trabajo")
                 .map(tipo -> tipo.startsWith("enum(")).orElse(false)) {
             jdbcTemplate.execute("""
                     ALTER TABLE trabajo_sincronizacion
                     MODIFY COLUMN tipo_trabajo VARCHAR(40) NULL
+                    """);
+        }
+        if (tipoColumna("trabajo_sincronizacion", "estado")
+                .map(tipo -> tipo.startsWith("enum(")).orElse(false)) {
+            jdbcTemplate.execute("""
+                    ALTER TABLE trabajo_sincronizacion
+                    MODIFY COLUMN estado VARCHAR(40) NOT NULL
                     """);
         }
         List<String> tipos = jdbcTemplate.queryForList("""
@@ -55,7 +66,7 @@ public class MigracionEsquemaService implements ApplicationRunner {
                 "cliente", "gasto", "movimiento_inventario", "precio_producto",
                 "presupuesto", "presupuesto_detalle", "producto", "producto_variante",
                 "proveedor", "publicacion_canal", "orden_canal_procesada", "remito",
-                "remito_item", "venta", "venta_item", "configuracion_documento");
+                "remito_item", "venta", "venta_item", "configuracion_documento", "configuracion_arca");
         for (String tabla : tablasTenant) {
             if (columnaExiste(tabla, "tenant_id")) {
                 jdbcTemplate.update("UPDATE " + tabla + " SET tenant_id = 1 WHERE tenant_id IS NULL OR tenant_id = 0");
@@ -90,6 +101,8 @@ public class MigracionEsquemaService implements ApplicationRunner {
                 "uk_remito_tenant_codigo", "tenant_id, codigo");
         reemplazarIndice("venta", "UK_4e2obucvhvadmspx337jj0nex",
                 "uk_venta_tenant_codigo", "tenant_id, codigo");
+        crearIndiceSiFalta("venta", "uk_venta_tenant_canal_orden",
+                "tenant_id, canal_venta, orden_externa_id");
     }
 
     private boolean columnaExiste(String tabla, String columna) {

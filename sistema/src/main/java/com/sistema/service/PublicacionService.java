@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.function.BooleanSupplier;
 
 @Service
 public class PublicacionService {
@@ -37,11 +38,20 @@ public class PublicacionService {
     }
 
     public ResultadoPublicacionLote publicar(Collection<Long> productoIds, Collection<CanalVenta> canales) {
+        return publicar(productoIds, canales, () -> false);
+    }
+
+    public ResultadoPublicacionLote publicar(Collection<Long> productoIds, Collection<CanalVenta> canales,
+                                             BooleanSupplier cancelacionSolicitada) {
         ResultadoPublicacionLote lote = new ResultadoPublicacionLote();
         for (Long productoId : productoIds) {
+            if (cancelacionSolicitada.getAsBoolean()) return lote;
             Producto producto = productoRepository.findById(productoId).orElse(null);
             if (producto == null) { lote.error("Producto " + productoId + ": no encontrado"); continue; }
-            for (CanalVenta canal : canales) publicarUno(producto, canal, lote);
+            for (CanalVenta canal : canales) {
+                if (cancelacionSolicitada.getAsBoolean()) return lote;
+                publicarUno(producto, canal, lote);
+            }
         }
         return lote;
     }

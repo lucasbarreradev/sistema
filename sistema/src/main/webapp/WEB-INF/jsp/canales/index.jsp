@@ -140,11 +140,23 @@
                                                     </sec:authorize>
                                                 </c:if>
                                                 <div class="mt-3">
-                                                    <form method="post" class="d-inline" action="${pageContext.request.contextPath}/canales/importar/${canal}">
+                                                    <form method="post" class="d-inline">
                                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                                                        <c:if test="${canal == 'MERCADO_LIBRE'}">
+                                                            <label class="d-block small mb-2">
+                                                                <input type="checkbox" name="incluirInactivas" value="true">
+                                                                Incluir publicaciones inactivas
+                                                            </label>
+                                                        </c:if>
                                                         <button type="submit" class="btn btn-sm btn-outline-primary"
+                                                                formaction="${pageContext.request.contextPath}/canales/importar/${canal}"
                                                                 ${(configuracionImportacion[canal] && !sincronizacionActiva) ? '' : 'disabled'}>
                                                             Traer todo
+                                                        </button>
+                                                        <button type="submit" class="btn btn-sm btn-outline-secondary"
+                                                                formaction="${pageContext.request.contextPath}/canales/importar/${canal}/preparar"
+                                                                ${(configuracionImportacion[canal] && !sincronizacionActiva) ? '' : 'disabled'}>
+                                                            ${catalogosImportacion[canal] ? 'Actualizar lista' : 'Cargar lista para seleccionar'}
                                                         </button>
                                                     </form>
                                                     <c:if test="${catalogosImportacion[canal]}">
@@ -153,14 +165,6 @@
                                                             Seleccionar productos
                                                         </a>
                                                     </c:if>
-                                                    <form method="post" class="d-inline"
-                                                          action="${pageContext.request.contextPath}/canales/importar/${canal}/preparar">
-                                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-                                                        <button type="submit" class="btn btn-sm btn-outline-secondary"
-                                                                ${(configuracionImportacion[canal] && !sincronizacionActiva) ? '' : 'disabled'}>
-                                                            ${catalogosImportacion[canal] ? 'Actualizar lista' : 'Cargar lista para seleccionar'}
-                                                        </button>
-                                                    </form>
                                                     <small class="text-muted d-block mt-2">
                                                         La lista queda guardada y su actualización continúa en segundo plano.
                                                     </small>
@@ -222,7 +226,7 @@
                     <div class="card-body table-responsive">
                         <table class="table table-sm table-bordered">
                             <thead>
-                            <tr><th>#</th><th>Flujo</th><th>Estado</th><th>Creado</th><th>Finalizado</th><th>Resultado</th></tr>
+                            <tr><th>#</th><th>Flujo</th><th>Estado</th><th>Creado</th><th>Finalizado</th><th>Resultado</th><th>Acciones</th></tr>
                             </thead>
                             <tbody>
                             <c:forEach items="${trabajosSincronizacion}" var="trabajo">
@@ -233,6 +237,9 @@
                                     </td>
                                     <td>
                                         <c:choose>
+                                            <c:when test="${trabajo.activo and trabajo.cancelacionSolicitada}">
+                                                <span class="badge badge-warning">Cancelando...</span>
+                                            </c:when>
                                             <c:when test="${trabajo.estado == 'COMPLETADA'}">
                                                 <span class="badge badge-success">${trabajo.estado.descripcion}</span>
                                             </c:when>
@@ -241,6 +248,9 @@
                                             </c:when>
                                             <c:when test="${trabajo.estado == 'ERROR'}">
                                                 <span class="badge badge-danger">${trabajo.estado.descripcion}</span>
+                                            </c:when>
+                                            <c:when test="${trabajo.estado == 'CANCELADO'}">
+                                                <span class="badge badge-secondary">${trabajo.estado.descripcion}</span>
                                             </c:when>
                                             <c:otherwise>
                                                 <span class="badge badge-info">${trabajo.estado.descripcion}</span>
@@ -258,10 +268,24 @@
                                             </details>
                                         </c:if>
                                     </td>
+                                    <td class="text-nowrap">
+                                        <c:if test="${trabajo.activo}">
+                                            <form method="post"
+                                                  action="${pageContext.request.contextPath}/canales/trabajos/${trabajo.id}/cancelar"
+                                                  onsubmit="return confirm('Se detendrán los productos restantes. Lo que ya fue enviado no se revierte. ¿Desea continuar?');">
+                                                <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
+                                                <button type="submit" class="btn btn-sm btn-outline-danger"
+                                                        <c:if test="${trabajo.cancelacionSolicitada}">disabled</c:if>>
+                                                    <i class="fa-solid fa-ban mr-1"></i>
+                                                    ${trabajo.cancelacionSolicitada ? 'Cancelando...' : 'Cancelar'}
+                                                </button>
+                                            </form>
+                                        </c:if>
+                                    </td>
                                 </tr>
                             </c:forEach>
                             <c:if test="${empty trabajosSincronizacion}">
-                                <tr><td colspan="6" class="text-center text-muted">Todavía no hay trabajos de sincronización.</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted">Todavía no hay trabajos de sincronización.</td></tr>
                             </c:if>
                             </tbody>
                         </table>

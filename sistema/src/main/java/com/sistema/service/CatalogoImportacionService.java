@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sistema.dto.ProductoCanalImportado;
 import com.sistema.dto.ProductoRemotoSeleccionable;
+import com.sistema.dto.CategoriaRemotaSeleccionable;
 import com.sistema.model.CanalVenta;
 import com.sistema.model.ProductoCatalogoCanal;
 import com.sistema.repository.ProductoCatalogoCanalRepository;
@@ -17,6 +18,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.Comparator;
 
 @Service
 public class CatalogoImportacionService {
@@ -68,6 +71,17 @@ public class CatalogoImportacionService {
     }
 
     @Transactional(readOnly = true)
+    public List<CategoriaRemotaSeleccionable> listarCategorias(CanalVenta canal) {
+        Map<String, CategoriaRemotaSeleccionable> categorias = new LinkedHashMap<>();
+        listar(canal).stream().flatMap(producto -> producto.getCategorias().stream())
+                .forEach(categoria -> categorias.putIfAbsent(categoria.getId(), categoria));
+        return categorias.values().stream()
+                .sorted(Comparator.comparing(CategoriaRemotaSeleccionable::getNombre,
+                        String.CASE_INSENSITIVE_ORDER))
+                .toList();
+    }
+
+    @Transactional(readOnly = true)
     public List<ProductoCanalImportado> seleccionar(
             CanalVenta canal, Collection<String> idsExternos) {
         if (idsExternos == null || idsExternos.isEmpty()) {
@@ -105,10 +119,40 @@ public class CatalogoImportacionService {
     }
 
     private ProductoRemotoSeleccionable resumir(ProductoCatalogoCanal producto) {
+        ProductoCanalImportado remoto = deserializar(producto);
         return new ProductoRemotoSeleccionable(
                 producto.getIdExterno(), producto.getSku(), producto.getDescripcion(),
                 producto.getStock(), producto.getPrecio(), producto.getFotoUrl(),
-                producto.getVariantes() == null ? 0 : producto.getVariantes());
+                producto.getVariantes() == null ? 0 : producto.getVariantes(),
+                categorias(remoto), texto(remoto.datosCanal(), "estado"));
+    }
+
+    private List<CategoriaRemotaSeleccionable> categorias(ProductoCanalImportado producto) {
+        Map<String, CategoriaRemotaSeleccionable> resultado = new LinkedHashMap<>();
+        if (producto.mercadoLibreCategoriaId() != null
+                && !producto.mercadoLibreCategoriaId().isBlank()) {
+            String id = producto.mercadoLibreCategoriaId().trim();
+            String nombre = texto(producto.datosCanal(), "categoriaNombre");
+            resultado.put(id, new CategoriaRemotaSeleccionable(id, nombre));
+        }
+        Object categorias = producto.datosCanal() == null
+                ? null : producto.datosCanal().get("categorias");
+        if (categorias instanceof Collection<?> lista) {
+            for (Object valor : lista) {
+                if (!(valor instanceof Map<?, ?> mapa)) continue;
+                String id = texto(mapa, "id");
+                if (id.isBlank()) continue;
+                resultado.putIfAbsent(id,
+                        new CategoriaRemotaSeleccionable(id, texto(mapa, "nombre")));
+            }
+        }
+        return new ArrayList<>(resultado.values());
+    }
+
+    private String texto(Map<?, ?> datos, String clave) {
+        if (datos == null) return "";
+        Object valor = datos.get(clave);
+        return valor == null ? "" : valor.toString().trim();
     }
 
     private String serializar(ProductoCanalImportado producto) {

@@ -14,7 +14,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
-@RequestMapping("/webhooks")
 public class WebhookController {
     private static final Logger log = LoggerFactory.getLogger(WebhookController.class);
     private final WebhookVentasService ventasService;
@@ -38,7 +37,7 @@ public class WebhookController {
         this.tiendaNubeCredenciales = tiendaNubeCredenciales;
     }
 
-    @PostMapping("/mercadolibre")
+    @PostMapping({"/webhooks/mercadolibre", "/canales/mercadolibre/callback"})
     public ResponseEntity<String> mercadoLibre(@RequestBody String payload) {
         try {
             JsonNode aviso = objectMapper.readTree(payload);
@@ -60,7 +59,7 @@ public class WebhookController {
         }
     }
 
-    @PostMapping("/woocommerce")
+    @PostMapping("/webhooks/woocommerce")
     public ResponseEntity<String> wooCommerce(
             @RequestHeader(value = "X-WC-Webhook-Signature", required = false) String firma,
             @RequestHeader(value = "X-WC-Webhook-Topic", required = false) String topic,
@@ -85,7 +84,7 @@ public class WebhookController {
         }
     }
 
-    @PostMapping("/tiendanube")
+    @PostMapping("/webhooks/tiendanube")
     public ResponseEntity<String> tiendaNube(
             @RequestHeader(value = "x-linkedstore-hmac-sha256", required = false) String firma,
             @RequestBody String payload) {

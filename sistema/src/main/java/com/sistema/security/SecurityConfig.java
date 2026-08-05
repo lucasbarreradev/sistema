@@ -32,6 +32,7 @@ public class SecurityConfig {
                 .requestMatchers("/css/**", "/js/**", "/img/**", "/vendor/**", "/webjars/**").permitAll()
                 .requestMatchers("/error").permitAll()
                 .requestMatchers(HttpMethod.POST, "/webhooks/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/canales/mercadolibre/callback").permitAll()
                 .requestMatchers(HttpMethod.POST, "/canales/woocommerce/callback").permitAll()
                 .requestMatchers(HttpMethod.GET, "/productos/*/foto", "/productos/*/foto/*").permitAll()
                 .requestMatchers(HttpMethod.GET, "/productos/*/fotos/*/*").permitAll()
@@ -41,7 +42,8 @@ public class SecurityConfig {
 
                 .requestMatchers("/tenants/**").hasRole("SUPERADMIN")
                 .requestMatchers("/usuarios/**").hasRole("ADMIN")
-                        .requestMatchers("/reportes/**").hasRole("ADMIN") // ========================================== // ADMIN y EMPLEADO // ==========================================
+                .requestMatchers(HttpMethod.POST, "/facturacion/configuracion", "/facturacion/probar").hasRole("ADMIN")
+                .requestMatchers("/reportes/**").hasRole("ADMIN") // ========================================== // ADMIN y EMPLEADO // ==========================================
 
                         .requestMatchers(
                                 "/ventas/**",
@@ -49,6 +51,7 @@ public class SecurityConfig {
                                 "/productos/**",
                                 "/canales/**",
                                 "/guias-talles/**",
+                                "/facturacion/**",
                                 "/clientes/**",
                                 "/proveedores/**"
                         ) .hasAnyRole("ADMIN", "EMPLEADO")
@@ -73,6 +76,7 @@ public class SecurityConfig {
                 )
                 .csrf(csrf -> csrf.ignoringRequestMatchers(
                         "/webhooks/**",
+                        "/canales/mercadolibre/callback",
                         "/canales/woocommerce/callback"
                 ));
         http.addFilterAfter(tenantContextFilter, AnonymousAuthenticationFilter.class);
