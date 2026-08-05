@@ -19,6 +19,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.LinkedHashSet;
 import java.util.Set;
+import java.util.Objects;
 
 @Service
 public class MercadoLibreTokenService {
@@ -108,6 +109,38 @@ public class MercadoLibreTokenService {
                 .orElse(null);
     }
 
+    public synchronized String nombreCuentaConectada() {
+        long tenantId = TenantContext.require();
+        CredencialMercadoLibre credencial = repository.findByTenantId(tenantId).orElse(null);
+        if (credencial == null) return "";
+        String nombre = limpiar(credencial.getNombreCuenta());
+        if (nombre.isBlank()) {
+            try {
+                String token = obtenerAccessToken();
+                JsonNode usuario = restClient.get().uri("https://api.mercadolibre.com/users/me")
+                        .headers(h -> h.setBearerAuth(token)).retrieve().body(JsonNode.class);
+                nombre = nombreUsuario(usuario);
+                CredencialMercadoLibre actual = repository.findByTenantId(tenantId).orElse(credencial);
+                if (actual.getUsuarioExternoId() == null && usuario != null
+                        && usuario.path("id").canConvertToLong()) {
+                    actual.setUsuarioExternoId(usuario.path("id").asLong());
+                }
+                if (!nombre.isBlank()) {
+                    actual.setNombreCuenta(limitar(nombre));
+                    repository.save(actual);
+                }
+                credencial = actual;
+            } catch (RuntimeException e) {
+                log.warn("No se pudo consultar el nombre de la cuenta de Mercado Libre del tenant {}: {}",
+                        tenantId, mensajeSeguro(e));
+            }
+        }
+        if (nombre.isBlank()) nombre = limpiar(credencial.getNombreCuenta());
+        Long usuarioId = credencial.getUsuarioExternoId();
+        if (nombre.isBlank()) return usuarioId == null ? "Cuenta conectada" : "Usuario " + usuarioId;
+        return usuarioId == null ? nombre : nombre + " (usuario " + usuarioId + ")";
+    }
+
     public synchronized void invalidarAccessToken() {
         repository.findByTenantId(TenantContext.require()).ifPresent(credencial -> {
             credencial.setVenceEn(Instant.EPOCH);
@@ -172,7 +205,12 @@ public class MercadoLibreTokenService {
         CredencialMercadoLibre credencial = repository.findByTenantId(tenantId)
                 .orElseGet(CredencialMercadoLibre::new);
         credencial.setTenantId(tenantId);
-        if (usuarioExternoId != null) credencial.setUsuarioExternoId(usuarioExternoId);
+        if (usuarioExternoId != null) {
+            if (!Objects.equals(credencial.getUsuarioExternoId(), usuarioExternoId)) {
+                credencial.setNombreCuenta(null);
+            }
+            credencial.setUsuarioExternoId(usuarioExternoId);
+        }
         credencial.setAccessTokenCifrado(cifrado.cifrar(response.path("access_token").asText()));
         credencial.setRefreshTokenCifrado(cifrado.cifrar(refreshTokenNuevo));
         credencial.setVenceEn(Instant.now().plusSeconds(response.path("expires_in").asLong(21_600)));
@@ -206,6 +244,26 @@ public class MercadoLibreTokenService {
     private String mensajeSeguro(Exception e) {
         return e.getMessage() == null ? e.getClass().getSimpleName()
                 : e.getMessage().replaceAll("APP[_-][A-Za-z0-9-]+", "[REDACTED]");
+    }
+
+    private String nombreUsuario(JsonNode usuario) {
+        if (usuario == null) return "";
+        String nickname = limpiar(usuario.path("nickname").asText());
+        String nombre = limpiar(usuario.path("first_name").asText());
+        String apellido = limpiar(usuario.path("last_name").asText());
+        String completo = limpiar(nombre + " " + apellido);
+        if (!nickname.isBlank() && !completo.isBlank()
+                && !nickname.equalsIgnoreCase(completo)) return nickname + " — " + completo;
+        return !nickname.isBlank() ? nickname : completo;
+    }
+
+    private String limpiar(String valor) {
+        return valor == null ? "" : valor.trim();
+    }
+
+    private String limitar(String valor) {
+        String limpio = limpiar(valor);
+        return limpio.length() <= 255 ? limpio : limpio.substring(0, 255);
     }
 
     public Long resolverTenantPorUsuario(Long usuarioExternoId) {

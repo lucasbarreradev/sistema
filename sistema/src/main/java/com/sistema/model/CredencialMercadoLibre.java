@@ -24,6 +24,8 @@ public class CredencialMercadoLibre {
     private Long tenantId;
     @Column(name = "usuario_externo_id")
     private Long usuarioExternoId;
+    @Column(name = "nombre_cuenta", length = 255)
+    private String nombreCuenta;
     @Lob
     @Column(nullable = false, columnDefinition = "TEXT")
     private String accessTokenCifrado;
@@ -41,6 +43,8 @@ public class CredencialMercadoLibre {
     public void setTenantId(Long tenantId) { this.tenantId = tenantId; }
     public Long getUsuarioExternoId() { return usuarioExternoId; }
     public void setUsuarioExternoId(Long usuarioExternoId) { this.usuarioExternoId = usuarioExternoId; }
+    public String getNombreCuenta() { return nombreCuenta; }
+    public void setNombreCuenta(String nombreCuenta) { this.nombreCuenta = nombreCuenta; }
     public String getAccessTokenCifrado() { return accessTokenCifrado; }
     public void setAccessTokenCifrado(String accessTokenCifrado) { this.accessTokenCifrado = accessTokenCifrado; }
     public String getRefreshTokenCifrado() { return refreshTokenCifrado; }

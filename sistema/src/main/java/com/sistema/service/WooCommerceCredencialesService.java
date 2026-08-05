@@ -29,6 +29,24 @@ public class WooCommerceCredencialesService {
     public boolean conexionDisponible() { return cifrado.configurado(); }
     public String urlTienda() { return configurado() ? obtener().url() : ""; }
 
+    public String nombreCuentaConectada() {
+        CredencialWooCommerce credencial = repository.findByTenantId(TenantContext.require()).orElse(null);
+        if (credencial == null) return "";
+        String nombre = limpiarTexto(credencial.getNombreCuenta());
+        String dominio = dominio(credencial.getUrlTienda());
+        if (nombre.isBlank()) {
+            nombre = consultarNombreSitio(credencial.getUrlTienda());
+            if (nombre.isBlank()) nombre = dominio;
+            if (!nombre.isBlank()) {
+                credencial.setNombreCuenta(limitar(nombre));
+                repository.save(credencial);
+            }
+        }
+        if (nombre.isBlank()) return credencial.getUrlTienda();
+        return dominio.isBlank() || nombre.equalsIgnoreCase(dominio)
+                ? nombre : nombre + " (" + dominio + ")";
+    }
+
     public Credenciales obtener() {
         long tenantId = TenantContext.require();
         return repository.findByTenantId(tenantId)
@@ -48,8 +66,15 @@ public class WooCommerceCredencialesService {
         if (estado == null || !estado.isObject()) throw new IllegalStateException("No se pudo verificar la tienda WooCommerce");
         long tenantId = TenantContext.require();
         CredencialWooCommerce credencial = repository.findByTenantId(tenantId).orElseGet(CredencialWooCommerce::new);
+        boolean mismaTienda = normalizada.equalsIgnoreCase(limpiarUrl(credencial.getUrlTienda()));
         credencial.setTenantId(tenantId);
         credencial.setUrlTienda(normalizada);
+        String nombreCuenta = consultarNombreSitio(normalizada);
+        if (nombreCuenta.isBlank() && mismaTienda) {
+            nombreCuenta = limpiarTexto(credencial.getNombreCuenta());
+        }
+        if (nombreCuenta.isBlank()) nombreCuenta = dominio(normalizada);
+        credencial.setNombreCuenta(limitar(nombreCuenta));
         credencial.setConsumerKeyCifrada(cifrado.cifrar(key));
         credencial.setConsumerSecretCifrado(cifrado.cifrar(secret));
         credencial.setActualizadoEn(Instant.now());
@@ -78,6 +103,34 @@ public class WooCommerceCredencialesService {
 
     private String limpiarUrl(String valor) {
         return valor == null ? "" : valor.trim().replaceAll("/+$", "");
+    }
+
+    private String consultarNombreSitio(String url) {
+        try {
+            JsonNode indice = restClient.get().uri(limpiarUrl(url) + "/wp-json/")
+                    .retrieve().body(JsonNode.class);
+            return indice == null ? "" : limpiarTexto(indice.path("name").asText());
+        } catch (RuntimeException ignored) {
+            return "";
+        }
+    }
+
+    private String dominio(String url) {
+        try {
+            String host = URI.create(limpiarUrl(url)).getHost();
+            return host == null ? "" : host.replaceFirst("^www\\.", "");
+        } catch (RuntimeException ignored) {
+            return "";
+        }
+    }
+
+    private String limpiarTexto(String valor) {
+        return valor == null ? "" : valor.trim();
+    }
+
+    private String limitar(String valor) {
+        String limpio = limpiarTexto(valor);
+        return limpio.length() <= 255 ? limpio : limpio.substring(0, 255);
     }
 
     public record Credenciales(String url, String key, String secret) {}

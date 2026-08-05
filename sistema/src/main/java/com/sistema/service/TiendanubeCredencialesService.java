@@ -64,6 +64,26 @@ public class TiendanubeCredencialesService {
     public String getClientId() { return clientId; }
     public String getRedirectUri() { return redirectUri; }
 
+    public String nombreCuentaConectada() {
+        CredencialTiendanube credencial = repository.findByTenantId(TenantContext.require()).orElse(null);
+        if (credencial == null) return "";
+        String nombre = limpiar(credencial.getNombreCuenta());
+        if (nombre.isBlank()) {
+            try {
+                nombre = consultarNombreTienda(credencial.getStoreId(),
+                        cifrado.descifrar(credencial.getAccessTokenCifrado()));
+            } catch (RuntimeException ignored) {
+                nombre = "";
+            }
+            if (nombre.isBlank()) nombre = "Tienda " + credencial.getStoreId();
+            credencial.setNombreCuenta(limitar(nombre));
+            repository.save(credencial);
+        }
+        String respaldo = "Tienda " + credencial.getStoreId();
+        return nombre.equalsIgnoreCase(respaldo)
+                ? nombre : nombre + " (tienda " + credencial.getStoreId() + ")";
+    }
+
     public Credenciales obtener() {
         long tenantId = TenantContext.require();
         return repository.findByTenantId(tenantId)
@@ -101,8 +121,20 @@ public class TiendanubeCredencialesService {
         if (token.isBlank() || storeId.isBlank()) throw new IllegalStateException("Tiendanube no devolvió la tienda y el token esperados");
         long tenantId = TenantContext.require();
         CredencialTiendanube credencial = repository.findByTenantId(tenantId).orElseGet(CredencialTiendanube::new);
+        boolean mismaTienda = storeId.equals(credencial.getStoreId());
         credencial.setTenantId(tenantId);
         credencial.setStoreId(storeId);
+        String nombreTienda;
+        try {
+            nombreTienda = consultarNombreTienda(storeId, token);
+        } catch (RuntimeException ignored) {
+            nombreTienda = "";
+        }
+        if (nombreTienda.isBlank() && mismaTienda) {
+            nombreTienda = limpiar(credencial.getNombreCuenta());
+        }
+        if (nombreTienda.isBlank()) nombreTienda = "Tienda " + storeId;
+        credencial.setNombreCuenta(limitar(nombreTienda));
         credencial.setAccessTokenCifrado(cifrado.cifrar(token));
         credencial.setActualizadoEn(Instant.now());
         repository.save(credencial);
@@ -115,5 +147,39 @@ public class TiendanubeCredencialesService {
         return repository.findByStoreId(storeId).map(CredencialTiendanube::getTenantId)
                 .orElseGet(() -> storeId != null && storeId.equals(storeIdInicial) && !storeIdInicial.isBlank() ? 1L : null);
     }
+
+    private String consultarNombreTienda(String storeId, String token) {
+        JsonNode tienda = restClient.get()
+                .uri("https://api.tiendanube.com/v1/" + storeId + "/store")
+                .headers(h -> {
+                    h.setBearerAuth(token);
+                    h.set("User-Agent", userAgent);
+                })
+                .retrieve().body(JsonNode.class);
+        if (tienda == null) return "";
+        JsonNode nombres = tienda.path("name");
+        String idiomaPrincipal = limpiar(tienda.path("main_language").asText());
+        if (!idiomaPrincipal.isBlank() && nombres.hasNonNull(idiomaPrincipal)) {
+            String nombre = limpiar(nombres.path(idiomaPrincipal).asText());
+            if (!nombre.isBlank()) return nombre;
+        }
+        if (nombres.hasNonNull("es")) {
+            String nombre = limpiar(nombres.path("es").asText());
+            if (!nombre.isBlank()) return nombre;
+        }
+        if (nombres.isTextual()) return limpiar(nombres.asText());
+        if (nombres.fields().hasNext()) return limpiar(nombres.fields().next().getValue().asText());
+        return limpiar(tienda.path("business_name").asText());
+    }
+
+    private String limpiar(String valor) {
+        return valor == null ? "" : valor.trim();
+    }
+
+    private String limitar(String valor) {
+        String limpio = limpiar(valor);
+        return limpio.length() <= 255 ? limpio : limpio.substring(0, 255);
+    }
+
     public record Credenciales(String storeId, String token, String userAgent) {}
 }

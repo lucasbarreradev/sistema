@@ -66,6 +66,10 @@
                                                                         <i class="fa-solid fa-link mr-1"></i>${mercadoLibreConectado ? 'Reconectar cuenta' : 'Conectar cuenta'}
                                                                     </a>
                                                                     <c:if test="${mercadoLibreConectado}">
+                                                                        <div class="small text-success mt-2">
+                                                                            <i class="fa-solid fa-user-check mr-1"></i>
+                                                                            Cuenta: <strong><c:out value="${mercadoLibreCuentaNombre}"/></strong>
+                                                                        </div>
                                                                         <form method="post" class="d-inline" action="${pageContext.request.contextPath}/canales/mercadolibre/desconectar"
                                                                               onsubmit="return confirm('¿Desconectar la cuenta de Mercado Libre?');">
                                                                             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
@@ -97,6 +101,10 @@
                                                                         </button>
                                                                     </form>
                                                                     <c:if test="${wooCommerceConectado}">
+                                                                        <div class="small text-success mt-2">
+                                                                            <i class="fa-solid fa-store mr-1"></i>
+                                                                            Tienda: <strong><c:out value="${wooCommerceCuentaNombre}"/></strong>
+                                                                        </div>
                                                                         <form method="post" class="mt-2" action="${pageContext.request.contextPath}/canales/woocommerce/desconectar"
                                                                               onsubmit="return confirm('¿Desconectar WooCommerce?');">
                                                                             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
@@ -122,6 +130,10 @@
                                                                         <i class="fa-solid fa-link mr-1"></i>${tiendanubeConectado ? 'Reconectar cuenta' : 'Conectar cuenta'}
                                                                     </a>
                                                                     <c:if test="${tiendanubeConectado}">
+                                                                        <div class="small text-success mt-2">
+                                                                            <i class="fa-solid fa-store mr-1"></i>
+                                                                            Tienda: <strong><c:out value="${tiendanubeCuentaNombre}"/></strong>
+                                                                        </div>
                                                                         <form method="post" class="d-inline" action="${pageContext.request.contextPath}/canales/tiendanube/desconectar"
                                                                               onsubmit="return confirm('¿Desconectar Tiendanube?');">
                                                                             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">

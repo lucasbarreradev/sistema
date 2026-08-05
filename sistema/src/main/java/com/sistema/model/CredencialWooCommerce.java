@@ -24,6 +24,8 @@ public class CredencialWooCommerce {
     private Long tenantId;
     @Column(nullable = false, length = 1000)
     private String urlTienda;
+    @Column(name = "nombre_cuenta", length = 255)
+    private String nombreCuenta;
     @Lob
     @Column(nullable = false, columnDefinition = "TEXT")
     private String consumerKeyCifrada;
@@ -38,6 +40,8 @@ public class CredencialWooCommerce {
     public void setTenantId(Long tenantId) { this.tenantId = tenantId; }
     public String getUrlTienda() { return urlTienda; }
     public void setUrlTienda(String urlTienda) { this.urlTienda = urlTienda; }
+    public String getNombreCuenta() { return nombreCuenta; }
+    public void setNombreCuenta(String nombreCuenta) { this.nombreCuenta = nombreCuenta; }
     public String getConsumerKeyCifrada() { return consumerKeyCifrada; }
     public void setConsumerKeyCifrada(String consumerKeyCifrada) { this.consumerKeyCifrada = consumerKeyCifrada; }
     public String getConsumerSecretCifrado() { return consumerSecretCifrado; }

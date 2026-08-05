@@ -75,15 +75,24 @@ public class CanalesController {
         model.addAttribute("publicaciones", publicacionService.historial());
         model.addAttribute("trabajosSincronizacion", trabajoSincronizacionService.ultimos());
         model.addAttribute("sincronizacionActiva", trabajoSincronizacionService.hayTrabajoActivo());
-        model.addAttribute("mercadoLibreConectado", mercadoLibreTokenService.conectado());
+        boolean mercadoLibreConectado = mercadoLibreTokenService.conectado();
+        model.addAttribute("mercadoLibreConectado", mercadoLibreConectado);
+        model.addAttribute("mercadoLibreCuentaNombre", mercadoLibreConectado
+                ? mercadoLibreTokenService.nombreCuentaConectada() : "");
         model.addAttribute("mercadoLibreOAuthDisponible",
                 mercadoLibreTokenService.aplicacionConfigurada() && !mercadoLibreRedirectUri.isBlank());
         model.addAttribute("mercadoLibreRedirectUri", mercadoLibreRedirectUri);
-        model.addAttribute("wooCommerceConectado", wooCommerceCredencialesService.conectado());
+        boolean wooCommerceConectado = wooCommerceCredencialesService.conectado();
+        model.addAttribute("wooCommerceConectado", wooCommerceConectado);
+        model.addAttribute("wooCommerceCuentaNombre", wooCommerceConectado
+                ? wooCommerceCredencialesService.nombreCuentaConectada() : "");
         model.addAttribute("wooCommerceConexionDisponible",
                 wooCommerceCredencialesService.conexionDisponible() && !publicBaseUrl.isBlank());
         model.addAttribute("wooCommerceUrl", wooCommerceCredencialesService.urlTienda());
-        model.addAttribute("tiendanubeConectado", tiendanubeCredencialesService.conectado());
+        boolean tiendanubeConectado = tiendanubeCredencialesService.conectado();
+        model.addAttribute("tiendanubeConectado", tiendanubeConectado);
+        model.addAttribute("tiendanubeCuentaNombre", tiendanubeConectado
+                ? tiendanubeCredencialesService.nombreCuentaConectada() : "");
         model.addAttribute("tiendanubeOAuthDisponible", tiendanubeCredencialesService.aplicacionConfigurada());
         model.addAttribute("tiendanubeRedirectUri", tiendanubeCredencialesService.getRedirectUri());
         model.addAttribute("webhookMercadoLibreUrl",

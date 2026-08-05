@@ -24,6 +24,8 @@ public class CredencialTiendanube {
     private Long tenantId;
     @Column(nullable = false)
     private String storeId;
+    @Column(name = "nombre_cuenta", length = 255)
+    private String nombreCuenta;
     @Lob
     @Column(nullable = false, columnDefinition = "TEXT")
     private String accessTokenCifrado;
@@ -35,6 +37,8 @@ public class CredencialTiendanube {
     public void setTenantId(Long tenantId) { this.tenantId = tenantId; }
     public String getStoreId() { return storeId; }
     public void setStoreId(String storeId) { this.storeId = storeId; }
+    public String getNombreCuenta() { return nombreCuenta; }
+    public void setNombreCuenta(String nombreCuenta) { this.nombreCuenta = nombreCuenta; }
     public String getAccessTokenCifrado() { return accessTokenCifrado; }
     public void setAccessTokenCifrado(String accessTokenCifrado) { this.accessTokenCifrado = accessTokenCifrado; }
     public Instant getActualizadoEn() { return actualizadoEn; }
