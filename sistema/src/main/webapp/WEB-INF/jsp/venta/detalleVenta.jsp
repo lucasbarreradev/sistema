@@ -153,7 +153,7 @@
                             <tfoot class="table-secondary">
                             <c:choose>
                                 <c:when test="${venta.cliente != null
-                                               and venta.cliente.condicionIva == 'RESPONSABLE_INSCRIPTO'}">
+                                               and venta.cliente.condicionIva.receptorFacturaA}">
 
                                     <tr>
                                         <td colspan="3" class="text-end fw-bold">Neto</td>

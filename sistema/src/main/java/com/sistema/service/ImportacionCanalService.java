@@ -111,6 +111,11 @@ public class ImportacionCanalService {
 
     private void guardar(CanalVenta canal, ProductoCanalImportado dato, ResultadoImportacionCanal resultado) {
         validarStockVariantesMercadoLibre(canal, dato);
+        Optional<ProductoVariante> varianteExistente = buscarVarianteExistenteParaProductoIndividual(dato);
+        if (varianteExistente.isPresent()) {
+            guardarComoVarianteExistente(canal, dato, varianteExistente.get(), resultado);
+            return;
+        }
         Set<Producto> productosSeparados = new LinkedHashSet<>();
         Optional<PublicacionCanal> mapeo = publicacionRepository.findByCanalAndIdExterno(canal, dato.idExterno());
         Optional<Producto> encontrado = mapeo.map(PublicacionCanal::getProducto);
@@ -171,6 +176,135 @@ public class ImportacionCanalService {
         publicacionRepository.save(publicacion);
         consolidarProductosSeparados(producto, productosSeparados);
         if (nuevo) resultado.creado(producto.getId()); else resultado.actualizado(producto.getId());
+    }
+
+    private Optional<ProductoVariante> buscarVarianteExistenteParaProductoIndividual(
+            ProductoCanalImportado dato) {
+        List<VarianteCanalImportada> variantes = dato.variantes() == null
+                ? List.of()
+                : dato.variantes().stream().filter(Objects::nonNull).toList();
+        if (variantes.size() > 1) return Optional.empty();
+
+        String sku = variantes.isEmpty() ? dato.sku() : variantes.get(0).sku();
+        if (normalizarSkuImportado(sku).isBlank()) sku = dato.sku();
+        if (normalizarSkuImportado(sku).isBlank()) return Optional.empty();
+        return varianteRepository.findBySkuIgnoreCase(sku.trim());
+    }
+
+    private void guardarComoVarianteExistente(CanalVenta canal, ProductoCanalImportado dato,
+                                               ProductoVariante variante,
+                                               ResultadoImportacionCanal resultado) {
+        Producto producto = variante.getProducto();
+        if (producto == null || producto.getId() == null) {
+            throw new IllegalStateException("La variante con SKU " + variante.getSku()
+                    + " no tiene un producto asociado");
+        }
+
+        VarianteCanalImportada detalle = dato.variantes() == null || dato.variantes().isEmpty()
+                ? null : dato.variantes().get(0);
+        actualizarVarianteDesdeCanal(canal, dato, detalle, variante);
+        if (canal == CanalVenta.MERCADO_LIBRE) {
+            if (producto.getMercadoLibreId() == null || producto.getMercadoLibreId().isBlank()) {
+                producto.setMercadoLibreId(dato.idExterno());
+            }
+            if (producto.getMercadoLibreCategoriaId() == null
+                    || producto.getMercadoLibreCategoriaId().isBlank()) {
+                producto.setMercadoLibreCategoriaId(dato.mercadoLibreCategoriaId());
+            }
+            aplicarDatosMercadoLibre(producto, dato.datosCanal());
+        }
+        productoService.saveProducto(producto);
+        varianteService.guardarImportada(producto, variante);
+        consolidarMapeoDeProductoIndividual(canal, dato.idExterno(), producto);
+        resultado.actualizado(producto.getId());
+    }
+
+    private void actualizarVarianteDesdeCanal(CanalVenta canal, ProductoCanalImportado productoRemoto,
+                                               VarianteCanalImportada detalle,
+                                               ProductoVariante variante) {
+        Integer stock = detalle == null ? productoRemoto.cantidad() : detalle.stock();
+        variante.setStock(Optional.ofNullable(stock).orElse(0));
+        java.math.BigDecimal precio = detalle == null ? productoRemoto.precio() : detalle.precio();
+        if (precio != null) {
+            variante.setPrecioContado(precio);
+            variante.setPrecioTarjeta(precio);
+            variante.setPrecioCuentaCorriente(precio);
+        }
+
+        String foto = detalle == null ? productoRemoto.fotoUrl() : detalle.fotoUrl();
+        if (foto != null && !foto.isBlank()) {
+            variante.setFotoContenido(null);
+            variante.setFotoNombre(null);
+            variante.setFotoTipoContenido(null);
+            variante.setFotoUrlExterna(foto.trim());
+        }
+        if (detalle != null) {
+            if (detalle.nombre() != null && !detalle.nombre().isBlank()) variante.setNombre(detalle.nombre());
+            if (detalle.talle() != null && !detalle.talle().isBlank()) variante.setTalle(detalle.talle());
+            if (detalle.color() != null && !detalle.color().isBlank()) variante.setColor(detalle.color());
+            if (detalle.codigoBarras() != null && !detalle.codigoBarras().isBlank()) {
+                variante.setCodigoBarras(detalle.codigoBarras());
+            }
+            if (detalle.gtin() != null && !detalle.gtin().isBlank()) variante.setMercadoLibreGtin(detalle.gtin());
+            if (detalle.atributos() != null && !detalle.atributos().isEmpty()) {
+                try {
+                    variante.setMercadoLibreAtributosJson(objectMapper.writeValueAsString(detalle.atributos()));
+                } catch (Exception e) {
+                    throw new IllegalArgumentException("No se pudieron guardar los atributos de la variante", e);
+                }
+            }
+        }
+
+        String idExterno = detalle != null && detalle.idExterno() != null
+                && !detalle.idExterno().isBlank() ? detalle.idExterno() : productoRemoto.idExterno();
+        switch (canal) {
+            case MERCADO_LIBRE -> {
+                if (detalle == null || detalle.itemMercadoLibre()) {
+                    variante.setMercadoLibreItemId(idExterno);
+                } else {
+                    variante.setMercadoLibreVariationId(idExterno);
+                }
+                if (detalle != null) variante.setMercadoLibreProductNumber(detalle.productNumber());
+            }
+            case WOOCOMMERCE -> {
+                if (detalle != null) variante.setWooCommerceVariationId(idExterno);
+            }
+            case TIENDANUBE -> {
+                if (detalle != null) variante.setTiendaNubeVariationId(idExterno);
+            }
+        }
+    }
+
+    private void consolidarMapeoDeProductoIndividual(CanalVenta canal, String idExterno,
+                                                     Producto productoPrincipal) {
+        Optional<PublicacionCanal> mapeoExterno = publicacionRepository
+                .findByCanalAndIdExterno(canal, idExterno);
+        Producto duplicado = mapeoExterno.map(PublicacionCanal::getProducto)
+                .filter(producto -> !Objects.equals(producto.getId(), productoPrincipal.getId()))
+                .orElse(null);
+        if (duplicado != null) publicacionRepository.delete(mapeoExterno.get());
+
+        PublicacionCanal publicacion = publicacionRepository
+                .findByProductoIdAndCanal(productoPrincipal.getId(), canal)
+                .orElseGet(PublicacionCanal::new);
+        publicacion.setProducto(productoPrincipal);
+        publicacion.setCanal(canal);
+        if (publicacion.getIdExterno() == null || publicacion.getIdExterno().isBlank()
+                || canal != CanalVenta.MERCADO_LIBRE) {
+            publicacion.setIdExterno(idExterno);
+        }
+        publicacion.setEstado(EstadoPublicacion.IMPORTADO);
+        publicacion.setUltimoError(null);
+        publicacion.setFechaActualizacion(LocalDateTime.now());
+        publicacionRepository.save(publicacion);
+
+        if (duplicado != null && !varianteRepository.existsByProductoId(duplicado.getId())) {
+            try {
+                productoService.deleteProducto(duplicado.getId());
+            } catch (RuntimeException ignored) {
+                // Si el duplicado tiene movimientos se conserva su historial, pero ya no se usa para sincronizar.
+            }
+        }
     }
 
     private void validarStockVariantesMercadoLibre(CanalVenta canal, ProductoCanalImportado dato) {

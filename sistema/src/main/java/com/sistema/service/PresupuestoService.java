@@ -188,7 +188,9 @@ public class PresupuestoService {
         BigDecimal total = netoAcum.add(ivaAcum);
 
         // 👉 Si es consumidor final, no discriminar IVA
-        if (presupuesto.getCliente() == null || presupuesto.getCliente().getCondicionIva() == CondicionIva.CONSUMIDOR_FINAL) {
+        if (presupuesto.getCliente() == null
+                || presupuesto.getCliente().getCondicionIva() == null
+                || !presupuesto.getCliente().getCondicionIva().isReceptorFacturaA()) {
             netoAcum = total;
             ivaAcum = BigDecimal.ZERO;
             ivasMap.clear(); // no mostramos líneas de IVA

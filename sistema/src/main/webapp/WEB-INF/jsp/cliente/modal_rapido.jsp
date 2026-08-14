@@ -49,8 +49,19 @@
                             <label for="clienteRapidoCondicionIva">Condici&oacute;n IVA</label>
                             <select id="clienteRapidoCondicionIva" name="condicionIva"
                                     class="form-control" required>
-                                <option value="CONSUMIDOR_FINAL">Consumidor Final</option>
                                 <option value="RESPONSABLE_INSCRIPTO">Responsable Inscripto</option>
+                                <option value="IVA_SUJETO_EXENTO">IVA Sujeto Exento</option>
+                                <option value="CONSUMIDOR_FINAL" selected>Consumidor Final</option>
+                                <option value="RESPONSABLE_MONOTRIBUTO">Responsable Monotributo</option>
+                                <option value="SUJETO_NO_CATEGORIZADO">Sujeto No Categorizado</option>
+                                <option value="PROVEEDOR_DEL_EXTERIOR">Proveedor del Exterior</option>
+                                <option value="CLIENTE_DEL_EXTERIOR">Cliente del Exterior</option>
+                                <option value="IVA_LIBERADO_LEY_19640">IVA Liberado - Ley N.&deg; 19.640</option>
+                                <option value="MONOTRIBUTISTA_SOCIAL">Monotributista Social</option>
+                                <option value="IVA_NO_ALCANZADO">IVA No Alcanzado</option>
+                                <option value="MONOTRIBUTO_TRABAJADOR_INDEPENDIENTE_PROMOVIDO">
+                                    Monotributo Trabajador Independiente Promovido
+                                </option>
                             </select>
                         </div>
                     </div>

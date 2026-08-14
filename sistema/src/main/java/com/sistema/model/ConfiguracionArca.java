@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
@@ -29,7 +31,8 @@ public class ConfiguracionArca extends TenantAwareEntity {
     private AmbienteArca ambiente;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "condicion_fiscal", nullable = false, length = 30)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "condicion_fiscal", nullable = false, length = 60)
     private CondicionFiscalArca condicionFiscal;
 
     @Lob

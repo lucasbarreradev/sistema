@@ -20,6 +20,10 @@ public class MigracionEsquemaService implements ApplicationRunner {
     @Override
     public void run(ApplicationArguments args) {
         migrarTenants();
+        ampliarCondicionesFiscales();
+        if (requiereVarchar("venta", "tipo_comprobante", 40)) {
+            jdbcTemplate.execute("ALTER TABLE venta MODIFY COLUMN tipo_comprobante VARCHAR(40) NULL");
+        }
         if (tipoColumna("venta", "origen")
                 .map(tipo -> tipo.startsWith("enum(")).orElse(false)) {
             jdbcTemplate.execute("ALTER TABLE venta MODIFY COLUMN origen VARCHAR(30) NOT NULL");
@@ -50,6 +54,33 @@ public class MigracionEsquemaService implements ApplicationRunner {
         }
     }
 
+    private void ampliarCondicionesFiscales() {
+        if (requiereVarchar("cliente", "condicion_iva", 60)) {
+            jdbcTemplate.execute("ALTER TABLE cliente MODIFY COLUMN condicion_iva VARCHAR(60) NULL");
+        }
+        if (requiereVarchar("configuracion_arca", "condicion_fiscal", 60)) {
+            jdbcTemplate.execute("ALTER TABLE configuracion_arca MODIFY COLUMN condicion_fiscal VARCHAR(60) NOT NULL");
+        }
+    }
+
+    private boolean requiereVarchar(String tabla, String columna, int longitudMinima) {
+        return tipoColumna(tabla, columna)
+                .map(tipo -> tipo.startsWith("enum(")
+                        || longitudVarchar(tipo).map(longitud -> longitud < longitudMinima).orElse(true))
+                .orElse(false);
+    }
+
+    private java.util.Optional<Integer> longitudVarchar(String tipo) {
+        if (tipo == null || !tipo.startsWith("varchar(")) return java.util.Optional.empty();
+        int cierre = tipo.indexOf(')');
+        if (cierre < 9) return java.util.Optional.empty();
+        try {
+            return java.util.Optional.of(Integer.parseInt(tipo.substring(8, cierre)));
+        } catch (NumberFormatException e) {
+            return java.util.Optional.empty();
+        }
+    }
+
     private void migrarTenants() {
         if (tipoColumna("usuario_roles", "rol").map(tipo -> tipo.startsWith("enum(")).orElse(false)) {
             jdbcTemplate.execute("ALTER TABLE usuario_roles MODIFY COLUMN rol VARCHAR(30) NOT NULL");
@@ -66,7 +97,8 @@ public class MigracionEsquemaService implements ApplicationRunner {
                 "cliente", "gasto", "movimiento_inventario", "precio_producto",
                 "presupuesto", "presupuesto_detalle", "producto", "producto_variante",
                 "proveedor", "publicacion_canal", "orden_canal_procesada", "remito",
-                "remito_item", "venta", "venta_item", "configuracion_documento", "configuracion_arca");
+                "remito_item", "venta", "venta_item", "configuracion_documento", "configuracion_arca",
+                "comprobante_arca");
         for (String tabla : tablasTenant) {
             if (columnaExiste(tabla, "tenant_id")) {
                 jdbcTemplate.update("UPDATE " + tabla + " SET tenant_id = 1 WHERE tenant_id IS NULL OR tenant_id = 0");

@@ -7,6 +7,8 @@ import com.sistema.repository.PublicacionCanalRepository;
 import com.sistema.service.canal.PublicadorCanal;
 import com.sistema.service.canal.ResultadoPublicacion;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.PageRequest;
+import com.sistema.dto.PublicacionCanalListadoDto;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -33,8 +35,8 @@ public class PublicacionService {
         return estado;
     }
 
-    public List<PublicacionCanal> historial() {
-        return publicacionRepository.findAllByOrderByFechaActualizacionDesc();
+    public List<PublicacionCanalListadoDto> historial() {
+        return publicacionRepository.buscarHistorialLiviano(PageRequest.of(0, 100));
     }
 
     public ResultadoPublicacionLote publicar(Collection<Long> productoIds, Collection<CanalVenta> canales) {

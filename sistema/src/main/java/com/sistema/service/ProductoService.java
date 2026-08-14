@@ -3,6 +3,8 @@ package com.sistema.service;
 import com.sistema.model.Producto;
 import com.sistema.model.ProductoVariante;
 import com.sistema.dto.ProductoOpcionDto;
+import com.sistema.dto.ProductoFotoProjection;
+import com.sistema.dto.ProductoListadoDto;
 import com.sistema.model.Proveedor;
 import com.sistema.repository.MovimientoInventarioRepository;
 import com.sistema.repository.ProductoRepository;
@@ -15,6 +17,8 @@ import java.util.*;
 import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 @Service
 public class ProductoService {
@@ -41,6 +45,17 @@ public class ProductoService {
 
     public List<Producto> getProductos() {
         return productoRepo.findAllByOrderByDescripcionAsc();
+    }
+
+    @Transactional(readOnly = true)
+    public Page<ProductoListadoDto> getProductosListado(String busqueda, Pageable pageable) {
+        String filtro = busqueda == null ? "" : busqueda.trim();
+        return productoRepo.buscarPaginaListado(filtro, pageable).map(ProductoListadoDto::new);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<ProductoFotoProjection> getFotoProducto(Long id) {
+        return productoRepo.buscarFotoPorId(id);
     }
 
     public Optional<Producto> getProductoById(Long id) {

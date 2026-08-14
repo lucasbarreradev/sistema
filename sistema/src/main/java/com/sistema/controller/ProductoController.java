@@ -4,6 +4,7 @@ import com.sistema.model.Producto;
 import com.sistema.model.Proveedor;
 import com.sistema.model.TipoIva;
 import com.sistema.dto.ProductoOpcionDto;
+import com.sistema.dto.ProductoFotoProjection;
 import com.sistema.service.ProductoService;
 import com.sistema.service.ProveedorService;
 import com.sistema.service.MercadoLibreAtributosProductoService;
@@ -23,6 +24,7 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
 import java.util.Map;
@@ -62,9 +64,17 @@ public class ProductoController {
     // LISTAR productos
     // ==========================================
     @GetMapping
-    public String listar(Model model) {
-        model.addAttribute("productos",
-                productoService.getProductos());
+    public String listar(@RequestParam(defaultValue = "0") int page,
+                         @RequestParam(defaultValue = "50") int size,
+                         @RequestParam(defaultValue = "") String q,
+                         Model model) {
+        int pagina = Math.max(page, 0);
+        int tamanio = Math.max(10, Math.min(size, 100));
+        var productos = productoService.getProductosListado(q, PageRequest.of(pagina, tamanio));
+        model.addAttribute("productos", productos.getContent());
+        model.addAttribute("paginaProductos", productos);
+        model.addAttribute("busquedaProductos", q == null ? "" : q.trim());
+        model.addAttribute("tamanioPagina", tamanio);
         return "producto/listar";
     }
 
@@ -328,31 +338,41 @@ public class ProductoController {
         try {
             return fotoWooCommerce(imagenWooCommerceService.normalizarDesdeUrl(url));
         } catch (Exception ignored) {
-            return ResponseEntity.status(302).location(URI.create(url)).build();
+            return ResponseEntity.status(302)
+                    .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600")
+                    .location(URI.create(url)).build();
         }
     }
 
     private ResponseEntity<?> cargarFoto(Long id, String nombre) {
-        Producto producto = productoService.getProductoById(id).orElse(null);
-        if (producto == null || !producto.tieneFoto()) {
+        ProductoFotoProjection producto = productoService.getFotoProducto(id).orElse(null);
+        if (producto == null) {
+            return ResponseEntity.notFound().build();
+        }
+        byte[] fotoContenido = producto.getFotoContenido();
+        boolean tieneFotoLocal = fotoContenido != null && fotoContenido.length > 0;
+        String fotoUrlExterna = producto.getFotoUrlExterna();
+        if (!tieneFotoLocal && (fotoUrlExterna == null || fotoUrlExterna.isBlank())) {
             return ResponseEntity.notFound().build();
         }
         boolean paraWooCommerce = "woocommerce.jpg".equalsIgnoreCase(nombre);
-        if (!producto.tieneFotoLocal()) {
+        if (!tieneFotoLocal) {
             try {
-                URI uri = URI.create(producto.getFotoUrlExterna());
+                URI uri = URI.create(fotoUrlExterna);
                 if (!("https".equalsIgnoreCase(uri.getScheme()) || "http".equalsIgnoreCase(uri.getScheme()))) {
                     return ResponseEntity.badRequest().build();
                 }
                 if (paraWooCommerce) {
                     try {
                         return fotoWooCommerce(
-                                imagenWooCommerceService.normalizarDesdeUrl(producto.getFotoUrlExterna()));
+                                imagenWooCommerceService.normalizarDesdeUrl(fotoUrlExterna));
                     } catch (Exception ignored) {
                         // Si la normalización no es posible se conserva la foto original.
                     }
                 }
-                return ResponseEntity.status(302).location(uri).build();
+                return ResponseEntity.status(302)
+                        .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600")
+                        .location(uri).build();
             } catch (IllegalArgumentException e) {
                 return ResponseEntity.notFound().build();
             }
@@ -360,7 +380,7 @@ public class ProductoController {
         if (paraWooCommerce) {
             try {
                 return fotoWooCommerce(
-                        imagenWooCommerceService.normalizar(producto.getFotoContenido()));
+                        imagenWooCommerceService.normalizar(fotoContenido));
             } catch (Exception ignored) {
                 // Si la normalización no es posible se entrega el archivo original.
             }
@@ -374,7 +394,7 @@ public class ProductoController {
         return ResponseEntity.ok()
                 .header(HttpHeaders.CACHE_CONTROL, "public, max-age=3600")
                 .contentType(mediaType)
-                .body(producto.getFotoContenido());
+                .body(fotoContenido);
     }
 
     private ResponseEntity<byte[]> fotoWooCommerce(byte[] contenido) {

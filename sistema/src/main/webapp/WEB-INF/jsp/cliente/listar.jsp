@@ -99,7 +99,7 @@
                                         <td>${c.dni}</td>
                                         <td>${c.email}</td>
                                         <td>${c.direccion}</td>
-                                        <td>${c.condicionIva}</td>
+                                        <td>${c.condicionIva.descripcion}</td>
 
                                         <td class="text-center">
                                             <c:choose>

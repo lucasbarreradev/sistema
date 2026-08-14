@@ -268,8 +268,9 @@ public class PresupuestoPdfService {
         table.addCell(celdaHeader("IVA ($)", header));
         table.addCell(celdaHeader("Importe ($)", header));
 
-        boolean esConsumidorFinal = p.getCliente() == null ||
-                p.getCliente().getCondicionIva() == CondicionIva.CONSUMIDOR_FINAL;
+        boolean esConsumidorFinal = p.getCliente() == null
+                || p.getCliente().getCondicionIva() == null
+                || !p.getCliente().getCondicionIva().isReceptorFacturaA();
 
         for (DetallePresupuesto d : p.getDetalles()) {
 
@@ -347,8 +348,9 @@ public class PresupuestoPdfService {
         Font normal = FontFactory.getFont(FontFactory.HELVETICA, 10);
         Font bold = FontFactory.getFont(FontFactory.HELVETICA, 11, Font.BOLD);
 
-        boolean esConsumidorFinal = p.getCliente() == null ||
-                p.getCliente().getCondicionIva() == CondicionIva.CONSUMIDOR_FINAL;
+        boolean esConsumidorFinal = p.getCliente() == null
+                || p.getCliente().getCondicionIva() == null
+                || !p.getCliente().getCondicionIva().isReceptorFacturaA();
 
         BigDecimal totalNeto = BigDecimal.ZERO;
         Map<BigDecimal, BigDecimal> ivasMap = new HashMap<>(); // IVA acumulado por alícuota

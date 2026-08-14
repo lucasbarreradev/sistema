@@ -1,5 +1,6 @@
 <%@ page contentType="text/html;charset=UTF-8" %>
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
+<%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
 
 <!DOCTYPE html>
 <html lang="en">
@@ -82,26 +83,17 @@
                             Listado de Productos
                         </h6>
                     </div>
-                    <div class="d-sm-flex align-items-center m-4">
-                        <div class="ms-auto" style="max-width: 300px;">
-                            <input type="text" id="searchInput"
-                                   class="form-control"
-                                   placeholder="Buscar producto...">
-                        </div>
-                    </div>
-
-                    <script>
-                    document.getElementById('searchInput').addEventListener('keyup', function () {
-                        const filter = this.value.toLowerCase();
-                        const rows = document.querySelectorAll('#dataTable tbody tr');
-
-                        rows.forEach(row => {
-                            row.style.display = row.textContent.toLowerCase().includes(filter)
-                                ? ''
-                                : 'none';
-                        });
-                    });
-                    </script>
+                    <form method="get" action="${pageContext.request.contextPath}/productos"
+                          class="form-inline m-4">
+                        <input type="hidden" name="size" value="${tamanioPagina}">
+                        <input type="search" name="q" class="form-control mr-2"
+                               style="width:300px" value="${fn:escapeXml(busquedaProductos)}"
+                               placeholder="Buscar por SKU o producto...">
+                        <button class="btn btn-outline-primary" type="submit">Buscar</button>
+                        <c:if test="${not empty busquedaProductos}">
+                            <a class="btn btn-link" href="${pageContext.request.contextPath}/productos">Limpiar</a>
+                        </c:if>
+                    </form>
 
                     <div class="card-body">
                         <div class="table-responsive">
@@ -138,8 +130,9 @@
                                         </td>
                                         <td class="text-center">
                                             <c:choose>
-                                                <c:when test="${p.tieneFoto()}">
+                                                <c:when test="${p.tieneFoto}">
                                                     <img src="${pageContext.request.contextPath}/productos/${p.id}/foto"
+                                                         loading="lazy" decoding="async"
                                                          alt="Foto" style="width:52px;height:52px;object-fit:contain;background:#fff;border-radius:6px;">
                                                 </c:when>
                                                 <c:otherwise><span class="text-muted">Sin foto</span></c:otherwise>
@@ -147,14 +140,14 @@
                                         </td>
                                         <td>${p.sku}</td>
                                         <td>${p.descripcion}</td>
-                                        <td>${p.stockTotal}<c:if test="${p.tieneVariantes()}"><br><span class="badge badge-info">Variantes</span></c:if></td>
+                                        <td>${p.stockTotal}<c:if test="${p.tieneVariantes}"><br><span class="badge badge-info">Variantes</span></c:if></td>
                                         <td>${p.precioContadoListado}</td>
                                         <td>${p.precioCuentaCorrienteListado}</td>
                                         <td>${p.precioTarjetaListado}</td>
                                         <td>
                                             <c:choose>
-                                                <c:when test="${p.proveedor != null}">
-                                                    ${p.proveedor.nombreRazonSocial}
+                                                <c:when test="${not empty p.proveedorNombre}">
+                                                    <c:out value="${p.proveedorNombre}"/>
                                                 </c:when>
                                                 <c:otherwise>
                                                     <span class="text-muted">Sin proveedor</span>
@@ -190,6 +183,47 @@
 
                             </table>
 
+                        </div>
+                        <div class="d-flex flex-wrap justify-content-between align-items-center mt-3">
+                            <small class="text-muted">
+                                ${paginaProductos.totalElements} producto(s) &middot;
+                                P&aacute;gina ${paginaProductos.number + 1} de
+                                ${paginaProductos.totalPages == 0 ? 1 : paginaProductos.totalPages}
+                            </small>
+                            <c:if test="${paginaProductos.totalPages > 1}">
+                                <c:set var="paginaInicio" value="${paginaProductos.number > 2 ? paginaProductos.number - 2 : 0}"/>
+                                <c:set var="paginaFin" value="${paginaProductos.number + 2 < paginaProductos.totalPages - 1 ? paginaProductos.number + 2 : paginaProductos.totalPages - 1}"/>
+                                <nav aria-label="Paginaci&oacute;n de productos">
+                                    <ul class="pagination pagination-sm mb-0">
+                                        <c:url var="urlAnterior" value="/productos">
+                                            <c:param name="page" value="${paginaProductos.number - 1}"/>
+                                            <c:param name="size" value="${tamanioPagina}"/>
+                                            <c:param name="q" value="${busquedaProductos}"/>
+                                        </c:url>
+                                        <li class="page-item ${paginaProductos.first ? 'disabled' : ''}">
+                                            <a class="page-link" href="${paginaProductos.first ? '#' : urlAnterior}">Anterior</a>
+                                        </li>
+                                        <c:forEach begin="${paginaInicio}" end="${paginaFin}" var="numeroPagina">
+                                            <c:url var="urlPagina" value="/productos">
+                                                <c:param name="page" value="${numeroPagina}"/>
+                                                <c:param name="size" value="${tamanioPagina}"/>
+                                                <c:param name="q" value="${busquedaProductos}"/>
+                                            </c:url>
+                                            <li class="page-item ${numeroPagina == paginaProductos.number ? 'active' : ''}">
+                                                <a class="page-link" href="${urlPagina}">${numeroPagina + 1}</a>
+                                            </li>
+                                        </c:forEach>
+                                        <c:url var="urlSiguiente" value="/productos">
+                                            <c:param name="page" value="${paginaProductos.number + 1}"/>
+                                            <c:param name="size" value="${tamanioPagina}"/>
+                                            <c:param name="q" value="${busquedaProductos}"/>
+                                        </c:url>
+                                        <li class="page-item ${paginaProductos.last ? 'disabled' : ''}">
+                                            <a class="page-link" href="${paginaProductos.last ? '#' : urlSiguiente}">Siguiente</a>
+                                        </li>
+                                    </ul>
+                                </nav>
+                            </c:if>
                         </div>
                     </div>
                 </div>

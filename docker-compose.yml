@@ -6,7 +6,7 @@ services:
       - "8082:8080"
     environment:
       TZ: America/Argentina/Buenos_Aires
-      JAVA_TOOL_OPTIONS: -Duser.timezone=America/Argentina/Buenos_Aires
+      JAVA_TOOL_OPTIONS: -Duser.timezone=America/Argentina/Buenos_Aires -Xms128m -Xmx320m -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp
 
       DB_URL: ${DB_URL}
       DB_USER_NAME: ${DB_USER_NAME}
@@ -48,6 +48,11 @@ services:
       TIENDANUBE_REDIRECT_URI: ${TIENDANUBE_REDIRECT_URI:-}
 
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     depends_on:
       joya:
         condition: service_healthy

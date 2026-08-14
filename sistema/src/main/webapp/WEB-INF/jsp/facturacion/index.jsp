@@ -131,8 +131,33 @@
                                     <td class="text-center">
                                         <c:choose>
                                             <c:when test="${not empty venta.cae}">
-                                                <a target="_blank" class="btn btn-sm btn-info"
+                                                <a target="_blank" class="btn btn-sm btn-info mb-1"
                                                    href="${pageContext.request.contextPath}/facturacion/${venta.id}/pdf">Ver PDF</a>
+                                                <button type="button" class="btn btn-sm btn-outline-danger mb-1"
+                                                        data-toggle="modal" data-target="#notaCredito${venta.id}"
+                                                        ${saldosCredito[venta.id] <= 0 ? 'disabled' : ''}>
+                                                    Nota de cr&eacute;dito
+                                                </button>
+                                                <button type="button" class="btn btn-sm btn-outline-primary mb-1"
+                                                        data-toggle="modal" data-target="#notaDebito${venta.id}">
+                                                    Nota de d&eacute;bito
+                                                </button>
+                                                <c:set var="ajustes" value="${comprobantesPorVenta[venta.id]}"/>
+                                                <c:if test="${not empty ajustes}">
+                                                    <div class="small text-left mt-2">
+                                                        <strong>Comprobantes asociados:</strong>
+                                                        <c:forEach items="${ajustes}" var="ajuste">
+                                                            <div>
+                                                                <a target="_blank"
+                                                                   href="${pageContext.request.contextPath}/facturacion/comprobantes/${ajuste.id}/pdf">
+                                                                    <c:out value="${ajuste.tipoComprobante.descripcion}"/>
+                                                                    <c:out value="${ajuste.numeroFormateado}"/>
+                                                                </a>
+                                                                &middot; $ <fmt:formatNumber value="${ajuste.total}" minFractionDigits="2"/>
+                                                            </div>
+                                                        </c:forEach>
+                                                    </div>
+                                                </c:if>
                                             </c:when>
                                             <c:when test="${arcaConfigurada}">
                                                 <form method="post" action="${pageContext.request.contextPath}/facturacion/emitir/${venta.id}"
@@ -149,16 +174,122 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <c:forEach items="${ventas}" var="venta">
+                        <c:if test="${not empty venta.cae}">
+                            <div class="modal fade" id="notaCredito${venta.id}" tabindex="-1" role="dialog"
+                                 aria-labelledby="tituloNotaCredito${venta.id}" aria-hidden="true">
+                                <div class="modal-dialog" role="document">
+                                    <div class="modal-content">
+                                        <form method="post"
+                                              action="${pageContext.request.contextPath}/facturacion/nota-credito/${venta.id}">
+                                            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="tituloNotaCredito${venta.id}">
+                                                    Nota de cr&eacute;dito de <c:out value="${venta.codigo}"/>
+                                                </h5>
+                                                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                                                    <span aria-hidden="true">&times;</span>
+                                                </button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <div class="alert alert-light border">
+                                                    Saldo acreditable: <strong>$ <fmt:formatNumber
+                                                        value="${saldosCredito[venta.id]}" minFractionDigits="2"/></strong>
+                                                </div>
+                                                <div class="form-group">
+                                                    <label>Alcance *</label>
+                                                    <select class="form-control js-tipo-credito" name="total"
+                                                            data-importe="#importeCredito${venta.id}">
+                                                        <option value="true">Total del saldo pendiente</option>
+                                                        <option value="false">Parcial</option>
+                                                    </select>
+                                                </div>
+                                                <div class="form-group js-importe-credito" id="importeCredito${venta.id}"
+                                                     style="display:none">
+                                                    <label>Importe parcial *</label>
+                                                    <input type="number" name="importe" class="form-control"
+                                                           min="0.01" max="${saldosCredito[venta.id]}" step="0.01">
+                                                </div>
+                                                <div class="form-group mb-0">
+                                                    <label>Motivo *</label>
+                                                    <textarea name="motivo" class="form-control" rows="3" maxlength="500"
+                                                              required placeholder="Ej.: devoluci&oacute;n de mercader&iacute;a"></textarea>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                                                <button type="submit" class="btn btn-danger"
+                                                        onclick="return confirm('¿Emitir la nota de cr&eacute;dito en homologaci&oacute;n?')">
+                                                    Emitir nota de cr&eacute;dito
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="modal fade" id="notaDebito${venta.id}" tabindex="-1" role="dialog"
+                                 aria-labelledby="tituloNotaDebito${venta.id}" aria-hidden="true">
+                                <div class="modal-dialog" role="document">
+                                    <div class="modal-content">
+                                        <form method="post"
+                                              action="${pageContext.request.contextPath}/facturacion/nota-debito/${venta.id}">
+                                            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="tituloNotaDebito${venta.id}">
+                                                    Nota de d&eacute;bito de <c:out value="${venta.codigo}"/>
+                                                </h5>
+                                                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                                                    <span aria-hidden="true">&times;</span>
+                                                </button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <div class="form-group">
+                                                    <label>Importe adicional *</label>
+                                                    <input type="number" name="importe" class="form-control"
+                                                           min="0.01" step="0.01" required>
+                                                </div>
+                                                <div class="form-group mb-0">
+                                                    <label>Motivo *</label>
+                                                    <textarea name="motivo" class="form-control" rows="3" maxlength="500"
+                                                              required placeholder="Ej.: diferencia de precio o intereses"></textarea>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                                                <button type="submit" class="btn btn-primary"
+                                                        onclick="return confirm('¿Emitir la nota de d&eacute;bito en homologaci&oacute;n?')">
+                                                    Emitir nota de d&eacute;bito
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </c:if>
+                    </c:forEach>
                 </div>
             </div>
         </div>
     </div>
 </div>
+<jsp:include page="/WEB-INF/jsp/foot.jsp"/>
 <script>
 document.getElementById('buscarVentaFiscal').addEventListener('input', function () {
     const filtro = this.value.toLowerCase();
     document.querySelectorAll('#tablaFacturacion tbody tr').forEach(function (fila) {
         fila.style.display = fila.textContent.toLowerCase().includes(filtro) ? '' : 'none';
+    });
+});
+document.querySelectorAll('.js-tipo-credito').forEach(function (selector) {
+    selector.addEventListener('change', function () {
+        const contenedor = document.querySelector(this.dataset.importe);
+        const input = contenedor.querySelector('input[name="importe"]');
+        const parcial = this.value === 'false';
+        contenedor.style.display = parcial ? '' : 'none';
+        input.required = parcial;
+        if (!parcial) input.value = '';
     });
 });
 </script>

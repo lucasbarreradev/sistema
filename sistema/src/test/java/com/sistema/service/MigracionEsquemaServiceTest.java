@@ -82,4 +82,28 @@ class MigracionEsquemaServiceTest {
                 MODIFY COLUMN estado VARCHAR(40) NOT NULL
                 """);
     }
+
+    @Test
+    void ampliaColumnasDeCondicionesFiscalesParaTodosLosValoresArca() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForObject(anyString(), eq(Integer.class), any(), any())).thenReturn(1);
+        when(jdbc.queryForList(anyString(), eq(String.class), any(), any()))
+                .thenAnswer(invocacion -> {
+                    String tabla = invocacion.getArgument(2);
+                    String columna = invocacion.getArgument(3);
+                    if ("cliente".equals(tabla) && "condicion_iva".equals(columna)) {
+                        return List.of("enum('CONSUMIDOR_FINAL','RESPONSABLE_INSCRIPTO')");
+                    }
+                    if ("configuracion_arca".equals(tabla) && "condicion_fiscal".equals(columna)) {
+                        return List.of("varchar(30)");
+                    }
+                    return List.of("varchar(60)");
+                });
+
+        new MigracionEsquemaService(jdbc).run(mock(ApplicationArguments.class));
+
+        verify(jdbc).execute("ALTER TABLE cliente MODIFY COLUMN condicion_iva VARCHAR(60) NULL");
+        verify(jdbc).execute(
+                "ALTER TABLE configuracion_arca MODIFY COLUMN condicion_fiscal VARCHAR(60) NOT NULL");
+    }
 }

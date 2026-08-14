@@ -152,7 +152,7 @@
                                 <tfoot class="table-secondary">
                                 <c:choose>
                                     <c:when test="${presupuesto.cliente != null
-                                                   and presupuesto.cliente.condicionIva == 'RESPONSABLE_INSCRIPTO'}">
+                                                   and presupuesto.cliente.condicionIva.receptorFacturaA}">
 
                                         <tr>
                                             <td colspan="3" class="text-end fw-bold">Neto</td>

@@ -71,32 +71,7 @@ public class AfipClient {
     public AfipFacturaResponse facturar(AfipFacturaRequest request) {
         ConfiguracionArcaService.Credenciales c = configuracionService.obtenerCredenciales();
         TicketAcceso ticket = ticket();
-        StringBuilder detalle = new StringBuilder()
-                .append("<ar:Concepto>1</ar:Concepto>")
-                .append("<ar:DocTipo>").append(request.getTipoDocumento()).append("</ar:DocTipo>")
-                .append("<ar:DocNro>").append(request.getNumeroDocumento()).append("</ar:DocNro>")
-                .append("<ar:CbteDesde>").append(request.getNumeroComprobante()).append("</ar:CbteDesde>")
-                .append("<ar:CbteHasta>").append(request.getNumeroComprobante()).append("</ar:CbteHasta>")
-                .append("<ar:CbteFch>").append(FECHA.format(request.getFechaComprobante())).append("</ar:CbteFch>")
-                .append("<ar:ImpTotal>").append(monto(request.getImporteTotal())).append("</ar:ImpTotal>")
-                .append("<ar:ImpTotConc>0.00</ar:ImpTotConc>")
-                .append("<ar:ImpNeto>").append(monto(request.getImporteNeto())).append("</ar:ImpNeto>")
-                .append("<ar:ImpOpEx>").append(monto(request.getImporteExento())).append("</ar:ImpOpEx>")
-                .append("<ar:ImpTrib>0.00</ar:ImpTrib>")
-                .append("<ar:ImpIVA>").append(monto(request.getImporteIva())).append("</ar:ImpIVA>")
-                .append("<ar:MonId>PES</ar:MonId><ar:MonCotiz>1.000000</ar:MonCotiz>")
-                .append("<ar:CondicionIVAReceptorId>")
-                .append(request.getCondicionIvaReceptorId())
-                .append("</ar:CondicionIVAReceptorId>");
-        if (request.getAlicuotas() != null && !request.getAlicuotas().isEmpty()) {
-            detalle.append("<ar:Iva>");
-            for (AfipFacturaRequest.Alicuota a : request.getAlicuotas()) {
-                detalle.append("<ar:AlicIva><ar:Id>").append(a.codigo()).append("</ar:Id>")
-                        .append("<ar:BaseImp>").append(monto(a.baseImponible())).append("</ar:BaseImp>")
-                        .append("<ar:Importe>").append(monto(a.importe())).append("</ar:Importe></ar:AlicIva>");
-            }
-            detalle.append("</ar:Iva>");
-        }
+        String detalle = construirDetalle(request);
 
         String cuerpo = "<ar:FECAESolicitar>" + auth(ticket, c.cuit())
                 + "<ar:FeCAEReq><ar:FeCabReq><ar:CantReg>1</ar:CantReg>"
@@ -115,6 +90,48 @@ public class AfipClient {
         }
         LocalDate vencimiento = LocalDate.parse(texto(respuesta, "CAEFchVto", ""), FECHA);
         return new AfipFacturaResponse(cae, vencimiento, request.getNumeroComprobante());
+    }
+
+    String construirDetalle(AfipFacturaRequest request) {
+        StringBuilder detalle = new StringBuilder()
+                .append("<ar:Concepto>1</ar:Concepto>")
+                .append("<ar:DocTipo>").append(request.getTipoDocumento()).append("</ar:DocTipo>")
+                .append("<ar:DocNro>").append(request.getNumeroDocumento()).append("</ar:DocNro>")
+                .append("<ar:CbteDesde>").append(request.getNumeroComprobante()).append("</ar:CbteDesde>")
+                .append("<ar:CbteHasta>").append(request.getNumeroComprobante()).append("</ar:CbteHasta>")
+                .append("<ar:CbteFch>").append(FECHA.format(request.getFechaComprobante())).append("</ar:CbteFch>")
+                .append("<ar:ImpTotal>").append(monto(request.getImporteTotal())).append("</ar:ImpTotal>")
+                .append("<ar:ImpTotConc>0.00</ar:ImpTotConc>")
+                .append("<ar:ImpNeto>").append(monto(request.getImporteNeto())).append("</ar:ImpNeto>")
+                .append("<ar:ImpOpEx>").append(monto(request.getImporteExento())).append("</ar:ImpOpEx>")
+                .append("<ar:ImpTrib>0.00</ar:ImpTrib>")
+                .append("<ar:ImpIVA>").append(monto(request.getImporteIva())).append("</ar:ImpIVA>")
+                .append("<ar:MonId>PES</ar:MonId><ar:MonCotiz>1.000000</ar:MonCotiz>")
+                .append("<ar:CondicionIVAReceptorId>")
+                .append(request.getCondicionIvaReceptorId())
+                .append("</ar:CondicionIVAReceptorId>");
+        AfipFacturaRequest.ComprobanteAsociado asociado = request.getComprobanteAsociado();
+        if (asociado != null) {
+            detalle.append("<ar:CbtesAsoc><ar:CbteAsoc>")
+                    .append("<ar:Tipo>").append(codigo(asociado.tipo())).append("</ar:Tipo>")
+                    .append("<ar:PtoVta>").append(asociado.puntoVenta()).append("</ar:PtoVta>")
+                    .append("<ar:Nro>").append(asociado.numero()).append("</ar:Nro>");
+            if (asociado.fecha() != null) {
+                detalle.append("<ar:CbteFch>").append(FECHA.format(asociado.fecha()))
+                        .append("</ar:CbteFch>");
+            }
+            detalle.append("</ar:CbteAsoc></ar:CbtesAsoc>");
+        }
+        if (request.getAlicuotas() != null && !request.getAlicuotas().isEmpty()) {
+            detalle.append("<ar:Iva>");
+            for (AfipFacturaRequest.Alicuota a : request.getAlicuotas()) {
+                detalle.append("<ar:AlicIva><ar:Id>").append(a.codigo()).append("</ar:Id>")
+                        .append("<ar:BaseImp>").append(monto(a.baseImponible())).append("</ar:BaseImp>")
+                        .append("<ar:Importe>").append(monto(a.importe())).append("</ar:Importe></ar:AlicIva>");
+            }
+            detalle.append("</ar:Iva>");
+        }
+        return detalle.toString();
     }
 
     private TicketAcceso ticket() {
@@ -252,13 +269,7 @@ public class AfipClient {
     }
 
     private int codigo(TipoComprobante tipo) {
-        return switch (tipo) {
-            case FACTURA_A -> 1;
-            case FACTURA_B -> 6;
-            case FACTURA_C -> 11;
-            case NOTA_CREDITO_A -> 3;
-            case NOTA_CREDITO_B -> 8;
-        };
+        return tipo.getCodigoArca();
     }
 
     private String monto(java.math.BigDecimal valor) {

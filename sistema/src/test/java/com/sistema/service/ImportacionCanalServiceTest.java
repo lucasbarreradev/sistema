@@ -6,6 +6,7 @@ import com.sistema.dto.VarianteCanalImportada;
 import com.sistema.dto.AtributoVarianteMl;
 import com.sistema.model.CanalVenta;
 import com.sistema.model.Producto;
+import com.sistema.model.ProductoVariante;
 import com.sistema.model.PublicacionCanal;
 import com.sistema.repository.ProductoRepository;
 import com.sistema.repository.ProductoVarianteRepository;
@@ -249,6 +250,61 @@ class ImportacionCanalServiceTest {
                         && variante.getMercadoLibreAtributosJson().contains("\"SECTION_WIDTH\":\"195 mm\"")
                         && variante.getMercadoLibreAtributosJson().contains("\"RIM_DIAMETER\":\"16 pulgadas\"")
                         && !variante.getMercadoLibreAtributosJson().contains("SELLER_PACKAGE_HEIGHT")));
+    }
+
+    @Test
+    void consolidaUnItemSimpleEnLaVarianteExistenteConElMismoSku() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        ProductoService productoService = mock(ProductoService.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        ProductoVarianteRepository variantesRepo = mock(ProductoVarianteRepository.class);
+        ProductoVarianteService variantesService = mock(ProductoVarianteService.class);
+        ImportadorCanal importador = mock(ImportadorCanal.class);
+
+        Producto principal = new Producto();
+        principal.setId(10L);
+        principal.setSku("NEUM-046");
+        principal.setDescripcion("Neumático Firestone 195/65 R15");
+        ProductoVariante variante = new ProductoVariante();
+        variante.setId(101L);
+        variante.setProducto(principal);
+        variante.setSku("10353003");
+        variante.setStock(1);
+
+        Producto duplicado = new Producto();
+        duplicado.setId(20L);
+        duplicado.setSku("10353003");
+        PublicacionCanal mapeoDuplicado = publicacion(duplicado, "MLA123");
+
+        when(importador.canal()).thenReturn(CanalVenta.MERCADO_LIBRE);
+        when(importador.configurado()).thenReturn(true);
+        when(variantesRepo.findBySkuIgnoreCase("10353003")).thenReturn(Optional.of(variante));
+        when(variantesRepo.existsByProductoId(20L)).thenReturn(false);
+        when(publicaciones.findByCanalAndIdExterno(CanalVenta.MERCADO_LIBRE, "MLA123"))
+                .thenReturn(Optional.of(mapeoDuplicado));
+        when(publicaciones.findByProductoIdAndCanal(10L, CanalVenta.MERCADO_LIBRE))
+                .thenReturn(Optional.empty());
+
+        ProductoCanalImportado remoto = new ProductoCanalImportado(
+                "MLA123", "10353003", "Neumático Firestone", 7,
+                new BigDecimal("125000"), "https://img.test/neumatico.jpg",
+                "MLA22195", Map.of(), List.of());
+        ImportacionCanalService service = new ImportacionCanalService(
+                productos, productoService, publicaciones, List.of(importador),
+                variantesRepo, variantesService, new com.fasterxml.jackson.databind.ObjectMapper());
+
+        ResultadoImportacionCanal resultado = service.importar(
+                CanalVenta.MERCADO_LIBRE, List.of(remoto));
+
+        assertEquals(List.of(10L), resultado.getProductoIds());
+        assertEquals(7, variante.getStock());
+        assertEquals(new BigDecimal("125000"), variante.getPrecioContado());
+        assertEquals("MLA123", variante.getMercadoLibreItemId());
+        assertEquals("https://img.test/neumatico.jpg", variante.getFotoUrlExterna());
+        verify(variantesService).guardarImportada(principal, variante);
+        verify(publicaciones).delete(mapeoDuplicado);
+        verify(productoService).deleteProducto(20L);
+        verify(productoService, never()).saveProducto(duplicado);
     }
 
     private AtributoVarianteMl atributo(String id, String nombre) {

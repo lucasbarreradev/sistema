@@ -21,6 +21,7 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.util.List;
 import java.math.BigDecimal;
+import org.springframework.data.domain.PageRequest;
 
 @Controller
 @RequestMapping("/canales")
@@ -63,8 +64,18 @@ public class CanalesController {
     }
 
     @GetMapping
-    public String canales(Model model) {
-        model.addAttribute("productos", productoService.getProductos());
+    public String canales(@RequestParam(defaultValue = "0") int productoPage,
+                          @RequestParam(defaultValue = "50") int productoSize,
+                          @RequestParam(defaultValue = "") String productoQ,
+                          Model model) {
+        int pagina = Math.max(productoPage, 0);
+        int tamanio = Math.max(10, Math.min(productoSize, 100));
+        var productos = productoService.getProductosListado(
+                productoQ, PageRequest.of(pagina, tamanio));
+        model.addAttribute("productos", productos.getContent());
+        model.addAttribute("paginaProductos", productos);
+        model.addAttribute("busquedaProductos", productoQ == null ? "" : productoQ.trim());
+        model.addAttribute("tamanioPagina", tamanio);
         model.addAttribute("canales", CanalVenta.values());
         model.addAttribute("configuracion", publicacionService.estadoConfiguracion());
         model.addAttribute("configuracionImportacion", java.util.Arrays.stream(CanalVenta.values())

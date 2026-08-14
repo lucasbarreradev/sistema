@@ -2,6 +2,7 @@
 <%@ taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@ taglib prefix="fmt" uri="http://java.sun.com/jsp/jstl/fmt" %>
 <%@ taglib prefix="sec" uri="http://www.springframework.org/security/tags" %>
+<%@ taglib prefix="fn" uri="http://java.sun.com/jsp/jstl/functions" %>
 <!DOCTYPE html>
 <html lang="es">
 <head><jsp:include page="/WEB-INF/jsp/head.jsp"/></head>
@@ -304,9 +305,21 @@
                     </div>
                 </div>
 
+                <form method="get" action="${pageContext.request.contextPath}/canales#productos-publicacion"
+                      class="form-inline mb-3">
+                    <input type="hidden" name="productoSize" value="${tamanioPagina}">
+                    <input type="search" name="productoQ" class="form-control mr-2"
+                           style="width:320px" value="${fn:escapeXml(busquedaProductos)}"
+                           placeholder="Buscar por SKU o producto...">
+                    <button class="btn btn-outline-primary" type="submit">Buscar productos</button>
+                    <c:if test="${not empty busquedaProductos}">
+                        <a class="btn btn-link" href="${pageContext.request.contextPath}/canales#productos-publicacion">Limpiar</a>
+                    </c:if>
+                </form>
+
                 <form method="post" action="${pageContext.request.contextPath}/canales/publicar">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-                    <div class="card shadow mb-4">
+                    <div class="card shadow mb-4" id="productos-publicacion">
                         <div class="card-header py-3 d-flex align-items-center justify-content-between">
                             <h6 class="m-0 font-weight-bold text-primary">Seleccionar productos para publicar o sincronizar</h6>
                             <div>
@@ -320,8 +333,10 @@
                         </div>
                         <div class="card-body">
                             <div class="d-flex mb-3">
-                                <button type="button" class="btn btn-sm btn-outline-secondary mr-2" id="seleccionarTodos">Seleccionar todos</button>
-                                <input id="buscarProducto" class="form-control ml-auto" style="max-width:300px" placeholder="Buscar por SKU o nombre">
+                                <button type="button" class="btn btn-sm btn-outline-secondary mr-2" id="seleccionarTodos">Seleccionar esta p&aacute;gina</button>
+                                <small class="text-muted ml-auto align-self-center">
+                                    ${paginaProductos.totalElements} producto(s) encontrados
+                                </small>
                             </div>
                             <div class="table-responsive" style="max-height:460px;overflow:auto">
                                 <table class="table table-bordered table-hover" id="tablaProductos">
@@ -330,12 +345,52 @@
                                     <c:forEach items="${productos}" var="p">
                                         <tr>
                                             <td><input type="checkbox" class="producto-check" name="productoIds" value="${p.id}"></td>
-                                            <td><c:if test="${p.tieneFoto()}"><img src="${pageContext.request.contextPath}/productos/${p.id}/foto" alt="" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:5px"></c:if></td>
-                                            <td><c:out value="${p.sku}"/></td><td><c:out value="${p.descripcion}"/></td><td>${p.stockTotal}</td><td>${p.precioContado}</td>
+                                            <td><c:if test="${p.tieneFoto}"><img src="${pageContext.request.contextPath}/productos/${p.id}/foto" loading="lazy" decoding="async" alt="" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:5px"></c:if></td>
+                                            <td><c:out value="${p.sku}"/></td><td><c:out value="${p.descripcion}"/></td><td>${p.stockTotal}</td><td>${p.precioContadoListado}</td>
                                         </tr>
                                     </c:forEach>
                                     </tbody>
                                 </table>
+                            </div>
+                            <div class="d-flex flex-wrap justify-content-between align-items-center mt-3">
+                                <small class="text-muted">
+                                    P&aacute;gina ${paginaProductos.number + 1} de
+                                    ${paginaProductos.totalPages == 0 ? 1 : paginaProductos.totalPages}
+                                </small>
+                                <c:if test="${paginaProductos.totalPages > 1}">
+                                    <c:set var="paginaInicio" value="${paginaProductos.number > 2 ? paginaProductos.number - 2 : 0}"/>
+                                    <c:set var="paginaFin" value="${paginaProductos.number + 2 < paginaProductos.totalPages - 1 ? paginaProductos.number + 2 : paginaProductos.totalPages - 1}"/>
+                                    <nav aria-label="Paginaci&oacute;n para publicar productos">
+                                        <ul class="pagination pagination-sm mb-0">
+                                            <c:url var="urlAnteriorProductos" value="/canales">
+                                                <c:param name="productoPage" value="${paginaProductos.number - 1}"/>
+                                                <c:param name="productoSize" value="${tamanioPagina}"/>
+                                                <c:param name="productoQ" value="${busquedaProductos}"/>
+                                            </c:url>
+                                            <li class="page-item ${paginaProductos.first ? 'disabled' : ''}">
+                                                <a class="page-link" href="${paginaProductos.first ? '#' : urlAnteriorProductos}#productos-publicacion">Anterior</a>
+                                            </li>
+                                            <c:forEach begin="${paginaInicio}" end="${paginaFin}" var="numeroPagina">
+                                                <c:url var="urlPaginaProductos" value="/canales">
+                                                    <c:param name="productoPage" value="${numeroPagina}"/>
+                                                    <c:param name="productoSize" value="${tamanioPagina}"/>
+                                                    <c:param name="productoQ" value="${busquedaProductos}"/>
+                                                </c:url>
+                                                <li class="page-item ${numeroPagina == paginaProductos.number ? 'active' : ''}">
+                                                    <a class="page-link" href="${urlPaginaProductos}#productos-publicacion">${numeroPagina + 1}</a>
+                                                </li>
+                                            </c:forEach>
+                                            <c:url var="urlSiguienteProductos" value="/canales">
+                                                <c:param name="productoPage" value="${paginaProductos.number + 1}"/>
+                                                <c:param name="productoSize" value="${tamanioPagina}"/>
+                                                <c:param name="productoQ" value="${busquedaProductos}"/>
+                                            </c:url>
+                                            <li class="page-item ${paginaProductos.last ? 'disabled' : ''}">
+                                                <a class="page-link" href="${paginaProductos.last ? '#' : urlSiguienteProductos}#productos-publicacion">Siguiente</a>
+                                            </li>
+                                        </ul>
+                                    </nav>
+                                </c:if>
                             </div>
                             <button type="submit" class="btn btn-success mt-3" ${sincronizacionActiva ? 'disabled' : ''}>
                                 <i class="fa-solid ${sincronizacionActiva ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'} mr-1"></i>
@@ -353,7 +408,7 @@
                             <thead><tr><th>Producto</th><th>Canal</th><th>Estado</th><th>ID externo</th><th>Fecha</th><th>Detalle</th></tr></thead>
                             <tbody>
                             <c:forEach items="${publicaciones}" var="pub">
-                                <tr><td><c:out value="${pub.producto.descripcion}"/></td><td>${pub.canal.descripcion}</td>
+                                <tr><td><c:out value="${pub.productoDescripcion}"/></td><td>${pub.canal.descripcion}</td>
                                     <td><span class="badge ${pub.estado == 'PUBLICADO' ? 'badge-success' : 'badge-danger'}">${pub.estado}</span></td>
                                     <td><c:out value="${pub.idExterno}"/></td><td>${pub.fechaActualizacionFormateada}</td><td><c:out value="${pub.ultimoError}"/></td></tr>
                             </c:forEach>
@@ -371,10 +426,6 @@ document.getElementById('seleccionarTodos').addEventListener('click', function (
     const visibles = Array.from(document.querySelectorAll('#tablaProductos tbody tr')).filter(r => r.style.display !== 'none');
     const marcar = visibles.some(r => !r.querySelector('.producto-check').checked);
     visibles.forEach(r => r.querySelector('.producto-check').checked = marcar);
-});
-document.getElementById('buscarProducto').addEventListener('input', function () {
-    const q = this.value.toLowerCase();
-    document.querySelectorAll('#tablaProductos tbody tr').forEach(r => r.style.display = r.textContent.toLowerCase().includes(q) ? '' : 'none');
 });
 <c:if test="${sincronizacionActiva}">
 window.setTimeout(function () { window.location.reload(); }, 8000);

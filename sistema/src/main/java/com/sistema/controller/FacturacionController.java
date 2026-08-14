@@ -1,7 +1,9 @@
 package com.sistema.controller;
 
 import com.sistema.model.CondicionFiscalArca;
+import com.sistema.model.ComprobanteArca;
 import com.sistema.model.Venta;
+import com.sistema.repository.ComprobanteArcaRepository;
 import com.sistema.repository.VentaRepository;
 import com.sistema.service.AfipService;
 import com.sistema.service.ConfiguracionArcaService;
@@ -13,21 +15,30 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
+import java.math.BigDecimal;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 @Controller
 @RequestMapping("/facturacion")
 public class FacturacionController {
     private final ConfiguracionArcaService configuracion;
     private final AfipService afipService;
     private final VentaRepository ventaRepository;
+    private final ComprobanteArcaRepository comprobanteRepository;
     private final FacturaPdfService facturaPdfService;
 
     public FacturacionController(ConfiguracionArcaService configuracion,
                                  AfipService afipService,
                                  VentaRepository ventaRepository,
+                                 ComprobanteArcaRepository comprobanteRepository,
                                  FacturaPdfService facturaPdfService) {
         this.configuracion = configuracion;
         this.afipService = afipService;
         this.ventaRepository = ventaRepository;
+        this.comprobanteRepository = comprobanteRepository;
         this.facturaPdfService = facturaPdfService;
     }
 
@@ -36,7 +47,23 @@ public class FacturacionController {
         model.addAttribute("configuracionArca", configuracion.resumen().orElse(null));
         model.addAttribute("arcaConfigurada", configuracion.configurada());
         model.addAttribute("condicionesFiscales", CondicionFiscalArca.values());
-        model.addAttribute("ventas", ventaRepository.findByEstadoNotOrderByFechaVentaDesc(Venta.Estado.ANULADA));
+        List<Venta> ventas = ventaRepository.findByEstadoNotOrderByFechaVentaDesc(Venta.Estado.ANULADA);
+        List<ComprobanteArca> comprobantes = comprobanteRepository
+                .findAllByOrderByFechaComprobanteDescIdDesc();
+        Map<Long, List<ComprobanteArca>> porVenta = comprobantes.stream()
+                .collect(Collectors.groupingBy(c -> c.getFacturaOrigen().getId(),
+                        LinkedHashMap::new, Collectors.toList()));
+        Map<Long, BigDecimal> saldos = new LinkedHashMap<>();
+        for (Venta venta : ventas) {
+            BigDecimal acreditado = porVenta.getOrDefault(venta.getId(), List.of()).stream()
+                    .filter(c -> c.getTipoComprobante().isNotaCredito())
+                    .map(ComprobanteArca::getTotal)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            saldos.put(venta.getId(), venta.getTotal().subtract(acreditado).max(BigDecimal.ZERO));
+        }
+        model.addAttribute("ventas", ventas);
+        model.addAttribute("comprobantesPorVenta", porVenta);
+        model.addAttribute("saldosCredito", saldos);
         return "facturacion/index";
     }
 
@@ -78,6 +105,38 @@ public class FacturacionController {
         return "redirect:/facturacion";
     }
 
+    @PostMapping("/nota-credito/{ventaId}")
+    public String notaCredito(@PathVariable Long ventaId,
+                              @RequestParam(defaultValue = "false") boolean total,
+                              @RequestParam(required = false) BigDecimal importe,
+                              @RequestParam String motivo,
+                              RedirectAttributes ra) {
+        try {
+            ComprobanteArca comprobante = afipService
+                    .emitirNotaCredito(ventaId, total, importe, motivo);
+            ra.addFlashAttribute("mensaje", comprobante.getTipoComprobante().getDescripcion()
+                    + " autorizada. CAE: " + comprobante.getCae());
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", mensaje(e));
+        }
+        return "redirect:/facturacion";
+    }
+
+    @PostMapping("/nota-debito/{ventaId}")
+    public String notaDebito(@PathVariable Long ventaId,
+                             @RequestParam BigDecimal importe,
+                             @RequestParam String motivo,
+                             RedirectAttributes ra) {
+        try {
+            ComprobanteArca comprobante = afipService.emitirNotaDebito(ventaId, importe, motivo);
+            ra.addFlashAttribute("mensaje", comprobante.getTipoComprobante().getDescripcion()
+                    + " autorizada. CAE: " + comprobante.getCae());
+        } catch (Exception e) {
+            ra.addFlashAttribute("error", mensaje(e));
+        }
+        return "redirect:/facturacion";
+    }
+
     @GetMapping("/{ventaId}/pdf")
     public void pdf(@PathVariable Long ventaId, HttpServletResponse response) {
         Venta venta = ventaRepository.findById(ventaId)
@@ -88,6 +147,16 @@ public class FacturacionController {
         response.setContentType("application/pdf");
         response.setHeader("Content-Disposition", "inline; filename=factura-" + venta.getCodigo() + ".pdf");
         facturaPdfService.generar(venta, response);
+    }
+
+    @GetMapping("/comprobantes/{id}/pdf")
+    public void pdfComprobante(@PathVariable Long id, HttpServletResponse response) {
+        ComprobanteArca comprobante = comprobanteRepository.findWithFacturaOrigenById(id)
+                .orElseThrow(() -> new IllegalArgumentException("Comprobante no encontrado"));
+        response.setContentType("application/pdf");
+        response.setHeader("Content-Disposition", "inline; filename=comprobante-"
+                + comprobante.getNumeroFormateado() + ".pdf");
+        facturaPdfService.generar(comprobante, response);
     }
 
     private String mensaje(Exception e) {

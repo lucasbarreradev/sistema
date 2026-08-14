@@ -3,6 +3,8 @@ package com.sistema.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.util.List;
 
@@ -26,5 +28,7 @@ public class Cliente extends TenantAwareEntity {
     String email;
     String direccion;
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "condicion_iva", length = 60)
     private CondicionIva condicionIva;
 }

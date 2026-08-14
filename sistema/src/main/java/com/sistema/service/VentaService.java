@@ -239,7 +239,9 @@ public class VentaService {
         BigDecimal total = netoAcum.add(ivaAcum);
 
         // 👉 Si es consumidor final, no discriminar IVA
-        if (venta.getCliente() == null || venta.getCliente().getCondicionIva() == CondicionIva.CONSUMIDOR_FINAL) {
+        if (venta.getCliente() == null
+                || venta.getCliente().getCondicionIva() == null
+                || !venta.getCliente().getCondicionIva().isReceptorFacturaA()) {
             netoAcum = total;
             ivaAcum = BigDecimal.ZERO;
             ivasMap.clear(); // no mostramos líneas de IVA

@@ -193,11 +193,7 @@ public class RemitoImpresionService {
 
         String condicionIva = "Consumidor Final";
         if (remito.getCliente() != null && remito.getCliente().getCondicionIva() != null) {
-            condicionIva = switch (remito.getCliente().getCondicionIva()) {
-                case RESPONSABLE_INSCRIPTO -> "Responsable Inscripto";
-                case CONSUMIDOR_FINAL -> "Consumidor Final";
-                default -> "Consumidor Final";
-            };
+            condicionIva = remito.getCliente().getCondicionIva().getDescripcion();
         }
 
         PdfPCell ivaValueCell = new PdfPCell(new Phrase(condicionIva, font));

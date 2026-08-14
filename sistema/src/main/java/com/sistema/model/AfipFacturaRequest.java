@@ -27,9 +27,12 @@ public class AfipFacturaRequest {
     private Integer condicionIvaReceptorId;
     private LocalDate fechaComprobante;
     private List<Alicuota> alicuotas;
+    private ComprobanteAsociado comprobanteAsociado;
 
     private Cliente cliente;
 
     public record Alicuota(Integer codigo, BigDecimal baseImponible, BigDecimal importe) {}
+    public record ComprobanteAsociado(TipoComprobante tipo, Integer puntoVenta,
+                                      Long numero, LocalDate fecha) {}
 }
 

@@ -74,7 +74,6 @@
             <div class="col-md-3 mb-3">
                 <label>GTIN / código universal</label>
                 <input name="mercadoLibreGtin" value="${variante.mercadoLibreGtin}" class="form-control" placeholder="EAN, UPC o ISBN">
-                <small class="form-text text-muted">Si no posee GTIN, elegí el motivo entre los campos de la categoría.</small>
             </div>
             <div class="col-md-3 mb-3">
                 <label>SKU</label>

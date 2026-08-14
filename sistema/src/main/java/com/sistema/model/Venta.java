@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 import lombok.ToString;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -57,6 +59,8 @@ public class Venta extends TenantAwareEntity {
     private Cliente cliente;
 
     @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.VARCHAR)
+    @Column(name = "tipo_comprobante", length = 40)
     private TipoComprobante tipoComprobante;
 
     private Integer puntoVenta;
