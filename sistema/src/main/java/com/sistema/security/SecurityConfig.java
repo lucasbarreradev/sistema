@@ -37,6 +37,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/productos/*/foto", "/productos/*/foto/*").permitAll()
                 .requestMatchers(HttpMethod.GET, "/productos/*/fotos/*/*").permitAll()
                 .requestMatchers(HttpMethod.GET, "/productos/*/variantes/*/foto", "/productos/*/variantes/*/foto/*").permitAll()
+                .requestMatchers(HttpMethod.HEAD, "/productos/*/foto", "/productos/*/foto/*").permitAll()
+                .requestMatchers(HttpMethod.HEAD, "/productos/*/fotos/*/*").permitAll()
+                .requestMatchers(HttpMethod.HEAD, "/productos/*/variantes/*/foto", "/productos/*/variantes/*/foto/*").permitAll()
 
                 //Roles
 

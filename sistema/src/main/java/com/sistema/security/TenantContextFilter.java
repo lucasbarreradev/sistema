@@ -3,6 +3,7 @@ package com.sistema.security;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sistema.service.MercadoLibreTokenService;
+import com.sistema.service.TenantPublicResourceService;
 import com.sistema.service.TiendanubeCredencialesService;
 import com.sistema.service.WooCommerceCredencialesService;
 import com.sistema.tenant.TenantContext;
@@ -23,22 +24,31 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class TenantContextFilter extends OncePerRequestFilter {
+    private static final Pattern FOTO_PUBLICA_PRODUCTO = Pattern.compile(
+            "^/productos/(\\d+)/(?:foto(?:/[^/]+)?|fotos/\\d+/woocommerce\\.jpg"
+                    + "|variantes/\\d+/foto(?:/[^/]+)?)$");
+
     private final ObjectMapper objectMapper;
     private final MercadoLibreTokenService mercadoLibreTokenService;
     private final WooCommerceCredencialesService wooCredenciales;
     private final TiendanubeCredencialesService tiendaNubeCredenciales;
+    private final TenantPublicResourceService tenantPublicResourceService;
 
     public TenantContextFilter(ObjectMapper objectMapper,
                                MercadoLibreTokenService mercadoLibreTokenService,
                                WooCommerceCredencialesService wooCredenciales,
-                               TiendanubeCredencialesService tiendaNubeCredenciales) {
+                               TiendanubeCredencialesService tiendaNubeCredenciales,
+                               TenantPublicResourceService tenantPublicResourceService) {
         this.objectMapper = objectMapper;
         this.mercadoLibreTokenService = mercadoLibreTokenService;
         this.wooCredenciales = wooCredenciales;
         this.tiendaNubeCredenciales = tiendaNubeCredenciales;
+        this.tenantPublicResourceService = tenantPublicResourceService;
     }
 
     @Override
@@ -55,6 +65,11 @@ public class TenantContextFilter extends OncePerRequestFilter {
                 return;
             }
             tenantId = usuario.getTenantId();
+        }
+
+        if (tenantId == null && ("GET".equalsIgnoreCase(request.getMethod())
+                || "HEAD".equalsIgnoreCase(request.getMethod()))) {
+            tenantId = resolverTenantFotoPublica(request.getServletPath());
         }
 
         boolean callbackMercadoLibreAnterior = "/canales/mercadolibre/callback"
@@ -103,6 +118,17 @@ public class TenantContextFilter extends OncePerRequestFilter {
             // El controlador informa el error si el cuerpo recibido no es JSON válido.
         }
         return null;
+    }
+
+    private Long resolverTenantFotoPublica(String path) {
+        Matcher coincidencia = FOTO_PUBLICA_PRODUCTO.matcher(path == null ? "" : path);
+        if (!coincidencia.matches()) return null;
+        try {
+            return tenantPublicResourceService.buscarTenantProducto(
+                    Long.parseLong(coincidencia.group(1))).orElse(null);
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static final class CachedBodyRequest extends HttpServletRequestWrapper {
