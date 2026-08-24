@@ -438,6 +438,62 @@ class WooCommercePublicadorTest {
     }
 
     @Test
+    void reutilizaElProductoPadreCuandoLaUnicaPresentacionYaExisteComoVariacion() {
+        ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
+        WooCommerceCredencialesService credenciales = mock(WooCommerceCredencialesService.class);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        WooCommercePublicador publicador = new WooCommercePublicador(
+                variantes, credenciales, builder.build());
+        Producto producto = new Producto();
+        producto.setId(44L);
+        producto.setSku("NEUM-144");
+        producto.setDescripcion("Neumático Bridgestone Potenza S001");
+        producto.setFotoUrlExterna("https://img.test/potenza.jpg");
+        ProductoVariante presentacion = variante("{\"SIZE\":\"225/40R18\"}");
+        presentacion.setId(4401L);
+        presentacion.setProducto(producto);
+        presentacion.setSku("NEUM-144-001");
+        presentacion.setStock(4);
+        presentacion.setPrecioContado(new BigDecimal("350000"));
+        when(variantes.findByProductoIdOrderByNombreAsc(44L))
+                .thenReturn(List.of(presentacion));
+        when(credenciales.configurado()).thenReturn(true);
+        when(credenciales.obtener()).thenReturn(
+                new WooCommerceCredencialesService.Credenciales(
+                        "https://woo.test", "ck_test", "cs_test"));
+
+        servidor.expect(requestTo(
+                        "https://woo.test/wp-json/wc/v3/products?sku=NEUM-144-001&status=any&per_page=100"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("""
+                        [{"id":8372,"sku":"NEUM-144-001","type":"variation","parent_id":6590}]
+                        """, MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/6590"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"type\":\"variable\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"sku\":\"NEUM-144\"")))
+                .andRespond(withSuccess("{\"id\":6590}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(
+                        "https://woo.test/wp-json/wc/v3/products/6590/variations/8372"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"sku\":\"NEUM-144-001\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"stock_quantity\":4")))
+                .andRespond(withSuccess("{\"id\":8372}", MediaType.APPLICATION_JSON));
+
+        ResultadoPublicacion resultado = publicador.publicar(producto, null);
+
+        assertEquals("6590", resultado.idExterno());
+        assertEquals("8372", presentacion.getWooCommerceVariationId());
+        verify(variantes).save(presentacion);
+        servidor.verify();
+    }
+
+    @Test
     void recreaProductoCuandoWooCommerceInformaQueElIdGuardadoYaNoEsValido() {
         ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
         WooCommerceCredencialesService credenciales = mock(WooCommerceCredencialesService.class);

@@ -86,8 +86,21 @@ public class WooCommercePublicador implements PublicadorCanal {
         WooCommerceCredencialesService.Credenciales c = credenciales.obtener();
         Map<String, Object> body = new LinkedHashMap<>();
         List<ProductoVariante> variantes = varianteRepository.findByProductoIdOrderByNombreAsc(p.getId());
-        boolean variable = variantes.size() > 1;
-        ProductoVariante presentacionSimple = variantes.size() == 1 ? variantes.get(0) : null;
+        RecursoSku recursoPresentacion = null;
+        boolean buscoPresentacionRemota = variantes.size() == 1
+                && (idActual == null || idActual.isBlank());
+        if (buscoPresentacionRemota) {
+            ProductoVariante unica = variantes.get(0);
+            recursoPresentacion = buscarRecursoPorSku(unica.getSku(), c);
+            if (recursoPresentacion != null && recursoPresentacion.variacion()) {
+                unica.setWooCommerceVariationId(recursoPresentacion.recursoId());
+            }
+        }
+        boolean recuperarComoVariable = recursoPresentacion != null
+                && recursoPresentacion.variacion();
+        boolean variable = variantes.size() > 1 || recuperarComoVariable;
+        ProductoVariante presentacionSimple = variantes.size() == 1 && !recuperarComoVariable
+                ? variantes.get(0) : null;
         validarSkuNoUsadoPorOtraVariante(p, presentacionSimple);
         Map<String, String> nombresAtributos = new LinkedHashMap<>(nombresAtributos(p));
         Set<String> idsAtributosVariacion = idsAtributosVariacion(
@@ -122,7 +135,11 @@ public class WooCommercePublicador implements PublicadorCanal {
         agregarImagen(body, p, presentacionSimple);
         String idProducto = idActual;
         if (idProducto == null || idProducto.isBlank()) {
-            idProducto = buscarProductoPorSku(Objects.toString(body.get("sku"), ""), c);
+            if (recursoPresentacion != null) {
+                idProducto = recursoPresentacion.productoId();
+            } else if (!buscoPresentacionRemota) {
+                idProducto = buscarProductoPorSku(Objects.toString(body.get("sku"), ""), c);
+            }
         }
         JsonNode response;
         try {
@@ -427,6 +444,19 @@ public class WooCommercePublicador implements PublicadorCanal {
     }
 
     private String buscarProductoPorSku(String sku, WooCommerceCredencialesService.Credenciales c) {
+        RecursoSku encontrado = buscarRecursoPorSku(sku, c);
+        if (encontrado == null) return null;
+        if (encontrado.variacion()) {
+            throw new IllegalStateException("El SKU " + sku
+                    + " ya existe como variante de otro producto en WooCommerce"
+                    + " (producto padre " + encontrado.productoId() + "). "
+                    + "WooCommerce no permite usar el mismo SKU también en un producto independiente.");
+        }
+        return encontrado.productoId();
+    }
+
+    private RecursoSku buscarRecursoPorSku(
+            String sku, WooCommerceCredencialesService.Credenciales c) {
         if (sku == null || sku.isBlank()) return null;
         for (String estado : List.of("any", "trash")) {
             String endpoint = c.url() + "/wp-json/wc/v3/products?sku="
@@ -439,17 +469,25 @@ public class WooCommercePublicador implements PublicadorCanal {
                 for (JsonNode producto : respuesta) {
                     if (sku.equalsIgnoreCase(producto.path("sku").asText())) {
                         if ("variation".equalsIgnoreCase(producto.path("type").asText())) {
-                            throw new IllegalStateException("El SKU " + sku
-                                    + " ya existe como variante de otro producto en WooCommerce"
-                                    + " (producto padre " + producto.path("parent_id").asText("?") + "). "
-                                    + "WooCommerce no permite usar el mismo SKU también en un producto independiente.");
+                            String parentId = producto.path("parent_id").asText("");
+                            if (parentId.isBlank() || "0".equals(parentId)) {
+                                throw new IllegalStateException("WooCommerce devolvió la variante "
+                                        + producto.path("id").asText("?") + " para el SKU " + sku
+                                        + " sin indicar su producto padre");
+                            }
+                            return new RecursoSku(
+                                    parentId, producto.path("id").asText(), true);
                         }
-                        return producto.path("id").asText();
+                        String productoId = producto.path("id").asText();
+                        return new RecursoSku(productoId, productoId, false);
                     }
                 }
             }
         }
         return null;
+    }
+
+    private record RecursoSku(String productoId, String recursoId, boolean variacion) {
     }
 
     private Map<String, String> nombresAtributos(Producto producto) {
