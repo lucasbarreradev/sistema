@@ -87,13 +87,21 @@ public class WooCommercePublicador implements PublicadorCanal {
         Map<String, Object> body = new LinkedHashMap<>();
         List<ProductoVariante> variantes = varianteRepository.findByProductoIdOrderByNombreAsc(p.getId());
         RecursoSku recursoPresentacion = null;
-        boolean buscoPresentacionRemota = variantes.size() == 1
+        boolean buscoPresentacionRemota = !variantes.isEmpty()
                 && (idActual == null || idActual.isBlank());
         if (buscoPresentacionRemota) {
-            ProductoVariante unica = variantes.get(0);
-            recursoPresentacion = buscarRecursoPorSku(unica.getSku(), c);
-            if (recursoPresentacion != null && recursoPresentacion.variacion()) {
-                unica.setWooCommerceVariationId(recursoPresentacion.recursoId());
+            for (ProductoVariante variante : variantes) {
+                RecursoSku encontrado = buscarRecursoPorSku(variante.getSku(), c);
+                if (encontrado == null) continue;
+                if (encontrado.variacion()) {
+                    variante.setWooCommerceVariationId(encontrado.recursoId());
+                    recursoPresentacion = encontrado;
+                    break;
+                }
+                if (variantes.size() == 1) {
+                    recursoPresentacion = encontrado;
+                    break;
+                }
             }
         }
         boolean recuperarComoVariable = recursoPresentacion != null
@@ -108,7 +116,9 @@ public class WooCommercePublicador implements PublicadorCanal {
         Map<String, String> atributosGenerales = atributosGenerales(p, nombresAtributos);
         body.put("name", p.getDescripcion());
         body.put("type", variable ? "variable" : "simple");
-        body.put("sku", presentacionSimple == null ? p.getSku() : presentacionSimple.getSku());
+        if (!recuperarComoVariable) {
+            body.put("sku", presentacionSimple == null ? p.getSku() : presentacionSimple.getSku());
+        }
         body.put("status", "publish");
         String descripcion = descripcionWoo(p);
         if (!descripcion.isBlank()) body.put("description", descripcion);
@@ -137,7 +147,7 @@ public class WooCommercePublicador implements PublicadorCanal {
         if (idProducto == null || idProducto.isBlank()) {
             if (recursoPresentacion != null) {
                 idProducto = recursoPresentacion.productoId();
-            } else if (!buscoPresentacionRemota) {
+            } else if (!buscoPresentacionRemota || variantes.size() > 1) {
                 idProducto = buscarProductoPorSku(Objects.toString(body.get("sku"), ""), c);
             }
         }

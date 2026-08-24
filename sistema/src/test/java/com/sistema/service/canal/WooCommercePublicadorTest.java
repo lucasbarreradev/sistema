@@ -473,8 +473,8 @@ class WooCommercePublicadorTest {
                 .andExpect(method(HttpMethod.PUT))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString(
                         "\"type\":\"variable\"")))
-                .andExpect(content().string(org.hamcrest.Matchers.containsString(
-                        "\"sku\":\"NEUM-144\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("\"sku\""))))
                 .andRespond(withSuccess("{\"id\":6590}", MediaType.APPLICATION_JSON));
         servidor.expect(requestTo(
                         "https://woo.test/wp-json/wc/v3/products/6590/variations/8372"))
@@ -490,6 +490,71 @@ class WooCommercePublicadorTest {
         assertEquals("6590", resultado.idExterno());
         assertEquals("8372", presentacion.getWooCommerceVariationId());
         verify(variantes).save(presentacion);
+        servidor.verify();
+    }
+
+    @Test
+    void reutilizaElProductoPadreBuscandoLosSkuDeMultiplesVariantes() {
+        ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
+        WooCommerceCredencialesService credenciales = mock(WooCommerceCredencialesService.class);
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        WooCommercePublicador publicador = new WooCommercePublicador(
+                variantes, credenciales, builder.build());
+        Producto producto = new Producto();
+        producto.setId(128L);
+        producto.setSku("NEUM-128");
+        producto.setDescripcion("Neumático con varias presentaciones");
+        ProductoVariante primera = variante("{\"SIZE\":\"R18\"}");
+        primera.setId(1281L);
+        primera.setProducto(producto);
+        primera.setSku("NEUM-128-001-1");
+        primera.setStock(2);
+        primera.setPrecioContado(new BigDecimal("300000"));
+        ProductoVariante segunda = variante("{\"SIZE\":\"R19\"}");
+        segunda.setId(1282L);
+        segunda.setProducto(producto);
+        segunda.setSku("NEUM-128-002-1");
+        segunda.setStock(3);
+        segunda.setPrecioContado(new BigDecimal("320000"));
+        when(variantes.findByProductoIdOrderByNombreAsc(128L))
+                .thenReturn(List.of(primera, segunda));
+        when(credenciales.configurado()).thenReturn(true);
+        when(credenciales.obtener()).thenReturn(
+                new WooCommerceCredencialesService.Credenciales(
+                        "https://woo.test", "ck_test", "cs_test"));
+
+        servidor.expect(requestTo(
+                        "https://woo.test/wp-json/wc/v3/products?sku=NEUM-128-001-1&status=any&per_page=100"))
+                .andRespond(withSuccess("""
+                        [{"id":6101,"sku":"NEUM-128-001-1","type":"variation","parent_id":6000}]
+                        """, MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://woo.test/wp-json/wc/v3/products/6000"))
+                .andExpect(method(HttpMethod.PUT))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString(
+                        "\"type\":\"variable\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("\"sku\""))))
+                .andRespond(withSuccess("{\"id\":6000}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(
+                        "https://woo.test/wp-json/wc/v3/products/6000/variations/6101"))
+                .andExpect(method(HttpMethod.PUT))
+                .andRespond(withSuccess("{\"id\":6101}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(
+                        "https://woo.test/wp-json/wc/v3/products/6000/variations?sku=NEUM-128-002-1&per_page=100"))
+                .andRespond(withSuccess("[]", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(
+                        "https://woo.test/wp-json/wc/v3/products/6000/variations"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withSuccess("{\"id\":6102}", MediaType.APPLICATION_JSON));
+
+        ResultadoPublicacion resultado = publicador.publicar(producto, null);
+
+        assertEquals("6000", resultado.idExterno());
+        assertEquals("6101", primera.getWooCommerceVariationId());
+        assertEquals("6102", segunda.getWooCommerceVariationId());
+        verify(variantes).save(primera);
+        verify(variantes).save(segunda);
         servidor.verify();
     }
 
