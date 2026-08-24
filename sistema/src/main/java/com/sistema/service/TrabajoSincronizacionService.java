@@ -1,6 +1,5 @@
 package com.sistema.service;
 
-import com.sistema.dto.ProductoCanalImportado;
 import com.sistema.model.CanalVenta;
 import com.sistema.model.EstadoTrabajoSincronizacion;
 import com.sistema.model.TipoTrabajoSincronizacion;
@@ -109,58 +108,24 @@ public class TrabajoSincronizacionService {
         return trabajo;
     }
 
-    public TrabajoSincronizacion iniciarPreparacionImportacion(CanalVenta canal) {
-        return iniciarPreparacionImportacion(canal, false);
-    }
-
-    public TrabajoSincronizacion iniciarPreparacionImportacion(
-            CanalVenta canal, boolean incluirInactivas) {
+    public TrabajoSincronizacion iniciarImportacionFiltradaMercadoLibre(
+            int cantidad, String categoria, boolean incluirInactivas) {
+        if (cantidad < 1 || cantidad > 100) {
+            throw new IllegalArgumentException("La cantidad debe estar entre 1 y 100");
+        }
+        String categoriaNormalizada = categoria == null ? "" : categoria.trim();
+        if (categoriaNormalizada.length() > 120) {
+            throw new IllegalArgumentException("La categoría es demasiado larga");
+        }
+        String alcance = categoriaNormalizada.isBlank()
+                ? ""
+                : " de la categoría " + categoriaNormalizada;
         TrabajoSincronizacion trabajo = crearTrabajoImportacion(
-                canal, TipoTrabajoSincronizacion.PREPARACION_IMPORTACION,
-                incluirInactivas
-                        ? "Esperando para actualizar la lista con publicaciones inactivas..."
-                        : "Esperando para actualizar la lista de productos activos...");
-        procesador.ejecutarPreparacionImportacion(
-                trabajo.getId(), trabajo.getTenantId(), canal, incluirInactivas);
-        return trabajo;
-    }
-
-    public TrabajoSincronizacion iniciarImportacionSeleccionada(
-            CanalVenta canal, Collection<ProductoCanalImportado> productos) {
-        return iniciarImportacionSeleccionada(canal, productos, List.of());
-    }
-
-    public TrabajoSincronizacion iniciarImportacionSeleccionada(
-            CanalVenta canal, Collection<ProductoCanalImportado> productos,
-            Collection<CanalVenta> destinos) {
-        if (productos == null || productos.isEmpty()) {
-            throw new IllegalArgumentException("Seleccione al menos un producto para importar");
-        }
-        List<ProductoCanalImportado> seleccionados = productos.stream()
-                .filter(java.util.Objects::nonNull)
-                .toList();
-        if (seleccionados.isEmpty()) {
-            throw new IllegalArgumentException("Seleccione al menos un producto para importar");
-        }
-        List<CanalVenta> destinosValidos = destinos == null ? List.of() : destinos.stream()
-                .filter(java.util.Objects::nonNull)
-                .filter(destino -> destino != canal)
-                .distinct()
-                .toList();
-        TipoTrabajoSincronizacion tipo = destinosValidos.isEmpty()
-                ? TipoTrabajoSincronizacion.IMPORTACION_SELECCIONADA
-                : TipoTrabajoSincronizacion.SINCRONIZACION_SELECCIONADA;
-        TrabajoSincronizacion trabajo = crearTrabajoImportacion(
-                canal, tipo,
-                "Esperando para transferir " + seleccionados.size() + " producto(s)...");
-        if (!destinosValidos.isEmpty()) {
-            trabajo.setDestinos(destinosValidos.stream().map(Enum::name)
-                    .collect(Collectors.joining(",")));
-            trabajo = repository.save(trabajo);
-        }
-        procesador.ejecutarImportacionSeleccionada(
-                trabajo.getId(), trabajo.getTenantId(), canal, List.copyOf(seleccionados),
-                List.copyOf(destinosValidos));
+                CanalVenta.MERCADO_LIBRE, TipoTrabajoSincronizacion.IMPORTACION_FILTRADA,
+                "Esperando para traer las últimas " + cantidad + " publicaciones" + alcance + "...");
+        procesador.ejecutarImportacionFiltradaMercadoLibre(
+                trabajo.getId(), trabajo.getTenantId(), cantidad,
+                categoriaNormalizada, incluirInactivas);
         return trabajo;
     }
 

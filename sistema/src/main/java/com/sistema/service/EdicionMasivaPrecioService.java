@@ -1,7 +1,5 @@
 package com.sistema.service;
 
-import com.sistema.dto.ProductoCanalImportado;
-import com.sistema.dto.VarianteCanalImportada;
 import com.sistema.model.Producto;
 import com.sistema.model.ProductoVariante;
 import com.sistema.repository.ProductoRepository;
@@ -26,15 +24,6 @@ public class EdicionMasivaPrecioService {
                                       ProductoVarianteRepository productoVarianteRepository) {
         this.productoRepository = productoRepository;
         this.productoVarianteRepository = productoVarianteRepository;
-    }
-
-    public List<ProductoCanalImportado> ajustarImportados(
-            Collection<ProductoCanalImportado> productos, BigDecimal porcentaje) {
-        validarPorcentaje(porcentaje);
-        if (productos == null) return List.of();
-        return productos.stream()
-                .map(producto -> ajustarImportado(producto, porcentaje))
-                .toList();
     }
 
     @Transactional
@@ -79,26 +68,6 @@ public class EdicionMasivaPrecioService {
         BigDecimal factor = BigDecimal.ONE.add(
                 porcentaje.divide(new BigDecimal("100"), 8, RoundingMode.HALF_UP));
         return precio.multiply(factor).setScale(2, RoundingMode.HALF_UP);
-    }
-
-    private ProductoCanalImportado ajustarImportado(
-            ProductoCanalImportado producto, BigDecimal porcentaje) {
-        List<VarianteCanalImportada> variantes = producto.variantes() == null
-                ? List.of()
-                : producto.variantes().stream()
-                .map(variante -> new VarianteCanalImportada(
-                        variante.idExterno(), variante.sku(), variante.nombre(),
-                        variante.talle(), variante.color(), variante.stock(),
-                        ajustar(variante.precio(), porcentaje), variante.codigoBarras(),
-                        variante.productNumber(), variante.gtin(), variante.atributos(),
-                        variante.fotoUrl(), variante.itemMercadoLibre()))
-                .toList();
-
-        return new ProductoCanalImportado(
-                producto.idExterno(), producto.sku(), producto.descripcion(),
-                producto.cantidad(), ajustar(producto.precio(), porcentaje),
-                producto.fotoUrl(), producto.mercadoLibreCategoriaId(),
-                producto.datosCanal(), variantes);
     }
 
     private void validarPorcentaje(BigDecimal porcentaje) {

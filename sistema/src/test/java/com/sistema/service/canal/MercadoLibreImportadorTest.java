@@ -38,6 +38,33 @@ class MercadoLibreImportadorTest {
     }
 
     @Test
+    void consultaLaCantidadElegidaOrdenadaDesdeLaPublicacionMasReciente() {
+        verificarUrlUltimas(5, "", false,
+                "https://api.mercadolibre.com/users/123/items/search?status=active&orders=start_time_desc&limit=5");
+    }
+
+    @Test
+    void resuelveElNombreDeCategoriaAntesDeBuscarPublicacionesRecientes() {
+        MercadoLibreTokenService tokenService = mock(MercadoLibreTokenService.class);
+        when(tokenService.obtenerAccessToken()).thenReturn("token");
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        MercadoLibreImportador importador = new MercadoLibreImportador(
+                tokenService, new ObjectMapper(), builder.build());
+        servidor.expect(requestTo("https://api.mercadolibre.com/users/me"))
+                .andRespond(withSuccess("{\"id\":123}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://api.mercadolibre.com/sites/MLA/domain_discovery/search?limit=1&q=neumaticos"))
+                .andRespond(withSuccess("[{\"category_id\":\"MLA22195\"}]",
+                        MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo("https://api.mercadolibre.com/users/123/items/search?status=active&orders=start_time_desc&limit=8&category_id=MLA22195"))
+                .andRespond(withSuccess("{\"results\":[]}", MediaType.APPLICATION_JSON));
+
+        assertTrue(importador.obtenerUltimasPublicaciones(
+                8, "neumaticos", false, () -> false).isEmpty());
+        servidor.verify();
+    }
+
+    @Test
     void detieneLaDescargaAntesDeConsultarElSiguienteProducto() {
         MercadoLibreTokenService tokenService = mock(MercadoLibreTokenService.class);
         when(tokenService.obtenerAccessToken()).thenReturn("token");
@@ -277,6 +304,24 @@ class MercadoLibreImportadorTest {
                         MediaType.APPLICATION_JSON));
 
         assertTrue(importador.obtenerProductos(incluirInactivas).isEmpty());
+        servidor.verify();
+    }
+
+    private void verificarUrlUltimas(int cantidad, String categoria,
+                                     boolean incluirInactivas, String urlEsperada) {
+        MercadoLibreTokenService tokenService = mock(MercadoLibreTokenService.class);
+        when(tokenService.obtenerAccessToken()).thenReturn("token");
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        MercadoLibreImportador importador = new MercadoLibreImportador(
+                tokenService, new ObjectMapper(), builder.build());
+        servidor.expect(requestTo("https://api.mercadolibre.com/users/me"))
+                .andRespond(withSuccess("{\"id\":123}", MediaType.APPLICATION_JSON));
+        servidor.expect(requestTo(urlEsperada))
+                .andRespond(withSuccess("{\"results\":[]}", MediaType.APPLICATION_JSON));
+
+        assertTrue(importador.obtenerUltimasPublicaciones(
+                cantidad, categoria, incluirInactivas, () -> false).isEmpty());
         servidor.verify();
     }
 

@@ -38,8 +38,7 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, sincronizacion, mock(PublicacionService.class),
-                        mock(ImportacionCanalService.class),
-                        mock(CatalogoImportacionService.class));
+                        mock(ImportacionCanalService.class));
 
         procesador.ejecutar(10L, 3L, CanalVenta.MERCADO_LIBRE, List.of(CanalVenta.WOOCOMMERCE));
 
@@ -69,8 +68,7 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, sincronizacion, publicacionService,
-                        mock(ImportacionCanalService.class),
-                        mock(CatalogoImportacionService.class));
+                        mock(ImportacionCanalService.class));
 
         procesador.ejecutarPublicacion(10L, 3L, List.of(4L, 5L, 6L),
                 List.of(CanalVenta.WOOCOMMERCE));
@@ -96,8 +94,7 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, sincronizacion, mock(PublicacionService.class),
-                        mock(ImportacionCanalService.class),
-                        mock(CatalogoImportacionService.class));
+                        mock(ImportacionCanalService.class));
 
         procesador.ejecutar(10L, 3L, CanalVenta.MERCADO_LIBRE, List.of(CanalVenta.WOOCOMMERCE));
 
@@ -107,36 +104,9 @@ class ProcesadorTrabajoSincronizacionServiceTest {
     }
 
     @Test
-    void preparaCatalogoRemotoYFinalizaElTrabajoSinImportarProductos() {
+    void traerTodoImportaLaMismaDescarga() {
         TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
         ImportacionCanalService importacion = mock(ImportacionCanalService.class);
-        CatalogoImportacionService catalogo = mock(CatalogoImportacionService.class);
-        TrabajoSincronizacion trabajo = trabajo();
-        when(repository.findById(10L)).thenReturn(Optional.of(trabajo));
-        List<ProductoCanalImportado> productos = List.of(
-                producto("MLA1", "SKU-1"),
-                producto("MLA2", "SKU-2"));
-        when(importacion.obtenerProductos(eq(CanalVenta.MERCADO_LIBRE), eq(false),
-                any(java.util.function.BooleanSupplier.class))).thenReturn(productos);
-        ProcesadorTrabajoSincronizacionService procesador =
-                new ProcesadorTrabajoSincronizacionService(
-                        repository, mock(SincronizacionCanalesService.class),
-                        mock(PublicacionService.class), importacion, catalogo);
-
-        procesador.ejecutarPreparacionImportacion(10L, 3L, CanalVenta.MERCADO_LIBRE, false);
-
-        verify(catalogo).guardar(CanalVenta.MERCADO_LIBRE, productos);
-        verify(importacion, never()).importar(any(CanalVenta.class));
-        assertEquals(EstadoTrabajoSincronizacion.COMPLETADA, trabajo.getEstado());
-        assertEquals("2 producto(s) listos para seleccionar.", trabajo.getResumen());
-        assertNotNull(trabajo.getFinalizadoEn());
-    }
-
-    @Test
-    void traerTodoActualizaElCatalogoEImportaLaMismaDescarga() {
-        TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
-        ImportacionCanalService importacion = mock(ImportacionCanalService.class);
-        CatalogoImportacionService catalogo = mock(CatalogoImportacionService.class);
         TrabajoSincronizacion trabajo = trabajo();
         when(repository.findById(10L)).thenReturn(Optional.of(trabajo));
         List<ProductoCanalImportado> productos = List.of(
@@ -151,11 +121,10 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, mock(SincronizacionCanalesService.class),
-                        mock(PublicacionService.class), importacion, catalogo);
+                        mock(PublicacionService.class), importacion);
 
         procesador.ejecutarImportacionCompleta(10L, 3L, CanalVenta.MERCADO_LIBRE, false);
 
-        verify(catalogo).guardar(CanalVenta.MERCADO_LIBRE, productos);
         verify(importacion).importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos),
                 any(java.util.function.BooleanSupplier.class));
         verify(importacion, never()).importar(CanalVenta.MERCADO_LIBRE);
@@ -164,39 +133,30 @@ class ProcesadorTrabajoSincronizacionServiceTest {
     }
 
     @Test
-    void transfiereSoloLosProductosSeleccionadosHaciaLosDestinos() {
+    void importaLasUltimasPublicacionesFiltradasEnSegundoPlano() {
         TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
-        ImportacionCanalService importacionService = mock(ImportacionCanalService.class);
-        PublicacionService publicacionService = mock(PublicacionService.class);
+        ImportacionCanalService importacion = mock(ImportacionCanalService.class);
         TrabajoSincronizacion trabajo = trabajo();
         when(repository.findById(10L)).thenReturn(Optional.of(trabajo));
-        List<ProductoCanalImportado> productos = List.of(producto("MLA1", "SKU-1"));
-        ResultadoImportacionCanal importacion = new ResultadoImportacionCanal();
-        importacion.creado(77L);
-        ResultadoPublicacionLote publicacion = new ResultadoPublicacionLote();
-        publicacion.exito();
-        when(importacionService.importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos),
-                any(java.util.function.BooleanSupplier.class)))
-                .thenReturn(importacion);
-        when(publicacionService.publicar(eq(List.of(77L)), eq(List.of(CanalVenta.WOOCOMMERCE)),
-                any(java.util.function.BooleanSupplier.class)))
-                .thenReturn(publicacion);
+        List<ProductoCanalImportado> productos = List.of(producto("MLA1", "NEU-1"));
+        ResultadoImportacionCanal resultado = new ResultadoImportacionCanal();
+        resultado.creado(1L);
+        when(importacion.obtenerUltimasPublicacionesMercadoLibre(eq(5), eq("neumaticos"),
+                eq(false), any(java.util.function.BooleanSupplier.class))).thenReturn(productos);
+        when(importacion.importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos),
+                any(java.util.function.BooleanSupplier.class))).thenReturn(resultado);
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, mock(SincronizacionCanalesService.class),
-                        publicacionService, importacionService,
-                        mock(CatalogoImportacionService.class));
+                        mock(PublicacionService.class), importacion);
 
-        procesador.ejecutarImportacionSeleccionada(
-                10L, 3L, CanalVenta.MERCADO_LIBRE, productos,
-                List.of(CanalVenta.WOOCOMMERCE));
+        procesador.ejecutarImportacionFiltradaMercadoLibre(
+                10L, 3L, 5, "neumaticos", false);
 
-        verify(importacionService).importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos),
-                any(java.util.function.BooleanSupplier.class));
-        verify(publicacionService).publicar(eq(List.of(77L)), eq(List.of(CanalVenta.WOOCOMMERCE)),
-                any(java.util.function.BooleanSupplier.class));
         assertEquals(EstadoTrabajoSincronizacion.COMPLETADA, trabajo.getEstado());
-        assertTrue(trabajo.getResumen().contains("Publicaciones procesadas correctamente: 1"));
+        assertTrue(trabajo.getResumen().contains("1 productos creados"));
+        verify(importacion).importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos),
+                any(java.util.function.BooleanSupplier.class));
     }
 
     @Test
@@ -209,8 +169,7 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, mock(SincronizacionCanalesService.class),
-                        publicacionService, mock(ImportacionCanalService.class),
-                        mock(CatalogoImportacionService.class));
+                        publicacionService, mock(ImportacionCanalService.class));
 
         procesador.ejecutarPublicacion(10L, 3L, List.of(4L, 5L),
                 List.of(CanalVenta.WOOCOMMERCE));
@@ -222,10 +181,9 @@ class ProcesadorTrabajoSincronizacionServiceTest {
     }
 
     @Test
-    void propagaLaCancelacionMientrasDescargaElCatalogoRemoto() {
+    void propagaLaCancelacionMientrasDescargaLaImportacionCompleta() {
         TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
         ImportacionCanalService importacion = mock(ImportacionCanalService.class);
-        CatalogoImportacionService catalogo = mock(CatalogoImportacionService.class);
         TrabajoSincronizacion trabajo = trabajo();
         when(repository.findById(10L)).thenReturn(Optional.of(trabajo));
         when(importacion.obtenerProductos(eq(CanalVenta.MERCADO_LIBRE), eq(false),
@@ -239,13 +197,14 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, mock(SincronizacionCanalesService.class),
-                        mock(PublicacionService.class), importacion, catalogo);
+                        mock(PublicacionService.class), importacion);
 
-        procesador.ejecutarPreparacionImportacion(
+        procesador.ejecutarImportacionCompleta(
                 10L, 3L, CanalVenta.MERCADO_LIBRE, false);
 
         assertEquals(EstadoTrabajoSincronizacion.CANCELADO, trabajo.getEstado());
-        verifyNoInteractions(catalogo);
+        verify(importacion, never()).importar(eq(CanalVenta.MERCADO_LIBRE), anyList(),
+                any(java.util.function.BooleanSupplier.class));
     }
 
     private ProductoCanalImportado producto(String idExterno, String sku) {

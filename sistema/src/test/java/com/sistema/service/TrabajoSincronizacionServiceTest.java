@@ -8,7 +8,6 @@ import com.sistema.repository.TrabajoSincronizacionRepository;
 import com.sistema.tenant.TenantContext;
 import org.junit.jupiter.api.Test;
 
-import java.util.Collection;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -120,7 +119,7 @@ class TrabajoSincronizacionServiceTest {
     }
 
     @Test
-    void propagaLaSeleccionDePublicacionesInactivasAlTrabajo() {
+    void propagaLaSeleccionDePublicacionesInactivasALaImportacionCompleta() {
         TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
         ProcesadorTrabajoSincronizacionService procesador = mock(ProcesadorTrabajoSincronizacionService.class);
         when(repository.findByEstadoIn(anyCollection())).thenReturn(List.of());
@@ -133,45 +132,37 @@ class TrabajoSincronizacionServiceTest {
         TrabajoSincronizacionService service = new TrabajoSincronizacionService(repository, procesador);
 
         try (TenantContext.Scope ignored = TenantContext.use(8L)) {
-            service.iniciarPreparacionImportacion(CanalVenta.MERCADO_LIBRE, true);
+            service.iniciarImportacionCompleta(CanalVenta.MERCADO_LIBRE, true);
         }
 
-        verify(procesador).ejecutarPreparacionImportacion(
+        verify(procesador).ejecutarImportacionCompleta(
                 45L, 8L, CanalVenta.MERCADO_LIBRE, true);
     }
 
     @Test
-    void creaTransferenciaSeleccionadaDesdeUnCanalHaciaLosDestinos() {
+    void creaImportacionDeUltimasPublicacionesConCantidadYCategoria() {
         TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
         ProcesadorTrabajoSincronizacionService procesador = mock(ProcesadorTrabajoSincronizacionService.class);
         when(repository.findByEstadoIn(anyCollection())).thenReturn(List.of());
         when(repository.existsByEstadoIn(anyCollection())).thenReturn(false);
         when(repository.save(any(TrabajoSincronizacion.class))).thenAnswer(invocacion -> {
             TrabajoSincronizacion trabajo = invocacion.getArgument(0);
-            trabajo.setId(52L);
+            trabajo.setId(46L);
             return trabajo;
         });
         TrabajoSincronizacionService service = new TrabajoSincronizacionService(repository, procesador);
-        com.sistema.dto.ProductoCanalImportado producto = new com.sistema.dto.ProductoCanalImportado(
-                "MLA1", "SKU-1", "Remera", 2, java.math.BigDecimal.TEN,
-                null, "MLA1", java.util.Map.of(), List.of());
 
         TrabajoSincronizacion trabajo;
         try (TenantContext.Scope ignored = TenantContext.use(8L)) {
-            trabajo = service.iniciarImportacionSeleccionada(
-                    CanalVenta.MERCADO_LIBRE, List.of(producto),
-                    List.of(CanalVenta.MERCADO_LIBRE, CanalVenta.WOOCOMMERCE,
-                            CanalVenta.TIENDANUBE, CanalVenta.WOOCOMMERCE));
+            trabajo = service.iniciarImportacionFiltradaMercadoLibre(
+                    5, "  neumaticos  ", false);
         }
 
-        assertEquals(TipoTrabajoSincronizacion.SINCRONIZACION_SELECCIONADA,
-                trabajo.getTipoTrabajo());
-        assertEquals("WOOCOMMERCE,TIENDANUBE", trabajo.getDestinos());
-        assertEquals("Mercado Libre \u2192 Sistema \u2192 WooCommerce, Tiendanube",
-                trabajo.getFlujoDescripcion());
-        verify(procesador).ejecutarImportacionSeleccionada(
-                52L, 8L, CanalVenta.MERCADO_LIBRE, List.of(producto),
-                List.of(CanalVenta.WOOCOMMERCE, CanalVenta.TIENDANUBE));
+        assertEquals(TipoTrabajoSincronizacion.IMPORTACION_FILTRADA, trabajo.getTipoTrabajo());
+        assertEquals("Mercado Libre → Sistema", trabajo.getFlujoDescripcion());
+        assertTrue(trabajo.getResumen().contains("últimas 5"));
+        verify(procesador).ejecutarImportacionFiltradaMercadoLibre(
+                46L, 8L, 5, "neumaticos", false);
     }
 
     @Test

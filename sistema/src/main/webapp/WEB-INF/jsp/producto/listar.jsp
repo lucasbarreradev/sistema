@@ -57,19 +57,42 @@
                                 </label>
                                 <input id="porcentajeMasivo" name="porcentaje" type="number"
                                        class="form-control" step="0.01" min="-99.99" max="1000"
-                                       placeholder="-15 o 10" required>
+                                       placeholder="-15 o 10">
                             </div>
-                            <div class="col-md-5 mb-3 mb-md-0">
+                            <div class="col-md-3 mb-3 mb-md-0">
+                                <label for="stockMasivo" class="font-weight-bold">
+                                    Fijar stock seleccionado
+                                </label>
+                                <input id="stockMasivo" name="stock" type="number"
+                                       class="form-control" step="1" min="0" max="1000000"
+                                       placeholder="Ej.: 25">
+                            </div>
+                            <div class="col-md-3 mb-3 mb-md-0">
                                 <small class="text-muted">
-                                    Use -15 para reducir 15% o 10 para aumentar 10%. Se modifican
-                                    Contado, Tarjeta y Cuenta Corriente, también en las variantes.
-                                    El precio de compra y los canales externos no se modifican.
+                                    El stock asigna el mismo valor a cada producto marcado y se
+                                    sincroniza con sus canales. Los productos con variantes se omiten.
                                 </small>
                             </div>
-                            <div class="col-md-3 text-md-right">
+                            <div class="col-md-2 text-md-right">
                                 <span id="cantidadProductosSeleccionados"
-                                      class="badge badge-info mr-2">0 seleccionados</span>
-                                <button class="btn btn-primary" type="submit">Aplicar ajuste</button>
+                                      class="badge badge-info d-inline-block mb-2">0 seleccionados</span>
+                                <button class="btn btn-primary btn-sm mb-1" type="submit"
+                                        data-accion="precios"
+                                        formaction="${pageContext.request.contextPath}/productos/ajustar-precios">
+                                    Ajustar precios
+                                </button>
+                                <button class="btn btn-success btn-sm mb-1" type="submit"
+                                        data-accion="stock"
+                                        formaction="${pageContext.request.contextPath}/productos/ajustar-stock">
+                                    Fijar stock
+                                </button>
+                            </div>
+                            <div class="col-12 mt-2">
+                                <small class="text-muted">
+                                    Precio: use -15 para reducir 15% o 10 para aumentar 10%; se modifican
+                                    Contado, Tarjeta y Cuenta Corriente, también en variantes. No cambia
+                                    el precio de compra ni los canales externos.
+                                </small>
                             </div>
                         </form>
                     </div>
@@ -271,9 +294,29 @@
             window.alert('Seleccione al menos un producto.');
             return;
         }
-        const porcentaje = document.getElementById('porcentajeMasivo').value;
-        if (!window.confirm('¿Aplicar un ajuste de ' + porcentaje
-                + '% a los precios de venta seleccionados?')) {
+        const accion = evento.submitter && evento.submitter.dataset.accion
+            ? evento.submitter.dataset.accion : 'precios';
+        let mensaje;
+        if (accion === 'stock') {
+            const stock = document.getElementById('stockMasivo').value;
+            if (stock === '' || Number(stock) < 0 || !Number.isInteger(Number(stock))) {
+                evento.preventDefault();
+                window.alert('Ingrese un stock entero mayor o igual a cero.');
+                return;
+            }
+            mensaje = '¿Fijar el stock de cada producto seleccionado en ' + stock
+                + '? Los productos con variantes se omitirán.';
+        } else {
+            const porcentaje = document.getElementById('porcentajeMasivo').value;
+            if (porcentaje === '') {
+                evento.preventDefault();
+                window.alert('Ingrese el porcentaje de ajuste.');
+                return;
+            }
+            mensaje = '¿Aplicar un ajuste de ' + porcentaje
+                + '% a los precios de venta seleccionados?';
+        }
+        if (!window.confirm(mensaje)) {
             evento.preventDefault();
         }
     });

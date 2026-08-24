@@ -153,7 +153,7 @@
                                                     </sec:authorize>
                                                 </c:if>
                                                 <div class="mt-3">
-                                                    <form method="post" class="d-inline">
+                                                    <form method="post" action="${pageContext.request.contextPath}/canales/importar/${canal}">
                                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
                                                         <c:if test="${canal == 'MERCADO_LIBRE'}">
                                                             <label class="d-block small mb-2">
@@ -162,26 +162,45 @@
                                                             </label>
                                                         </c:if>
                                                         <button type="submit" class="btn btn-sm btn-outline-primary"
-                                                                formaction="${pageContext.request.contextPath}/canales/importar/${canal}"
                                                                 ${(configuracionImportacion[canal] && !sincronizacionActiva) ? '' : 'disabled'}>
                                                             Traer todo
                                                         </button>
-                                                        <button type="submit" class="btn btn-sm btn-outline-secondary"
-                                                                formaction="${pageContext.request.contextPath}/canales/importar/${canal}/preparar"
-                                                                ${(configuracionImportacion[canal] && !sincronizacionActiva) ? '' : 'disabled'}>
-                                                            ${catalogosImportacion[canal] ? 'Actualizar lista' : 'Cargar lista para seleccionar'}
-                                                        </button>
                                                     </form>
-                                                    <c:if test="${catalogosImportacion[canal]}">
-                                                        <a class="btn btn-sm btn-outline-success"
-                                                           href="${pageContext.request.contextPath}/canales/importar/${canal}/seleccionar">
-                                                            Seleccionar productos
-                                                        </a>
-                                                    </c:if>
-                                                    <small class="text-muted d-block mt-2">
-                                                        La lista queda guardada y su actualización continúa en segundo plano.
-                                                    </small>
                                                 </div>
+                                                <c:if test="${canal == 'MERCADO_LIBRE'}">
+                                                    <div class="border rounded p-3 mt-3 bg-light">
+                                                        <div class="font-weight-bold small mb-2">Traer publicaciones recientes</div>
+                                                        <form method="post"
+                                                              action="${pageContext.request.contextPath}/canales/importar/mercadolibre/ultimas">
+                                                            <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                                                            <div class="form-row">
+                                                                <div class="form-group col-sm-4">
+                                                                    <label class="small" for="cantidadMlRecientes">Cantidad</label>
+                                                                    <input id="cantidadMlRecientes" name="cantidad" type="number"
+                                                                           class="form-control form-control-sm"
+                                                                           min="1" max="100" value="5" required>
+                                                                </div>
+                                                                <div class="form-group col-sm-8">
+                                                                    <label class="small" for="categoriaMlRecientes">Categoría (opcional)</label>
+                                                                    <input id="categoriaMlRecientes" name="categoria" type="text"
+                                                                           class="form-control form-control-sm" maxlength="120"
+                                                                           placeholder="Ej.: neumáticos o MLA...">
+                                                                </div>
+                                                            </div>
+                                                            <label class="d-block small mb-2">
+                                                                <input type="checkbox" name="incluirInactivas" value="true">
+                                                                Incluir publicaciones inactivas
+                                                            </label>
+                                                            <small class="text-muted d-block mb-2">
+                                                                Se toman primero las publicaciones más nuevas. Deje la categoría vacía para traer cualquiera.
+                                                            </small>
+                                                            <button type="submit" class="btn btn-sm btn-primary"
+                                                                    ${(configuracionImportacion[canal] && !sincronizacionActiva) ? '' : 'disabled'}>
+                                                                Traer publicaciones
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </c:if>
                                             </div>
                                         </div>
                                     </c:forEach>

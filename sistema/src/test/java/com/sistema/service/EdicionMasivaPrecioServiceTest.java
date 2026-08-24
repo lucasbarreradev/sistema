@@ -1,7 +1,5 @@
 package com.sistema.service;
 
-import com.sistema.dto.ProductoCanalImportado;
-import com.sistema.dto.VarianteCanalImportada;
 import com.sistema.model.Producto;
 import com.sistema.model.ProductoVariante;
 import com.sistema.repository.ProductoRepository;
@@ -10,34 +8,12 @@ import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.*;
 
 class EdicionMasivaPrecioServiceTest {
-
-    @Test
-    void reducePrecioDelProductoImportadoYDeSusVariantes() {
-        EdicionMasivaPrecioService service = new EdicionMasivaPrecioService(
-                mock(ProductoRepository.class), mock(ProductoVarianteRepository.class));
-        VarianteCanalImportada variante = new VarianteCanalImportada(
-                "VAR-1", "SKU-1-M", "M", "M", "Negro", 3,
-                new BigDecimal("100"), null, null, null, Map.of("SIZE", "M"),
-                null, false);
-        ProductoCanalImportado producto = new ProductoCanalImportado(
-                "MLA1", "SKU-1", "Remera", 3, new BigDecimal("219999"),
-                null, "MLA1", Map.of(), List.of(variante));
-
-        ProductoCanalImportado ajustado = service
-                .ajustarImportados(List.of(producto), new BigDecimal("-15"))
-                .get(0);
-
-        assertEquals(new BigDecimal("186999.15"), ajustado.precio());
-        assertEquals(new BigDecimal("85.00"), ajustado.variantes().get(0).precio());
-        assertEquals(new BigDecimal("219999"), producto.precio());
-    }
 
     @Test
     void ajustaSoloPreciosDeVentaDelSistemaYPreservaCompraYValoresVacios() {

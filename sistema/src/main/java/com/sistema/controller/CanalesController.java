@@ -7,8 +7,6 @@ import com.sistema.service.ProductoService;
 import com.sistema.service.PublicacionService;
 import com.sistema.service.ImportacionCanalService;
 import com.sistema.service.TrabajoSincronizacionService;
-import com.sistema.service.CatalogoImportacionService;
-import com.sistema.service.EdicionMasivaPrecioService;
 import com.sistema.service.MercadoLibreTokenService;
 import com.sistema.service.TiendanubeCredencialesService;
 import com.sistema.service.WooCommerceCredencialesService;
@@ -20,7 +18,6 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.util.List;
-import java.math.BigDecimal;
 import org.springframework.data.domain.PageRequest;
 
 @Controller
@@ -31,8 +28,6 @@ public class CanalesController {
     private final PublicacionService publicacionService;
     private final ImportacionCanalService importacionCanalService;
     private final TrabajoSincronizacionService trabajoSincronizacionService;
-    private final CatalogoImportacionService catalogoImportacionService;
-    private final EdicionMasivaPrecioService edicionMasivaPrecioService;
     private final MercadoLibreTokenService mercadoLibreTokenService;
     private final WooCommerceCredencialesService wooCommerceCredencialesService;
     private final TiendanubeCredencialesService tiendanubeCredencialesService;
@@ -42,8 +37,6 @@ public class CanalesController {
     public CanalesController(ProductoService productoService, ImportacionCsvService importacionCsvService,
                              PublicacionService publicacionService, ImportacionCanalService importacionCanalService,
                              TrabajoSincronizacionService trabajoSincronizacionService,
-                             CatalogoImportacionService catalogoImportacionService,
-                             EdicionMasivaPrecioService edicionMasivaPrecioService,
                              MercadoLibreTokenService mercadoLibreTokenService,
                              WooCommerceCredencialesService wooCommerceCredencialesService,
                              TiendanubeCredencialesService tiendanubeCredencialesService,
@@ -54,8 +47,6 @@ public class CanalesController {
         this.publicacionService = publicacionService;
         this.importacionCanalService = importacionCanalService;
         this.trabajoSincronizacionService = trabajoSincronizacionService;
-        this.catalogoImportacionService = catalogoImportacionService;
-        this.edicionMasivaPrecioService = edicionMasivaPrecioService;
         this.mercadoLibreTokenService = mercadoLibreTokenService;
         this.wooCommerceCredencialesService = wooCommerceCredencialesService;
         this.tiendanubeCredencialesService = tiendanubeCredencialesService;
@@ -80,9 +71,6 @@ public class CanalesController {
         model.addAttribute("configuracion", publicacionService.estadoConfiguracion());
         model.addAttribute("configuracionImportacion", java.util.Arrays.stream(CanalVenta.values())
                 .collect(java.util.stream.Collectors.toMap(c -> c, importacionCanalService::configurado)));
-        model.addAttribute("catalogosImportacion", java.util.Arrays.stream(CanalVenta.values())
-                .collect(java.util.stream.Collectors.toMap(
-                        canal -> canal, catalogoImportacionService::disponible)));
         model.addAttribute("publicaciones", publicacionService.historial());
         model.addAttribute("trabajosSincronizacion", trabajoSincronizacionService.ultimos());
         model.addAttribute("sincronizacionActiva", trabajoSincronizacionService.hayTrabajoActivo());
@@ -126,52 +114,19 @@ public class CanalesController {
         return "redirect:/canales";
     }
 
-    @PostMapping("/importar/{canal}/preparar")
-    public String prepararSeleccionImportacion(@PathVariable CanalVenta canal,
-                                               @RequestParam(defaultValue = "false") boolean incluirInactivas,
-                                               RedirectAttributes ra) {
+    @PostMapping("/importar/mercadolibre/ultimas")
+    public String importarUltimasMercadoLibre(
+            @RequestParam int cantidad,
+            @RequestParam(defaultValue = "") String categoria,
+            @RequestParam(defaultValue = "false") boolean incluirInactivas,
+            RedirectAttributes ra) {
         try {
             var trabajo = trabajoSincronizacionService
-                    .iniciarPreparacionImportacion(canal, incluirInactivas);
-            ra.addFlashAttribute("mensaje", "Actualización de la lista iniciada en segundo plano (trabajo #"
-                    + trabajo.getId() + "). Puede seguir usando la lista que ya estaba guardada.");
-        } catch (Exception e) {
-            ra.addFlashAttribute("error", e.getMessage());
-        }
-        return "redirect:/canales";
-    }
-
-    @GetMapping("/importar/{canal}/seleccionar")
-    public String seleccionarImportacion(@PathVariable CanalVenta canal, Model model,
-                                         RedirectAttributes ra) {
-        try {
-            model.addAttribute("canal", canal);
-            model.addAttribute("productosRemotos", catalogoImportacionService.listar(canal));
-            model.addAttribute("categoriasRemotas", catalogoImportacionService.listarCategorias(canal));
-            model.addAttribute("canales", CanalVenta.values());
-            model.addAttribute("configuracion", publicacionService.estadoConfiguracion());
-            return "canales/seleccionar_importacion";
-        } catch (Exception e) {
-            ra.addFlashAttribute("error", e.getMessage());
-            return "redirect:/canales";
-        }
-    }
-
-    @PostMapping("/importar/{canal}/seleccionados")
-    public String importarSeleccionados(@PathVariable CanalVenta canal,
-                                        @RequestParam(required = false) List<String> idsExternos,
-                                        @RequestParam(required = false) List<CanalVenta> destinos,
-                                        @RequestParam(defaultValue = "0") BigDecimal ajustePrecioPorcentaje,
-                                        RedirectAttributes ra) {
-        try {
-            var seleccionados = catalogoImportacionService.seleccionar(canal, idsExternos);
-            seleccionados = edicionMasivaPrecioService
-                    .ajustarImportados(seleccionados, ajustePrecioPorcentaje);
-            var trabajo = trabajoSincronizacionService
-                    .iniciarImportacionSeleccionada(canal, seleccionados, destinos);
-            ra.addFlashAttribute("mensaje", "Transferencia de " + seleccionados.size()
-                    + " producto(s) iniciada en segundo plano (trabajo #" + trabajo.getId()
-                    + "): " + trabajo.getFlujoDescripcion() + ".");
+                    .iniciarImportacionFiltradaMercadoLibre(
+                            cantidad, categoria, incluirInactivas);
+            ra.addFlashAttribute("mensaje",
+                    "Importación de las últimas publicaciones iniciada en segundo plano (trabajo #"
+                            + trabajo.getId() + ").");
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
         }

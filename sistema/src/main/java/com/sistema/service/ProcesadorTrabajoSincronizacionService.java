@@ -26,18 +26,15 @@ public class ProcesadorTrabajoSincronizacionService {
     private final SincronizacionCanalesService sincronizacionCanalesService;
     private final PublicacionService publicacionService;
     private final ImportacionCanalService importacionCanalService;
-    private final CatalogoImportacionService catalogoImportacionService;
 
     public ProcesadorTrabajoSincronizacionService(TrabajoSincronizacionRepository repository,
                                                   SincronizacionCanalesService sincronizacionCanalesService,
                                                   PublicacionService publicacionService,
-                                                  ImportacionCanalService importacionCanalService,
-                                                  CatalogoImportacionService catalogoImportacionService) {
+                                                  ImportacionCanalService importacionCanalService) {
         this.repository = repository;
         this.sincronizacionCanalesService = sincronizacionCanalesService;
         this.publicacionService = publicacionService;
         this.importacionCanalService = importacionCanalService;
-        this.catalogoImportacionService = catalogoImportacionService;
     }
 
     @Async("sincronizacionTaskExecutor")
@@ -89,7 +86,6 @@ public class ProcesadorTrabajoSincronizacionService {
                     .obtenerProductos(canal, incluirInactivas, cancelacion);
             if (finalizarCanceladoSiSolicitado(trabajoId,
                     "Cancelado por el usuario antes de importar los productos descargados.", List.of())) return;
-            catalogoImportacionService.guardar(canal, productos);
             ResultadoImportacionCanal resultado = importacionCanalService
                     .importar(canal, productos, cancelacion);
             guardarResultadoImportacion(trabajoId, resultado);
@@ -99,47 +95,29 @@ public class ProcesadorTrabajoSincronizacionService {
     }
 
     @Async("sincronizacionTaskExecutor")
-    public void ejecutarPreparacionImportacion(Long trabajoId, long tenantId, CanalVenta canal,
-                                               boolean incluirInactivas) {
+    public void ejecutarImportacionFiltradaMercadoLibre(
+            Long trabajoId, long tenantId, int cantidad, String categoria,
+            boolean incluirInactivas) {
         try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
+            String alcance = categoria == null || categoria.isBlank()
+                    ? ""
+                    : " de la categoría " + categoria;
             if (!actualizarAProcesando(trabajoId,
-                    "Preparando el catálogo "
-                            + (incluirInactivas ? "con publicaciones inactivas" : "de publicaciones activas")
-                            + " de " + canal.getDescripcion() + "...")) return;
-            List<ProductoCanalImportado> productos = importacionCanalService
-                    .obtenerProductos(canal, incluirInactivas, verificadorCancelacion(trabajoId));
-            if (finalizarCanceladoSiSolicitado(trabajoId,
-                    "Cancelado por el usuario antes de actualizar la lista guardada.", List.of())) return;
-            catalogoImportacionService.guardar(canal, productos);
-            guardarCatalogoPreparado(trabajoId, productos.size());
-        } catch (Exception e) {
-            registrarFallo(trabajoId, tenantId, "preparación de catálogo", e);
-        }
-    }
-
-    @Async("sincronizacionTaskExecutor")
-    public void ejecutarImportacionSeleccionada(Long trabajoId, long tenantId, CanalVenta canal,
-                                                List<ProductoCanalImportado> productos,
-                                                List<CanalVenta> destinos) {
-        try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
-            if (!actualizarAProcesando(trabajoId,
-                    "Transfiriendo " + productos.size() + " producto(s) desde "
-                            + canal.getDescripcion()
-                            + (destinos.isEmpty() ? " al sistema..."
-                            : " hacia " + descripcionCanales(destinos) + "..."))) return;
+                    "Trayendo las últimas " + cantidad + " publicaciones" + alcance
+                            + " desde Mercado Libre...")) return;
             BooleanSupplier cancelacion = verificadorCancelacion(trabajoId);
-            ResultadoImportacionCanal importacion = importacionCanalService
-                    .importar(canal, productos, cancelacion);
-            if (destinos.isEmpty()) {
-                guardarResultadoImportacion(trabajoId, importacion);
-            } else {
-                ResultadoPublicacionLote publicacion = publicacionService
-                        .publicar(importacion.getProductoIds(), destinos, cancelacion);
-                guardarResultado(trabajoId,
-                        new SincronizacionCanalesService.Resultado(importacion, publicacion));
-            }
+            List<ProductoCanalImportado> productos = importacionCanalService
+                    .obtenerUltimasPublicacionesMercadoLibre(
+                            cantidad, categoria, incluirInactivas, cancelacion);
+            if (finalizarCanceladoSiSolicitado(trabajoId,
+                    "Cancelado por el usuario antes de importar las publicaciones descargadas.",
+                    List.of())) return;
+            ResultadoImportacionCanal resultado = importacionCanalService
+                    .importar(CanalVenta.MERCADO_LIBRE, productos, cancelacion);
+            guardarResultadoImportacion(trabajoId, resultado);
         } catch (Exception e) {
-            registrarFallo(trabajoId, tenantId, "importación seleccionada", e);
+            registrarFallo(trabajoId, tenantId,
+                    "importación filtrada de Mercado Libre", e);
         }
     }
 
@@ -225,21 +203,6 @@ public class ProcesadorTrabajoSincronizacionService {
         trabajo.setEstado(resultado.getErrores().isEmpty()
                 ? EstadoTrabajoSincronizacion.COMPLETADA
                 : EstadoTrabajoSincronizacion.COMPLETADA_CON_ERRORES);
-        repository.save(trabajo);
-    }
-
-    private void guardarCatalogoPreparado(Long trabajoId, int cantidad) {
-        TrabajoSincronizacion trabajo = buscar(trabajoId);
-        if (trabajo.isCancelacionSolicitada()) {
-            aplicarCancelacion(trabajo,
-                    "Cancelado por el usuario después de actualizar la lista guardada.", List.of());
-            repository.save(trabajo);
-            return;
-        }
-        trabajo.setFinalizadoEn(LocalDateTime.now());
-        trabajo.setResumen(cantidad + " producto(s) listos para seleccionar.");
-        trabajo.setDetalle(null);
-        trabajo.setEstado(EstadoTrabajoSincronizacion.COMPLETADA);
         repository.save(trabajo);
     }
 

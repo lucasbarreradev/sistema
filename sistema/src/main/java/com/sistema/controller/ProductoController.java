@@ -11,6 +11,7 @@ import com.sistema.service.MercadoLibreAtributosProductoService;
 import com.sistema.service.TenantPublicResourceService;
 import com.sistema.service.ImagenWooCommerceService;
 import com.sistema.service.EdicionMasivaPrecioService;
+import com.sistema.service.EdicionMasivaStockService;
 import com.sistema.service.canal.FotoCanalHelper;
 import com.sistema.tenant.TenantContext;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -43,6 +44,7 @@ public class ProductoController {
     private final ImagenWooCommerceService imagenWooCommerceService;
     private final ObjectMapper objectMapper;
     private final EdicionMasivaPrecioService edicionMasivaPrecioService;
+    private final EdicionMasivaStockService edicionMasivaStockService;
 
     public ProductoController(ProductoService productoService,
                               ProveedorService proveedorService,
@@ -50,6 +52,7 @@ public class ProductoController {
                               TenantPublicResourceService tenantPublicResourceService,
                               ImagenWooCommerceService imagenWooCommerceService,
                               EdicionMasivaPrecioService edicionMasivaPrecioService,
+                              EdicionMasivaStockService edicionMasivaStockService,
                               ObjectMapper objectMapper) {
         this.productoService = productoService;
         this.proveedorService = proveedorService;
@@ -57,6 +60,7 @@ public class ProductoController {
         this.tenantPublicResourceService = tenantPublicResourceService;
         this.imagenWooCommerceService = imagenWooCommerceService;
         this.edicionMasivaPrecioService = edicionMasivaPrecioService;
+        this.edicionMasivaStockService = edicionMasivaStockService;
         this.objectMapper = objectMapper;
     }
 
@@ -284,6 +288,29 @@ public class ProductoController {
                             + " variante(s) en un "
                             + porcentaje.stripTrailingZeros().toPlainString()
                             + "%. Los canales externos no fueron modificados.");
+        } catch (IllegalArgumentException e) {
+            ra.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/productos";
+    }
+
+    @PostMapping("/ajustar-stock")
+    public String ajustarStock(@RequestParam(required = false) List<Long> productoIds,
+                               @RequestParam(required = false) Integer stock,
+                               RedirectAttributes ra) {
+        try {
+            var resultado = edicionMasivaStockService.fijarStock(productoIds, stock);
+            String mensaje = "Se fijó el stock en " + stock + " para "
+                    + resultado.actualizados() + " producto(s)";
+            if (resultado.sinCambios() > 0) {
+                mensaje += "; " + resultado.sinCambios() + " ya tenían ese stock";
+            }
+            if (resultado.omitidosConVariantes() > 0) {
+                mensaje += "; " + resultado.omitidosConVariantes()
+                        + " se omitieron por tener variantes";
+            }
+            ra.addFlashAttribute("mensaje", mensaje
+                    + ". Los cambios se sincronizarán con los canales vinculados.");
         } catch (IllegalArgumentException e) {
             ra.addFlashAttribute("error", e.getMessage());
         }

@@ -13,7 +13,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
+import org.springframework.web.util.UriUtils;
 
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.function.BooleanSupplier;
 
@@ -70,31 +72,77 @@ public class MercadoLibreImportador implements ImportadorCanal {
                     + "/items/search?" + filtroEstado + "limit=50&offset=" + offset);
             JsonNode ids = pagina.path("results");
             if (!ids.isArray() || ids.isEmpty()) break;
-            for (JsonNode id : ids) {
-                if (cancelacionSolicitada.getAsBoolean()) return agruparUserProducts(productos);
-                JsonNode item = get("/items/" + id.asText() + "?include_attributes=all");
-                if (cancelacionSolicitada.getAsBoolean()) return agruparUserProducts(productos);
-                ProductoCanalImportado importado = mapear(item, cancelacionSolicitada);
-                if (cancelacionSolicitada.getAsBoolean()) return agruparUserProducts(productos);
-                String familyName = item.path("family_name").asText("");
-                String userProductId = item.path("user_product_id").asText("");
-                if (!userProductId.isBlank()) {
-                    if (cancelacionSolicitada.getAsBoolean()) return agruparUserProducts(productos);
-                    String familyId = familiasPorUserProduct.get(userProductId);
-                    if (familyId == null) {
-                        familyId = resolverFamilyId(userProductId);
-                        familiasPorUserProduct.put(userProductId, familyId);
-                    }
-                    if (!familyId.isBlank()) {
-                        importado.datosCanal().put("familyId", familyId);
-                        if (!familyName.isBlank()) importado.datosCanal().put("familyName", familyName);
-                    }
-                }
-                productos.add(importado);
-            }
+            cargarItems(ids, productos, familiasPorUserProduct, cancelacionSolicitada);
+            if (cancelacionSolicitada.getAsBoolean()) return agruparUserProducts(productos);
             if (offset + ids.size() >= pagina.path("paging").path("total").asInt()) break;
         }
         return agruparUserProducts(productos);
+    }
+
+    public List<ProductoCanalImportado> obtenerUltimasPublicaciones(
+            int cantidad, String categoria, boolean incluirInactivas,
+            BooleanSupplier cancelacionSolicitada) {
+        if (cantidad < 1 || cantidad > 100) {
+            throw new IllegalArgumentException("La cantidad debe estar entre 1 y 100");
+        }
+        if (cancelacionSolicitada.getAsBoolean()) return List.of();
+        String userId = get("/users/me").path("id").asText();
+        if (userId.isBlank()) {
+            throw new IllegalStateException("No se pudo identificar la cuenta de Mercado Libre");
+        }
+
+        String categoriaId = resolverCategoria(categoria);
+        StringBuilder endpoint = new StringBuilder("/users/").append(userId)
+                .append("/items/search?");
+        if (!incluirInactivas) endpoint.append("status=active&");
+        endpoint.append("orders=start_time_desc&limit=").append(cantidad);
+        if (!categoriaId.isBlank()) endpoint.append("&category_id=").append(categoriaId);
+
+        JsonNode ids = get(endpoint.toString()).path("results");
+        if (!ids.isArray() || ids.isEmpty()) return List.of();
+        List<ProductoCanalImportado> productos = new ArrayList<>();
+        cargarItems(ids, productos, new HashMap<>(), cancelacionSolicitada);
+        return agruparUserProducts(productos);
+    }
+
+    private String resolverCategoria(String categoria) {
+        String filtro = categoria == null ? "" : categoria.trim();
+        if (filtro.isBlank()) return "";
+        if (filtro.matches("(?i)MLA\\d+")) return filtro.toUpperCase(Locale.ROOT);
+        String consulta = UriUtils.encodeQueryParam(filtro, StandardCharsets.UTF_8);
+        JsonNode predicciones = get("/sites/MLA/domain_discovery/search?limit=1&q=" + consulta);
+        if (!predicciones.isArray() || predicciones.isEmpty()
+                || predicciones.get(0).path("category_id").asText().isBlank()) {
+            throw new IllegalArgumentException(
+                    "No se encontró una categoría de Mercado Libre para '" + filtro + "'");
+        }
+        return predicciones.get(0).path("category_id").asText();
+    }
+
+    private void cargarItems(JsonNode ids, List<ProductoCanalImportado> productos,
+                             Map<String, String> familiasPorUserProduct,
+                             BooleanSupplier cancelacionSolicitada) {
+        for (JsonNode id : ids) {
+            if (cancelacionSolicitada.getAsBoolean()) return;
+            JsonNode item = get("/items/" + id.asText() + "?include_attributes=all");
+            if (cancelacionSolicitada.getAsBoolean()) return;
+            ProductoCanalImportado importado = mapear(item, cancelacionSolicitada);
+            if (cancelacionSolicitada.getAsBoolean()) return;
+            String familyName = item.path("family_name").asText("");
+            String userProductId = item.path("user_product_id").asText("");
+            if (!userProductId.isBlank()) {
+                String familyId = familiasPorUserProduct.get(userProductId);
+                if (familyId == null) {
+                    familyId = resolverFamilyId(userProductId);
+                    familiasPorUserProduct.put(userProductId, familyId);
+                }
+                if (!familyId.isBlank()) {
+                    importado.datosCanal().put("familyId", familyId);
+                    if (!familyName.isBlank()) importado.datosCanal().put("familyName", familyName);
+                }
+            }
+            productos.add(importado);
+        }
     }
 
     public ProductoCanalImportado obtenerProducto(String itemId) {

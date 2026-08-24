@@ -10,6 +10,7 @@ import com.sistema.repository.ProductoRepository;
 import com.sistema.repository.ProductoVarianteRepository;
 import com.sistema.repository.PublicacionCanalRepository;
 import com.sistema.service.canal.ImportadorCanal;
+import com.sistema.service.canal.MercadoLibreImportador;
 import org.springframework.stereotype.Service;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -76,6 +77,17 @@ public class ImportacionCanalService {
             BooleanSupplier cancelacionSolicitada) {
         ImportadorCanal importador = importadorConfigurado(canal);
         return importador.obtenerProductos(incluirInactivas, cancelacionSolicitada);
+    }
+
+    public List<ProductoCanalImportado> obtenerUltimasPublicacionesMercadoLibre(
+            int cantidad, String categoria, boolean incluirInactivas,
+            BooleanSupplier cancelacionSolicitada) {
+        ImportadorCanal importador = importadorConfigurado(CanalVenta.MERCADO_LIBRE);
+        if (!(importador instanceof MercadoLibreImportador mercadoLibre)) {
+            throw new IllegalStateException("El importador de Mercado Libre no está disponible");
+        }
+        return mercadoLibre.obtenerUltimasPublicaciones(
+                cantidad, categoria, incluirInactivas, cancelacionSolicitada);
     }
 
     public ResultadoImportacionCanal importar(CanalVenta canal,
