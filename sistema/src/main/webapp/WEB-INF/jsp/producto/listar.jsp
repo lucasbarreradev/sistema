@@ -61,16 +61,24 @@
                             </div>
                             <div class="col-md-3 mb-3 mb-md-0">
                                 <label for="stockMasivo" class="font-weight-bold">
-                                    Fijar stock seleccionado
+                                    Editar stock seleccionado
                                 </label>
-                                <input id="stockMasivo" name="stock" type="number"
-                                       class="form-control" step="1" min="0" max="1000000"
-                                       placeholder="Ej.: 25">
+                                <div class="input-group">
+                                    <select id="operacionStockMasivo" name="operacion"
+                                            class="custom-select">
+                                        <option value="FIJAR">Fijar en</option>
+                                        <option value="SUMAR">Sumar</option>
+                                        <option value="RESTAR">Restar</option>
+                                    </select>
+                                    <input id="stockMasivo" name="stock" type="number"
+                                           class="form-control" step="1" min="0" max="1000000"
+                                           placeholder="Cantidad">
+                                </div>
                             </div>
                             <div class="col-md-3 mb-3 mb-md-0">
                                 <small class="text-muted">
-                                    El stock asigna el mismo valor a cada producto marcado y se
-                                    sincroniza con sus canales. Los productos con variantes se omiten.
+                                    La operación se aplica a cada variante de los productos marcados.
+                                    Al restar nunca baja de cero. Luego se sincronizan sus canales.
                                 </small>
                             </div>
                             <div class="col-md-2 text-md-right">
@@ -84,7 +92,7 @@
                                 <button class="btn btn-success btn-sm mb-1" type="submit"
                                         data-accion="stock"
                                         formaction="${pageContext.request.contextPath}/productos/ajustar-stock">
-                                    Fijar stock
+                                    Aplicar stock
                                 </button>
                             </div>
                             <div class="col-12 mt-2">
@@ -299,13 +307,19 @@
         let mensaje;
         if (accion === 'stock') {
             const stock = document.getElementById('stockMasivo').value;
+            const selectorOperacion = document.getElementById('operacionStockMasivo');
+            const operacion = selectorOperacion.value;
+            const descripcionOperacion = selectorOperacion.options[selectorOperacion.selectedIndex].text;
             if (stock === '' || Number(stock) < 0 || !Number.isInteger(Number(stock))) {
                 evento.preventDefault();
                 window.alert('Ingrese un stock entero mayor o igual a cero.');
                 return;
             }
-            mensaje = '¿Fijar el stock de cada producto seleccionado en ' + stock
-                + '? Los productos con variantes se omitirán.';
+            mensaje = '¿' + descripcionOperacion + ' ' + stock
+                + ' unidades en cada variante de los productos seleccionados?';
+            if (operacion === 'RESTAR') {
+                mensaje += ' Ninguna variante quedará con stock negativo.';
+            }
         } else {
             const porcentaje = document.getElementById('porcentajeMasivo').value;
             if (porcentaje === '') {

@@ -338,6 +338,10 @@
 
                 <form method="post" action="${pageContext.request.contextPath}/canales/publicar">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                    <input type="hidden" name="productoQ" value="${fn:escapeXml(busquedaProductos)}">
+                    <input type="hidden" id="seleccionarTodosResultadosInput"
+                           name="seleccionarTodosResultados"
+                           value="${seleccionarTodosResultados ? 'true' : 'false'}">
                     <div class="card shadow mb-4" id="productos-publicacion">
                         <div class="card-header py-3 d-flex align-items-center justify-content-between">
                             <h6 class="m-0 font-weight-bold text-primary">Seleccionar productos para publicar o sincronizar</h6>
@@ -351,11 +355,26 @@
                             </div>
                         </div>
                         <div class="card-body">
-                            <div class="d-flex mb-3">
-                                <button type="button" class="btn btn-sm btn-outline-secondary mr-2" id="seleccionarTodos">Seleccionar esta p&aacute;gina</button>
+                            <div class="d-flex flex-wrap align-items-center mb-3">
+                                <button type="button" class="btn btn-sm btn-outline-secondary mr-2 mb-1"
+                                        id="seleccionarTodos">Seleccionar esta p&aacute;gina</button>
+                                <c:if test="${paginaProductos.totalElements > paginaProductos.numberOfElements}">
+                                    <button type="button" class="btn btn-sm btn-outline-primary mr-2 mb-1"
+                                            id="seleccionarTodosResultados">
+                                        <c:choose>
+                                            <c:when test="${seleccionarTodosResultados}">Cancelar selección de todas las páginas</c:when>
+                                            <c:otherwise>Seleccionar los ${paginaProductos.totalElements} resultados</c:otherwise>
+                                        </c:choose>
+                                    </button>
+                                </c:if>
                                 <small class="text-muted ml-auto align-self-center">
                                     ${paginaProductos.totalElements} producto(s) encontrados
                                 </small>
+                            </div>
+                            <div id="avisoSeleccionTotal"
+                                 class="alert alert-info py-2 ${seleccionarTodosResultados ? '' : 'd-none'}">
+                                Se seleccionaron los <strong>${paginaProductos.totalElements} productos</strong>
+                                de todas las páginas<c:if test="${not empty busquedaProductos}"> que coinciden con la búsqueda</c:if>.
                             </div>
                             <div class="table-responsive" style="max-height:460px;overflow:auto">
                                 <table class="table table-bordered table-hover" id="tablaProductos">
@@ -363,7 +382,8 @@
                                     <tbody>
                                     <c:forEach items="${productos}" var="p">
                                         <tr>
-                                            <td><input type="checkbox" class="producto-check" name="productoIds" value="${p.id}"></td>
+                                            <td><input type="checkbox" class="producto-check" name="productoIds"
+                                                       value="${p.id}" ${seleccionarTodosResultados ? 'checked' : ''}></td>
                                             <td><c:if test="${p.tieneFoto}"><img src="${pageContext.request.contextPath}/productos/${p.id}/foto" loading="lazy" decoding="async" alt="" style="width:44px;height:44px;object-fit:contain;background:#fff;border-radius:5px"></c:if></td>
                                             <td><c:out value="${p.sku}"/></td><td><c:out value="${p.descripcion}"/></td><td>${p.stockTotal}</td><td>${p.precioContadoListado}</td>
                                         </tr>
@@ -385,27 +405,30 @@
                                                 <c:param name="productoPage" value="${paginaProductos.number - 1}"/>
                                                 <c:param name="productoSize" value="${tamanioPagina}"/>
                                                 <c:param name="productoQ" value="${busquedaProductos}"/>
+                                                <c:param name="seleccionarTodosResultados" value="${seleccionarTodosResultados}"/>
                                             </c:url>
                                             <li class="page-item ${paginaProductos.first ? 'disabled' : ''}">
-                                                <a class="page-link" href="${paginaProductos.first ? '#' : urlAnteriorProductos}#productos-publicacion">Anterior</a>
+                                                <a class="page-link pagina-productos-link" href="${paginaProductos.first ? '#' : urlAnteriorProductos}#productos-publicacion">Anterior</a>
                                             </li>
                                             <c:forEach begin="${paginaInicio}" end="${paginaFin}" var="numeroPagina">
                                                 <c:url var="urlPaginaProductos" value="/canales">
                                                     <c:param name="productoPage" value="${numeroPagina}"/>
                                                     <c:param name="productoSize" value="${tamanioPagina}"/>
                                                     <c:param name="productoQ" value="${busquedaProductos}"/>
+                                                    <c:param name="seleccionarTodosResultados" value="${seleccionarTodosResultados}"/>
                                                 </c:url>
                                                 <li class="page-item ${numeroPagina == paginaProductos.number ? 'active' : ''}">
-                                                    <a class="page-link" href="${urlPaginaProductos}#productos-publicacion">${numeroPagina + 1}</a>
+                                                    <a class="page-link pagina-productos-link" href="${urlPaginaProductos}#productos-publicacion">${numeroPagina + 1}</a>
                                                 </li>
                                             </c:forEach>
                                             <c:url var="urlSiguienteProductos" value="/canales">
                                                 <c:param name="productoPage" value="${paginaProductos.number + 1}"/>
                                                 <c:param name="productoSize" value="${tamanioPagina}"/>
                                                 <c:param name="productoQ" value="${busquedaProductos}"/>
+                                                <c:param name="seleccionarTodosResultados" value="${seleccionarTodosResultados}"/>
                                             </c:url>
                                             <li class="page-item ${paginaProductos.last ? 'disabled' : ''}">
-                                                <a class="page-link" href="${paginaProductos.last ? '#' : urlSiguienteProductos}#productos-publicacion">Siguiente</a>
+                                                <a class="page-link pagina-productos-link" href="${paginaProductos.last ? '#' : urlSiguienteProductos}#productos-publicacion">Siguiente</a>
                                             </li>
                                         </ul>
                                     </nav>
@@ -441,10 +464,45 @@
     </div>
 </div>
 <script>
+const checksProductos = Array.from(document.querySelectorAll('.producto-check'));
+const seleccionTotalInput = document.getElementById('seleccionarTodosResultadosInput');
+const botonSeleccionTotal = document.getElementById('seleccionarTodosResultados');
+const avisoSeleccionTotal = document.getElementById('avisoSeleccionTotal');
+
+function cancelarSeleccionTotal() {
+    seleccionTotalInput.value = 'false';
+    avisoSeleccionTotal.classList.add('d-none');
+    if (botonSeleccionTotal) {
+        botonSeleccionTotal.textContent = 'Seleccionar los ${paginaProductos.totalElements} resultados';
+    }
+}
+
 document.getElementById('seleccionarTodos').addEventListener('click', function () {
-    const visibles = Array.from(document.querySelectorAll('#tablaProductos tbody tr')).filter(r => r.style.display !== 'none');
-    const marcar = visibles.some(r => !r.querySelector('.producto-check').checked);
-    visibles.forEach(r => r.querySelector('.producto-check').checked = marcar);
+    const marcar = checksProductos.some(check => !check.checked);
+    cancelarSeleccionTotal();
+    checksProductos.forEach(check => check.checked = marcar);
+});
+checksProductos.forEach(check => check.addEventListener('change', function () {
+    if (seleccionTotalInput.value === 'true' && !this.checked) cancelarSeleccionTotal();
+}));
+if (botonSeleccionTotal) {
+    botonSeleccionTotal.addEventListener('click', function () {
+        const activar = seleccionTotalInput.value !== 'true';
+        seleccionTotalInput.value = activar ? 'true' : 'false';
+        checksProductos.forEach(check => check.checked = activar);
+        avisoSeleccionTotal.classList.toggle('d-none', !activar);
+        this.textContent = activar
+            ? 'Cancelar selección de todas las páginas'
+            : 'Seleccionar los ${paginaProductos.totalElements} resultados';
+    });
+}
+document.querySelectorAll('.pagina-productos-link').forEach(link => {
+    link.addEventListener('click', function () {
+        if (seleccionTotalInput.value !== 'true' || this.getAttribute('href') === '#') return;
+        const destino = new URL(this.href);
+        destino.searchParams.set('seleccionarTodosResultados', 'true');
+        this.href = destino.toString();
+    });
 });
 <c:if test="${sincronizacionActiva}">
 window.setTimeout(function () { window.location.reload(); }, 8000);

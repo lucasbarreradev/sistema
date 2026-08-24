@@ -58,6 +58,7 @@ public class CanalesController {
     public String canales(@RequestParam(defaultValue = "0") int productoPage,
                           @RequestParam(defaultValue = "50") int productoSize,
                           @RequestParam(defaultValue = "") String productoQ,
+                          @RequestParam(defaultValue = "false") boolean seleccionarTodosResultados,
                           Model model) {
         int pagina = Math.max(productoPage, 0);
         int tamanio = Math.max(10, Math.min(productoSize, 100));
@@ -66,6 +67,7 @@ public class CanalesController {
         model.addAttribute("productos", productos.getContent());
         model.addAttribute("paginaProductos", productos);
         model.addAttribute("busquedaProductos", productoQ == null ? "" : productoQ.trim());
+        model.addAttribute("seleccionarTodosResultados", seleccionarTodosResultados);
         model.addAttribute("tamanioPagina", tamanio);
         model.addAttribute("canales", CanalVenta.values());
         model.addAttribute("configuracion", publicacionService.estadoConfiguracion());
@@ -165,15 +167,24 @@ public class CanalesController {
     @PostMapping("/publicar")
     public String publicar(@RequestParam(required = false) List<Long> productoIds,
                            @RequestParam(required = false) List<CanalVenta> canales,
+                           @RequestParam(defaultValue = "false") boolean seleccionarTodosResultados,
+                           @RequestParam(defaultValue = "") String productoQ,
                            RedirectAttributes ra) {
-        if (productoIds == null || productoIds.isEmpty() || canales == null || canales.isEmpty()) {
-            ra.addFlashAttribute("error", "Seleccione al menos un producto y un canal");
-            return "redirect:/canales";
-        }
         try {
-            var trabajo = trabajoSincronizacionService.iniciarPublicacion(productoIds, canales);
+            if (canales == null || canales.isEmpty()) {
+                throw new IllegalArgumentException("Seleccione al menos un canal");
+            }
+            List<Long> productosSeleccionados = seleccionarTodosResultados
+                    ? productoService.getIdsProductosListado(productoQ)
+                    : productoIds;
+            if (productosSeleccionados == null || productosSeleccionados.isEmpty()) {
+                throw new IllegalArgumentException("Seleccione al menos un producto");
+            }
+            var trabajo = trabajoSincronizacionService
+                    .iniciarPublicacion(productosSeleccionados, canales);
             ra.addFlashAttribute("mensaje", "Publicación iniciada en segundo plano (trabajo #"
-                    + trabajo.getId() + "). Puede salir de esta página sin interrumpirla.");
+                    + trabajo.getId() + ") para " + productosSeleccionados.size()
+                    + " producto(s). Puede salir de esta página sin interrumpirla.");
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
         }

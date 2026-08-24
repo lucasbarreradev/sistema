@@ -54,6 +54,12 @@ public class ProductoService {
     }
 
     @Transactional(readOnly = true)
+    public List<Long> getIdsProductosListado(String busqueda) {
+        String filtro = busqueda == null ? "" : busqueda.trim();
+        return productoRepo.buscarIdsListado(filtro);
+    }
+
+    @Transactional(readOnly = true)
     public Optional<ProductoFotoProjection> getFotoProducto(Long id) {
         return productoRepo.buscarFotoPorId(id);
     }

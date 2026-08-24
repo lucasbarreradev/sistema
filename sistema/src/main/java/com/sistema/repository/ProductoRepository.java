@@ -72,6 +72,16 @@ WHERE p.sku LIKE CONCAT(:prefijo, '%')
             @Param("busqueda") String busqueda, Pageable pageable);
 
     @Query("""
+            SELECT p.id
+              FROM Producto p
+             WHERE (:busqueda = ''
+                    OR LOWER(p.descripcion) LIKE LOWER(CONCAT('%', :busqueda, '%'))
+                    OR LOWER(p.sku) LIKE LOWER(CONCAT('%', :busqueda, '%')))
+             ORDER BY LOWER(p.descripcion), p.id
+            """)
+    List<Long> buscarIdsListado(@Param("busqueda") String busqueda);
+
+    @Query("""
             SELECT p.fotoContenido AS fotoContenido,
                    p.fotoUrlExterna AS fotoUrlExterna,
                    p.fotoTipoContenido AS fotoTipoContenido

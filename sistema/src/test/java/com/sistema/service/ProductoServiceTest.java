@@ -57,4 +57,18 @@ class ProductoServiceTest {
         assertEquals(true, resultado.isTieneFoto());
         verify(productos).buscarPaginaListado("zapa", pagina);
     }
+
+    @Test
+    void obtieneTodosLosIdsQueCoincidenConLaBusquedaSinLimiteDePagina() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        when(productos.buscarIdsListado("neumatico")).thenReturn(List.of(4L, 9L, 15L));
+        ProductoService service = new ProductoService(productos, mock(ProveedorRepository.class),
+                mock(MovimientoInventarioRepository.class), mock(PresupuestoService.class),
+                mock(PublicacionCanalRepository.class), mock(ProductoVarianteRepository.class));
+
+        List<Long> ids = service.getIdsProductosListado("  neumatico  ");
+
+        assertEquals(List.of(4L, 9L, 15L), ids);
+        verify(productos).buscarIdsListado("neumatico");
+    }
 }

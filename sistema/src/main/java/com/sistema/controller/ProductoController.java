@@ -297,17 +297,22 @@ public class ProductoController {
     @PostMapping("/ajustar-stock")
     public String ajustarStock(@RequestParam(required = false) List<Long> productoIds,
                                @RequestParam(required = false) Integer stock,
+                               @RequestParam(defaultValue = "FIJAR")
+                               EdicionMasivaStockService.Operacion operacion,
                                RedirectAttributes ra) {
         try {
-            var resultado = edicionMasivaStockService.fijarStock(productoIds, stock);
-            String mensaje = "Se fijó el stock en " + stock + " para "
-                    + resultado.actualizados() + " producto(s)";
+            var resultado = edicionMasivaStockService
+                    .ajustarStock(productoIds, stock, operacion);
+            String accion = switch (operacion) {
+                case FIJAR -> "Se fijó el stock en " + stock;
+                case SUMAR -> "Se sumaron " + stock + " unidades";
+                case RESTAR -> "Se restaron hasta " + stock + " unidades";
+            };
+            String mensaje = accion + " en "
+                    + resultado.productosActualizados() + " producto(s) y "
+                    + resultado.variantesActualizadas() + " variante(s)";
             if (resultado.sinCambios() > 0) {
-                mensaje += "; " + resultado.sinCambios() + " ya tenían ese stock";
-            }
-            if (resultado.omitidosConVariantes() > 0) {
-                mensaje += "; " + resultado.omitidosConVariantes()
-                        + " se omitieron por tener variantes";
+                mensaje += "; " + resultado.sinCambios() + " registro(s) quedaron sin cambios";
             }
             ra.addFlashAttribute("mensaje", mensaje
                     + ". Los cambios se sincronizarán con los canales vinculados.");
