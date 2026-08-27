@@ -30,14 +30,33 @@
                                 <td><c:out value="${tenant.nombre}"/></td>
                                 <td><code><c:out value="${tenant.codigo}"/></code></td>
                                 <td><span class="badge ${tenant.activo ? 'badge-success' : 'badge-secondary'}">${tenant.activo ? 'Activo' : 'Inactivo'}</span></td>
-                                <td>
-                                    <form method="post" action="${pageContext.request.contextPath}/tenants/${tenant.id}/estado">
+                                <td class="text-nowrap">
+                                    <form method="post" class="d-inline-block mr-1" action="${pageContext.request.contextPath}/tenants/${tenant.id}/estado">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
                                         <button class="btn btn-sm btn-outline-${tenant.activo ? 'danger' : 'success'}" type="submit"
                                                 ${tenant.id == 1 && tenant.activo ? 'disabled' : ''}>
                                             ${tenant.activo ? 'Desactivar' : 'Activar'}
                                         </button>
                                     </form>
+                                    <c:if test="${tenant.id != 1}">
+                                        <c:choose>
+                                            <c:when test="${not tenant.activo}">
+                                                <form method="post" class="d-inline-block"
+                                                      action="${pageContext.request.contextPath}/tenants/${tenant.id}/eliminar"
+                                                      onsubmit="return confirmarEliminacionNegocio(this, '${tenant.codigo}');">
+                                                    <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                                                    <input type="hidden" name="confirmacion" value="">
+                                                    <button class="btn btn-sm btn-danger" type="submit">
+                                                        <i class="fa-solid fa-trash mr-1"></i>Borrar
+                                                    </button>
+                                                </form>
+                                            </c:when>
+                                            <c:otherwise>
+                                                <button class="btn btn-sm btn-outline-danger" type="button" disabled
+                                                        title="Primero desactive el negocio">Borrar</button>
+                                            </c:otherwise>
+                                        </c:choose>
+                                    </c:if>
                                 </td>
                             </tr>
                         </c:forEach>
@@ -48,5 +67,16 @@
         </div>
     </div>
 </div>
+<script>
+function confirmarEliminacionNegocio(formulario, codigo) {
+    const ingresado = window.prompt(
+        'Esta acción elimina definitivamente usuarios, productos, ventas y conexiones del negocio.\n\n' +
+        'Escribí el código "' + codigo + '" para confirmar:'
+    );
+    if (ingresado === null) return false;
+    formulario.querySelector('input[name="confirmacion"]').value = ingresado;
+    return true;
+}
+</script>
 </body>
 </html>

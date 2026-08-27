@@ -1,8 +1,11 @@
 package com.sistema.controller;
 
 import com.sistema.model.Tenant;
+import com.sistema.security.TenantUserDetails;
+import com.sistema.service.TenantDeletionService;
 import com.sistema.service.TenantService;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
@@ -13,9 +16,11 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 @PreAuthorize("hasRole('SUPERADMIN')")
 public class TenantController {
     private final TenantService tenantService;
+    private final TenantDeletionService tenantDeletionService;
 
-    public TenantController(TenantService tenantService) {
+    public TenantController(TenantService tenantService, TenantDeletionService tenantDeletionService) {
         this.tenantService = tenantService;
+        this.tenantDeletionService = tenantDeletionService;
     }
 
     @GetMapping
@@ -52,6 +57,24 @@ public class TenantController {
             ra.addFlashAttribute("mensaje", "Estado del negocio actualizado");
         } catch (Exception e) {
             ra.addFlashAttribute("error", e.getMessage());
+        }
+        return "redirect:/tenants";
+    }
+
+    @PostMapping("/{id}/eliminar")
+    public String eliminar(@PathVariable Long id,
+                           @RequestParam String confirmacion,
+                           @AuthenticationPrincipal TenantUserDetails usuario,
+                           RedirectAttributes ra) {
+        try {
+            Long tenantActual = usuario == null ? null : usuario.getTenantId();
+            String username = usuario == null ? null : usuario.getUsername();
+            String nombre = tenantDeletionService.eliminar(id, confirmacion, tenantActual, username);
+            ra.addFlashAttribute("mensaje", "Negocio " + nombre + " eliminado definitivamente");
+        } catch (Exception e) {
+            String mensaje = e.getMessage();
+            ra.addFlashAttribute("error", mensaje == null || mensaje.isBlank()
+                    ? "No se pudo eliminar el negocio" : mensaje);
         }
         return "redirect:/tenants";
     }
