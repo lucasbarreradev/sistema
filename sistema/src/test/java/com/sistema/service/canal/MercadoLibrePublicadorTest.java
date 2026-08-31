@@ -1,6 +1,7 @@
 package com.sistema.service.canal;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.sistema.model.Producto;
 import com.sistema.model.ProductoVariante;
 import com.sistema.service.MercadoLibreTokenService;
@@ -236,6 +237,48 @@ class MercadoLibrePublicadorTest {
         List<Map<String, Object>> atributos = (List<Map<String, Object>>) payload.get("attributes");
         assertFalse(atributos.stream().anyMatch(a -> "HAZMAT_TRANSPORTABILITY".equals(a.get("id"))));
         assertTrue(atributos.stream().anyMatch(a -> "BATTERY_CAPACITY".equals(a.get("id"))));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void completaComoNoAplicaLosObligatoriosQueNoPuedeInferir() throws Exception {
+        Producto producto = productoBase();
+        JsonNode definiciones = new ObjectMapper().readTree("""
+                [
+                  {"id":"BRAND","name":"Marca","value_type":"string","tags":{"required":true}},
+                  {"id":"MODEL","name":"Modelo","value_type":"string","tags":{"required":true}},
+                  {"id":"COLLECTION_NAME","name":"Nombre de la colección","value_type":"string","tags":{"required":true}}
+                ]
+                """);
+
+        publicador.autocompletarAtributosObligatorios(producto, List.of(), definiciones);
+        List<Map<String, Object>> atributos = (List<Map<String, Object>>)
+                publicador.construirPayload(producto, true).get("attributes");
+
+        assertTrue(atributos.stream().filter(a -> Set.of("BRAND", "MODEL", "COLLECTION_NAME").contains(a.get("id")))
+                .allMatch(a -> "-1".equals(a.get("value_id")) && a.containsKey("value_name")
+                        && a.get("value_name") == null));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void detectaUnBooleanoPermitidoEnElTitulo() throws Exception {
+        Producto producto = productoBase();
+        producto.setDescripcion("Cargador portátil con USB");
+        JsonNode definiciones = new ObjectMapper().readTree("""
+                [{
+                  "id":"WITH_USB","name":"Con USB","value_type":"boolean",
+                  "tags":{"required":true},
+                  "values":[{"id":"242085","name":"Sí"},{"id":"242084","name":"No"}]
+                }]
+                """);
+
+        publicador.autocompletarAtributosObligatorios(producto, List.of(), definiciones);
+        List<Map<String, Object>> atributos = (List<Map<String, Object>>)
+                publicador.construirPayload(producto, true).get("attributes");
+
+        assertTrue(atributos.stream().anyMatch(a -> "WITH_USB".equals(a.get("id"))
+                && "242085".equals(a.get("value_id"))));
     }
 
     @Test

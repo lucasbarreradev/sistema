@@ -208,6 +208,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         JsonNode definiciones = getMercadoLibreConRenovacion(
                 "/categories/" + producto.getMercadoLibreCategoriaId() + "/attributes");
         if (!definiciones.isArray()) return;
+        autocompletarAtributosObligatorios(producto, variantes, definiciones);
         Set<String> soloLectura = new LinkedHashSet<>();
         for (JsonNode definicion : definiciones) {
             if (definicion.path("tags").path("read_only").asBoolean(false)) {
@@ -237,6 +238,189 @@ public class MercadoLibrePublicador implements PublicadorCanal {
                     + "obligatorios de Mercado Libre: " + String.join(", ", faltantes)
                     + ". Si esos campos no corresponden al producto, cambie la categoría seleccionada.");
         }
+    }
+
+    void autocompletarAtributosObligatorios(Producto producto,
+                                             List<ProductoVariante> variantes,
+                                             JsonNode definiciones) {
+        Map<String, Map<String, Object>> adicionales = leerAtributosAdicionales(producto);
+        Set<String> presentesProducto = construirAtributos(producto).stream()
+                .map(a -> Objects.toString(a.get("id"), ""))
+                .filter(id -> !id.isBlank())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        boolean cambio = false;
+        for (JsonNode definicion : definiciones) {
+            JsonNode tags = definicion.path("tags");
+            if (!esObligatorio(definicion) || tags.path("read_only").asBoolean(false)) continue;
+            String id = definicion.path("id").asText("");
+            if (id.isBlank() || presentesProducto.contains(id)) continue;
+            boolean presenteEnVariantes = !variantes.isEmpty() && variantes.stream()
+                    .allMatch(v -> AtributosVarianteHelper.obtener(v).containsKey(id));
+            if (presenteEnVariantes) continue;
+
+            Map<String, Object> inferido = inferirAtributo(producto, definicion);
+            boolean atributoVariacion = tags.path("allow_variations").asBoolean(false)
+                    || tags.path("variation_attribute").asBoolean(false)
+                    || "CHILD_PK".equals(definicion.path("hierarchy").asText(""));
+            if (atributoVariacion && !variantes.isEmpty()) {
+                if (inferido != null && !"-1".equals(inferido.get("value_id"))) {
+                    String valor = Objects.toString(inferido.get("value_name"), "");
+                    if (valor.isBlank()) valor = nombreValor(definicion, Objects.toString(inferido.get("value_id"), ""));
+                    if (!valor.isBlank()) {
+                        completarAtributoEnVariantes(variantes, id, valor);
+                    }
+                }
+                continue;
+            }
+            if (inferido == null && "EMPTY_GTIN_REASON".equals(id)) {
+                inferido = primerValorPermitido(id, definicion);
+            }
+            if (inferido == null && !Set.of("GTIN", "SIZE_GRID_ID", "SIZE_GRID_ROW_ID")
+                    .contains(id)) {
+                inferido = atributoNoAplica(id);
+            }
+            if (inferido == null) continue;
+            adicionales.put(id, inferido);
+            presentesProducto.add(id);
+            cambio = true;
+        }
+        if (cambio) guardarAtributosAdicionales(producto, adicionales);
+    }
+
+    private boolean esObligatorio(JsonNode definicion) {
+        JsonNode tags = definicion.path("tags");
+        return tags.path("required").asBoolean(false)
+                || tags.path("new_required").asBoolean(false);
+    }
+
+    private Map<String, Object> inferirAtributo(Producto producto, JsonNode definicion) {
+        String id = definicion.path("id").asText("");
+        String textoProducto = texto(producto.getDescripcion(), "") + " "
+                + texto(producto.getCategoriaOrigen(), "");
+        String normalizado = " " + normalizarTextoBusqueda(textoProducto) + " ";
+        JsonNode mejor = null;
+        int longitudMejor = 0;
+        for (JsonNode valor : definicion.path("values")) {
+            String nombre = valor.path("name").asText("");
+            String candidato = normalizarTextoBusqueda(nombre);
+            if (candidato.length() < 2 || Set.of("si", "no", "yes", "true", "false").contains(candidato)) continue;
+            if (normalizado.contains(" " + candidato + " ") && candidato.length() > longitudMejor) {
+                mejor = valor;
+                longitudMejor = candidato.length();
+            }
+        }
+        if (mejor != null) return atributoConValor(id, mejor);
+
+        String concepto = normalizarTextoBusqueda(definicion.path("name").asText(id))
+                .replaceFirst("^(con|tiene|incluye) ", "");
+        if ("boolean".equals(definicion.path("value_type").asText())
+                && !concepto.isBlank() && normalizado.contains(" " + concepto + " ")) {
+            for (JsonNode valor : definicion.path("values")) {
+                String nombre = normalizarTextoBusqueda(valor.path("name").asText(""));
+                if (Set.of("si", "yes", "true").contains(nombre)) return atributoConValor(id, valor);
+            }
+        }
+        if (id.contains("YEAR")) {
+            java.util.regex.Matcher anio = java.util.regex.Pattern.compile("(?<!\\d)(19|20)\\d{2}(?!\\d)")
+                    .matcher(textoProducto);
+            if (anio.find()) return atributoConNombre(id, anio.group());
+        }
+        return null;
+    }
+
+    private Map<String, Object> atributoConValor(String id, JsonNode valor) {
+        Map<String, Object> atributo = new LinkedHashMap<>();
+        atributo.put("id", id);
+        String valueId = valor.path("id").asText("");
+        String valueName = valor.path("name").asText("");
+        if (!valueId.isBlank()) atributo.put("value_id", valueId);
+        if (!valueName.isBlank()) atributo.put("value_name", valueName);
+        return atributo;
+    }
+
+    private Map<String, Object> atributoConNombre(String id, String nombre) {
+        Map<String, Object> atributo = new LinkedHashMap<>();
+        atributo.put("id", id);
+        atributo.put("value_name", nombre);
+        return atributo;
+    }
+
+    private Map<String, Object> primerValorPermitido(String id, JsonNode definicion) {
+        JsonNode primero = null;
+        for (JsonNode valor : definicion.path("values")) {
+            if (primero == null) primero = valor;
+            String nombre = normalizarTextoBusqueda(valor.path("name").asText(""));
+            if (nombre.contains("no tiene") || nombre.contains("no registrado")
+                    || nombre.contains("no posee")) {
+                return atributoConValor(id, valor);
+            }
+        }
+        return primero == null ? null : atributoConValor(id, primero);
+    }
+
+    private Map<String, Object> atributoNoAplica(String id) {
+        Map<String, Object> atributo = new LinkedHashMap<>();
+        atributo.put("id", id);
+        atributo.put("value_id", "-1");
+        atributo.put("value_name", null);
+        return atributo;
+    }
+
+    private String nombreValor(JsonNode definicion, String valueId) {
+        for (JsonNode valor : definicion.path("values")) {
+            if (valueId.equals(valor.path("id").asText(""))) return valor.path("name").asText("");
+        }
+        return "";
+    }
+
+    private void completarAtributoEnVariantes(List<ProductoVariante> variantes, String id, String valor) {
+        for (ProductoVariante variante : variantes) {
+            Map<String, String> atributos = new LinkedHashMap<>(AtributosVarianteHelper.obtener(variante));
+            if (atributos.containsKey(id)) continue;
+            atributos.put(id, valor);
+            try {
+                variante.setMercadoLibreAtributosJson(objectMapper.writeValueAsString(atributos));
+                if ("COLOR".equals(id) && !tieneTexto(variante.getColor())) variante.setColor(valor);
+                if ("SIZE".equals(id) && !tieneTexto(variante.getTalle())) variante.setTalle(valor);
+                varianteRepository.save(variante);
+            } catch (JsonProcessingException e) {
+                throw new IllegalArgumentException("No se pudo completar el atributo " + id
+                        + " en la variante " + variante.getNombreMostrar(), e);
+            }
+        }
+    }
+
+    private Map<String, Map<String, Object>> leerAtributosAdicionales(Producto producto) {
+        Map<String, Map<String, Object>> resultado = new LinkedHashMap<>();
+        String json = producto.getMercadoLibreAtributosJson();
+        if (!tieneTexto(json)) return resultado;
+        try {
+            List<Map<String, Object>> atributos = objectMapper.readValue(json, new TypeReference<>() {});
+            for (Map<String, Object> atributo : atributos) {
+                String id = Objects.toString(atributo.get("id"), "");
+                if (!id.isBlank()) resultado.put(id, new LinkedHashMap<>(atributo));
+            }
+            return resultado;
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("El JSON de atributos de Mercado Libre no es válido", e);
+        }
+    }
+
+    private void guardarAtributosAdicionales(Producto producto,
+                                               Map<String, Map<String, Object>> atributos) {
+        try {
+            producto.setMercadoLibreAtributosJson(objectMapper.writeValueAsString(atributos.values()));
+        } catch (JsonProcessingException e) {
+            throw new IllegalArgumentException("No se pudieron preparar los atributos de Mercado Libre", e);
+        }
+    }
+
+    private String normalizarTextoBusqueda(String valor) {
+        if (valor == null) return "";
+        return java.text.Normalizer.normalize(valor, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .replaceAll("[^A-Za-z0-9]+", " ")
+                .trim().toLowerCase(Locale.ROOT);
     }
 
     private void validarFormatoGtins(Producto producto, List<ProductoVariante> variantes) {
