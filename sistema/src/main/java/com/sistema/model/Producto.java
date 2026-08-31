@@ -41,6 +41,8 @@ public class Producto extends TenantAwareEntity {
     private String mercadoLibreId;
     private String mercadoLibreFamilyId;
     private String mercadoLibreCategoriaId;
+    @Column(length = 1000)
+    private String categoriaOrigen;
     @Column(length = 100)
     private String mercadoLibreGuiaTallesId;
     @Column(length = 100)

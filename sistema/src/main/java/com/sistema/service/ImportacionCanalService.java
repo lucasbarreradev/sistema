@@ -101,6 +101,7 @@ public class ImportacionCanalService {
         importadorConfigurado(canal);
         ResultadoImportacionCanal resultado = new ResultadoImportacionCanal();
         if (productos == null) return resultado;
+        resultado.recibidos(productos.size());
         for (ProductoCanalImportado dato : productos) {
             if (cancelacionSolicitada.getAsBoolean()) return resultado;
             try { guardar(canal, dato, resultado); }
@@ -123,7 +124,7 @@ public class ImportacionCanalService {
 
     private void guardar(CanalVenta canal, ProductoCanalImportado dato, ResultadoImportacionCanal resultado) {
         validarStockVariantesMercadoLibre(canal, dato);
-        Optional<ProductoVariante> varianteExistente = buscarVarianteExistenteParaProductoIndividual(dato);
+        Optional<ProductoVariante> varianteExistente = buscarVarianteExistenteParaProductoIndividual(canal, dato);
         if (varianteExistente.isPresent()) {
             guardarComoVarianteExistente(canal, dato, varianteExistente.get(), resultado);
             return;
@@ -147,11 +148,14 @@ public class ImportacionCanalService {
                 }
             }
         }
-        if (encontrado.isEmpty() && dato.sku() != null && !dato.sku().isBlank()) encontrado = productoRepository.findBySkuIgnoreCase(dato.sku());
+        if (encontrado.isEmpty() && dato.sku() != null && !dato.sku().isBlank()) {
+            encontrado = productoRepository.findBySkuIgnoreCase(dato.sku())
+                    .filter(producto -> puedeVincularPorSku(canal, dato.idExterno(), producto));
+        }
         boolean nuevo = encontrado.isEmpty();
         Producto producto = encontrado.orElseGet(Producto::new);
         producto.setDescripcion(dato.descripcion());
-        if (dato.sku() != null && !dato.sku().isBlank()) producto.setSku(dato.sku());
+        asignarSkuImportadoSiDisponible(producto, dato.sku());
         producto.setCantidad(Optional.ofNullable(dato.cantidad()).orElse(0));
         if (dato.precio() != null) {
             producto.setPrecioContado(dato.precio());
@@ -170,6 +174,13 @@ public class ImportacionCanalService {
             if (familyId != null && !familyId.isBlank()) producto.setMercadoLibreFamilyId(familyId);
             producto.setMercadoLibreCategoriaId(dato.mercadoLibreCategoriaId());
             aplicarDatosMercadoLibre(producto, dato.datosCanal());
+        } else if (canal == CanalVenta.TIENDANUBE
+                && dato.datosCanal() != null) {
+            if (!tieneTexto(producto.getMercadoLibreMarca())) {
+                producto.setMercadoLibreMarca(texto(dato.datosCanal(), "marca"));
+            }
+            String categoriasOrigen = nombresCategorias(dato.datosCanal().get("categorias"));
+            if (tieneTexto(categoriasOrigen)) producto.setCategoriaOrigen(categoriasOrigen);
         }
         productoService.saveProducto(producto);
         List<VarianteCanalImportada> variantes = dato.variantes();
@@ -191,7 +202,7 @@ public class ImportacionCanalService {
     }
 
     private Optional<ProductoVariante> buscarVarianteExistenteParaProductoIndividual(
-            ProductoCanalImportado dato) {
+            CanalVenta canal, ProductoCanalImportado dato) {
         List<VarianteCanalImportada> variantes = dato.variantes() == null
                 ? List.of()
                 : dato.variantes().stream().filter(Objects::nonNull).toList();
@@ -200,7 +211,24 @@ public class ImportacionCanalService {
         String sku = variantes.isEmpty() ? dato.sku() : variantes.get(0).sku();
         if (normalizarSkuImportado(sku).isBlank()) sku = dato.sku();
         if (normalizarSkuImportado(sku).isBlank()) return Optional.empty();
-        return varianteRepository.findBySkuIgnoreCase(sku.trim());
+        return varianteRepository.findBySkuIgnoreCase(sku.trim())
+                .filter(variante -> variante.getProducto() != null)
+                .filter(variante -> puedeVincularPorSku(
+                        canal, dato.idExterno(), variante.getProducto()));
+    }
+
+    private boolean puedeVincularPorSku(CanalVenta canal, String idExterno, Producto producto) {
+        if (canal == CanalVenta.MERCADO_LIBRE || producto == null || producto.getId() == null) {
+            return true;
+        }
+        return publicacionRepository.findByProductoIdAndCanal(producto.getId(), canal)
+                .map(publicacion -> Objects.equals(
+                        normalizarIdExterno(publicacion.getIdExterno()), normalizarIdExterno(idExterno)))
+                .orElse(true);
+    }
+
+    private String normalizarIdExterno(String id) {
+        return id == null ? "" : id.trim();
     }
 
     private void guardarComoVarianteExistente(CanalVenta canal, ProductoCanalImportado dato,
@@ -368,8 +396,23 @@ public class ImportacionCanalService {
     }
 
     private String texto(Map<String, Object> datos, String clave) {
+        if (datos == null) return null;
         Object valor = datos.get(clave);
         return valor == null ? null : valor.toString();
+    }
+
+    private String nombresCategorias(Object categorias) {
+        if (!(categorias instanceof Collection<?> lista)) return null;
+        return lista.stream().map(categoria -> {
+                    if (categoria instanceof Map<?, ?> mapa) {
+                        Object nombre = mapa.get("nombre");
+                        return nombre == null ? "" : nombre.toString().trim();
+                    }
+                    return "";
+                })
+                .filter(this::tieneTexto)
+                .distinct()
+                .collect(Collectors.joining(" / "));
     }
 
     private void importarVariantes(CanalVenta canal, Producto producto, List<VarianteCanalImportada> datos) {
@@ -432,6 +475,19 @@ public class ImportacionCanalService {
         if (sku == null) return "";
         String normalizado = sku.trim();
         return normalizado.isBlank() || "null".equalsIgnoreCase(normalizado) ? "" : normalizado;
+    }
+
+    private void asignarSkuImportadoSiDisponible(Producto producto, String sku) {
+        String normalizado = normalizarSkuImportado(sku);
+        if (normalizado.isBlank()) return;
+        Optional<Producto> propietario = productoRepository.findBySkuIgnoreCase(normalizado);
+        boolean disponible = propietario.isEmpty() || (producto.getId() != null
+                && Objects.equals(propietario.get().getId(), producto.getId()));
+        if (disponible) producto.setSku(normalizado);
+    }
+
+    private boolean tieneTexto(String valor) {
+        return valor != null && !valor.isBlank();
     }
 
     private List<VarianteCanalImportada> crearPresentacionSimple(Producto producto,

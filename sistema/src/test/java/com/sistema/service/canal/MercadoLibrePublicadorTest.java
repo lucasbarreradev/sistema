@@ -303,6 +303,28 @@ class MercadoLibrePublicadorTest {
     }
 
     @Test
+    void explicaCuandoLaPublicacionPropiaEstaEnRevision() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        MercadoLibrePublicador publicadorConApi = new MercadoLibrePublicador(
+                tokens, new ObjectMapper(), variantes, builder.build());
+
+        servidor.expect(requestTo("https://api.mercadolibre.com/items/MLA3897297956"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess(
+                        "{\"id\":\"MLA3897297956\",\"seller_id\":222,\"status\":\"under_review\","
+                                + "\"sub_status\":[\"held\"]}",
+                        MediaType.APPLICATION_JSON));
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> publicadorConApi.requiereNuevaPublicacion("MLA3897297956", 222L));
+
+        assertTrue(error.getMessage().contains("under_review"));
+        assertTrue(error.getMessage().contains("no creó una publicación duplicada"));
+        servidor.verify();
+    }
+
+    @Test
     void validaElDigitoDeControlDelGtin() {
         assertFalse(publicador.gtinValido("12345678"));
         assertTrue(publicador.gtinValido("7898945080293"));

@@ -16,6 +16,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.text.Normalizer;
+import java.util.Locale;
 
 @Component
 public class TiendanubeImportador implements ImportadorCanal {
@@ -65,6 +67,8 @@ public class TiendanubeImportador implements ImportadorCanal {
         List<Map<String, String>> categorias = mapearCategoriasProducto(
                 p.path("categories"), nombresCategorias);
         if (!categorias.isEmpty()) datos.put("categorias", categorias);
+        String marca = p.path("brand").asText("").trim();
+        if (!marca.isBlank()) datos.put("marca", marca);
         if (p.has("published")) datos.put("estado", p.path("published").asBoolean() ? "active" : "inactive");
         return new ProductoCanalImportado(p.path("id").asText(), variante.path("sku").asText(), nombre,
                 variante.path("stock").asInt(0), decimal(variante.path("price").asText("0")), imagen, null, datos, mapearVariantes(p));
@@ -119,18 +123,49 @@ public class TiendanubeImportador implements ImportadorCanal {
         return resultado;
     }
 
-    private List<VarianteCanalImportada> mapearVariantes(JsonNode producto) {
+    List<VarianteCanalImportada> mapearVariantes(JsonNode producto) {
         List<VarianteCanalImportada> resultado = new ArrayList<>();
-        if (!producto.path("variants").isArray() || producto.path("variants").size() <= 1) return resultado;
+        if (!producto.path("variants").isArray() || producto.path("variants").isEmpty()) return resultado;
+        List<String> nombresAtributos = new ArrayList<>();
+        if (producto.path("attributes").isArray()) {
+            for (JsonNode atributo : producto.path("attributes")) {
+                nombresAtributos.add(localizado(atributo));
+            }
+        }
         for (JsonNode v : producto.path("variants")) {
-            String talle = v.path("values").size() > 0 ? localizado(v.path("values").get(0)) : "";
-            String color = v.path("values").size() > 1 ? localizado(v.path("values").get(1)) : "";
+            List<String> valores = new ArrayList<>();
+            if (v.path("values").isArray()) {
+                for (JsonNode valor : v.path("values")) valores.add(localizado(valor));
+            }
+            Map<String, String> atributos = new LinkedHashMap<>();
+            String talle = "";
+            String color = "";
+            for (int i = 0; i < valores.size(); i++) {
+                String valor = valores.get(i);
+                String nombreAtributo = i < nombresAtributos.size() ? nombresAtributos.get(i) : "";
+                String idMercadoLibre = idAtributoMercadoLibre(nombreAtributo);
+                if ("SIZE".equals(idMercadoLibre)) talle = valor;
+                if ("COLOR".equals(idMercadoLibre)) color = valor;
+                if (idMercadoLibre != null && !valor.isBlank()) atributos.put(idMercadoLibre, valor);
+            }
+            String nombre = valores.stream().filter(valor -> !valor.isBlank())
+                    .collect(java.util.stream.Collectors.joining(" / "));
+            if (nombre.isBlank()) nombre = "Presentación única";
             resultado.add(new VarianteCanalImportada(v.path("id").asText(), v.path("sku").asText(),
-                    String.join(" / ", talle, color).replaceAll("(^ / | / $)", ""), talle, color,
+                    nombre, talle, color,
                     v.path("stock").asInt(0), decimal(v.path("price").asText("0")), v.path("barcode").asText(null), null,
-                    v.path("barcode").asText(null), Map.of(), null, false));
+                    v.path("barcode").asText(null), atributos, null, false));
         }
         return resultado;
+    }
+
+    private String idAtributoMercadoLibre(String nombre) {
+        String normalizado = Normalizer.normalize(nombre == null ? "" : nombre, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .trim().toLowerCase(Locale.ROOT);
+        if (Set.of("color", "cor").contains(normalizado)) return "COLOR";
+        if (Set.of("talle", "talla", "tamano", "size").contains(normalizado)) return "SIZE";
+        return null;
     }
 
     private String localizado(JsonNode nodo) {

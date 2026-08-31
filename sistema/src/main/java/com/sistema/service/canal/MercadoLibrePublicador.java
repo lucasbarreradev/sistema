@@ -193,9 +193,13 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     private void prepararCategoriaPublicable(Producto producto) {
         String categoria = texto(producto.getMercadoLibreCategoriaId(), categoryId);
         if (!categoria.isBlank() && categoriaPermitePublicarConRenovacion(categoria)) return;
-        String predicha = predecirCategoriaConRenovacion(producto.getDescripcion());
+        String consultaCategoria = texto(producto.getDescripcion(), "") + " "
+                + texto(producto.getCategoriaOrigen(), "");
+        String predicha = predecirCategoriaConRenovacion(consultaCategoria.trim());
         if (!tieneTexto(predicha)) {
-            throw new IllegalArgumentException("No se pudo determinar una categoría final de Mercado Libre para el producto");
+            throw new IllegalArgumentException("No se pudo determinar una categoría final de Mercado Libre para \""
+                    + producto.getDescripcion() + "\". Edite el producto y seleccione manualmente la categoría "
+                    + "de Mercado Libre que corresponda.");
         }
         producto.setMercadoLibreCategoriaId(predicha);
     }
@@ -225,8 +229,13 @@ public class MercadoLibrePublicador implements PublicadorCanal {
             }
         }
         if (!faltantes.isEmpty()) {
-            throw new IllegalArgumentException("Complete los campos obligatorios de Mercado Libre: "
-                    + String.join(", ", faltantes));
+            JsonNode categoria = consultarCategoriaConRenovacion(producto.getMercadoLibreCategoriaId());
+            String nombreCategoria = categoria.path("name").asText(producto.getMercadoLibreCategoriaId());
+            throw new IllegalArgumentException("Para publicar \"" + producto.getDescripcion()
+                    + "\" en la categoría " + nombreCategoria + " ("
+                    + producto.getMercadoLibreCategoriaId() + "), complete en Productos > Editar los campos "
+                    + "obligatorios de Mercado Libre: " + String.join(", ", faltantes)
+                    + ". Si esos campos no corresponden al producto, cambie la categoría seleccionada.");
         }
     }
 
@@ -388,9 +397,9 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         try {
             JsonNode item = getMercadoLibreConRenovacion("/items/" + itemId);
             long propietario = item.path("seller_id").asLong(0);
-            return "closed".equalsIgnoreCase(item.path("status").asText())
-                    || propietario <= 0
-                    || propietario != sellerId;
+            if (propietario <= 0 || propietario != sellerId) return true;
+            validarItemNoEsteEnRevision(itemId, item);
+            return "closed".equalsIgnoreCase(item.path("status").asText());
         } catch (RestClientResponseException e) {
             if (e.getStatusCode() == HttpStatus.NOT_FOUND
                     || e.getStatusCode() == HttpStatus.FORBIDDEN) return true;
@@ -431,12 +440,17 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     }
 
     private void actualizarStockConRenovacion(String id, Map<String, Object> body) {
+        validarItemNoEsteEnRevision(id, getMercadoLibreConRenovacion("/items/" + id));
         try {
             actualizarStock(id, body, tokenService.obtenerAccessToken());
         } catch (RestClientResponseException e) {
-            if (e.getStatusCode() != HttpStatus.UNAUTHORIZED) throw e;
+            if (e.getStatusCode() != HttpStatus.UNAUTHORIZED) throw traducirItemNoModificable(e, id);
             tokenService.invalidarAccessToken();
-            actualizarStock(id, body, tokenService.obtenerAccessToken());
+            try {
+                actualizarStock(id, body, tokenService.obtenerAccessToken());
+            } catch (RestClientResponseException reintento) {
+                throw traducirItemNoModificable(reintento, id);
+            }
         }
     }
 
@@ -460,6 +474,8 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         try {
             return publicarItemConRenovacion(payload, id);
         } catch (RestClientResponseException e) {
+            RuntimeException restriccion = traducirItemNoModificable(e, id);
+            if (restriccion != e) throw restriccion;
             if (tieneTexto(id) && payload.containsKey("pictures") && esErrorFotosNoModificables(e)) {
                 return publicarItemConFallbackGtin(prepararReintentoSinFotos(payload), id);
             }
@@ -503,6 +519,35 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         String respuesta = e.getResponseBodyAsString();
         return respuesta != null && respuesta.contains("item.attribute.missing_conditional_required")
                 && respuesta.contains("GTIN");
+    }
+
+    private void validarItemNoEsteEnRevision(String itemId, JsonNode item) {
+        if (!"under_review".equalsIgnoreCase(item.path("status").asText(""))) return;
+        String subestado = item.path("sub_status").isArray()
+                ? java.util.stream.StreamSupport.stream(item.path("sub_status").spliterator(), false)
+                .map(JsonNode::asText).filter(this::tieneTexto)
+                .collect(java.util.stream.Collectors.joining(", "))
+                : item.path("sub_status").asText("");
+        throw errorItemEnRevision(itemId, subestado);
+    }
+
+    private RuntimeException traducirItemNoModificable(RestClientResponseException error, String itemId) {
+        String respuesta = error.getResponseBodyAsString();
+        if (respuesta == null) return error;
+        boolean enRevision = respuesta.contains("under_review");
+        boolean camposBloqueados = respuesta.contains("item.price.not_modifiable")
+                || respuesta.contains("available_quantity is not modifiable")
+                || respuesta.contains("item.attributes.not_modifiable");
+        return enRevision || camposBloqueados ? errorItemEnRevision(itemId, "") : error;
+    }
+
+    private IllegalStateException errorItemEnRevision(String itemId, String subestado) {
+        String detalle = tieneTexto(subestado) ? " (" + subestado + ")" : "";
+        return new IllegalStateException("La publicación " + texto(itemId, "de Mercado Libre")
+                + " está en revisión de Mercado Libre" + detalle
+                + ". Mientras figure como under_review no se pueden sincronizar precio, stock ni atributos. "
+                + "Revise la moderación en Mercado Libre y vuelva a sincronizar cuando la publicación quede activa "
+                + "o pausada. El sistema no creó una publicación duplicada.");
     }
 
     private JsonNode publicarItem(Map<String, Object> body, String id, String token) {

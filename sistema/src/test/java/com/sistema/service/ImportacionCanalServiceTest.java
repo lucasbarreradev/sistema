@@ -307,6 +307,44 @@ class ImportacionCanalServiceTest {
         verify(productoService, never()).saveProducto(duplicado);
     }
 
+    @Test
+    void noPisaOtroProductoDelMismoCanalAunqueRepitaElSku() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        ProductoService productoService = mock(ProductoService.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        ProductoVarianteRepository variantesRepo = mock(ProductoVarianteRepository.class);
+        ImportadorCanal importador = mock(ImportadorCanal.class);
+        Producto existente = new Producto();
+        existente.setId(10L);
+        existente.setSku("SKU-REPETIDO");
+        existente.setDescripcion("Producto anterior");
+        PublicacionCanal vinculoAnterior = new PublicacionCanal();
+        vinculoAnterior.setProducto(existente);
+        vinculoAnterior.setCanal(CanalVenta.TIENDANUBE);
+        vinculoAnterior.setIdExterno("TN-1");
+        when(importador.canal()).thenReturn(CanalVenta.TIENDANUBE);
+        when(importador.configurado()).thenReturn(true);
+        when(productos.findBySkuIgnoreCase("SKU-REPETIDO")).thenReturn(Optional.of(existente));
+        when(publicaciones.findByProductoIdAndCanal(10L, CanalVenta.TIENDANUBE))
+                .thenReturn(Optional.of(vinculoAnterior));
+
+        ProductoCanalImportado remoto = new ProductoCanalImportado(
+                "TN-2", "SKU-REPETIDO", "Producto distinto", 2, BigDecimal.TEN,
+                null, null, Map.of(), List.of());
+        ImportacionCanalService service = new ImportacionCanalService(
+                productos, productoService, publicaciones, List.of(importador), variantesRepo,
+                mock(ProductoVarianteService.class), new com.fasterxml.jackson.databind.ObjectMapper());
+
+        ResultadoImportacionCanal resultado = service.importar(
+                CanalVenta.TIENDANUBE, List.of(remoto));
+
+        assertEquals(1, resultado.getCreados());
+        assertEquals("Producto anterior", existente.getDescripcion());
+        verify(productoService).saveProducto(argThat(producto -> producto != existente
+                && "Producto distinto".equals(producto.getDescripcion())
+                && producto.getSku() == null));
+    }
+
     private AtributoVarianteMl atributo(String id, String nombre) {
         return new AtributoVarianteMl(id, nombre, "string", List.of(), List.of(), "", true);
     }
