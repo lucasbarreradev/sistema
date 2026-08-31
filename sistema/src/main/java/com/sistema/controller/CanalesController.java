@@ -21,6 +21,10 @@ import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.util.List;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.data.domain.PageRequest;
@@ -84,9 +88,7 @@ public class CanalesController {
         model.addAttribute("publicaciones", publicacionService.historial());
         List<TrabajoSincronizacion> trabajos = trabajoSincronizacionService.ultimos();
         model.addAttribute("trabajosSincronizacion", trabajos);
-        TrabajoSincronizacion ultimoTrabajo = trabajos.isEmpty() ? null : trabajos.get(0);
-        model.addAttribute("ultimaSincronizacion", ultimoTrabajo);
-        model.addAttribute("erroresUltimaSincronizacion", mapearErrores(ultimoTrabajo));
+        model.addAttribute("erroresSincronizacionPorTrabajo", mapearErrores(trabajos));
         model.addAttribute("sincronizacionActiva", trabajoSincronizacionService.hayTrabajoActivo());
         boolean mercadoLibreConectado = mercadoLibreTokenService.conectado();
         model.addAttribute("mercadoLibreConectado", mercadoLibreConectado);
@@ -114,6 +116,22 @@ public class CanalesController {
     }
 
     List<ErrorSincronizacionDto> mapearErrores(TrabajoSincronizacion trabajo) {
+        return mapearErrores(trabajo, new HashMap<>());
+    }
+
+    private Map<Long, List<ErrorSincronizacionDto>> mapearErrores(List<TrabajoSincronizacion> trabajos) {
+        Map<Long, List<ErrorSincronizacionDto>> resultado = new LinkedHashMap<>();
+        Map<String, Optional<Long>> productosPorSku = new HashMap<>();
+        for (TrabajoSincronizacion trabajo : trabajos) {
+            if (trabajo.getId() != null) {
+                resultado.put(trabajo.getId(), mapearErrores(trabajo, productosPorSku));
+            }
+        }
+        return resultado;
+    }
+
+    private List<ErrorSincronizacionDto> mapearErrores(
+            TrabajoSincronizacion trabajo, Map<String, Optional<Long>> productosPorSku) {
         if (trabajo == null || trabajo.getDetalle() == null || trabajo.getDetalle().isBlank()) return List.of();
         List<ErrorSincronizacionDto> resultado = new ArrayList<>();
         trabajo.getDetalle().lines().map(String::trim).filter(linea -> !linea.isBlank()).forEach(linea -> {
@@ -121,7 +139,8 @@ public class CanalesController {
             String referencia = error.matches() ? error.group(1).trim() : referenciaGenerica(linea);
             String canal = error.matches() ? error.group(2).trim() : "";
             String mensaje = error.matches() ? error.group(3).trim() : mensajeGenerico(linea);
-            Long productoId = productoService.getProductoBySku(referencia).map(p -> p.getId()).orElse(null);
+            Long productoId = productosPorSku.computeIfAbsent(referencia,
+                    sku -> productoService.getProductoBySku(sku).map(p -> p.getId())).orElse(null);
             resultado.add(new ErrorSincronizacionDto(
                     referencia, canal, mensaje, correcciones(mensaje), productoId));
         });
