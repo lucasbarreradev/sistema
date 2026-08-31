@@ -281,12 +281,17 @@ public class MercadoLibrePublicador implements PublicadorCanal {
             if (inferido == null && "MODEL".equals(id)) {
                 inferido = atributoConNombre(id, modeloAutomatico(producto, definicion));
             }
+            if (inferido == null && "MANUFACTURER".equals(id)) {
+                inferido = atributoConNombre(id, texto(producto.getMercadoLibreMarca(), "Genérica"));
+            }
+            if (inferido == null && "COLLECTION_NAME".equals(id)) {
+                inferido = atributoConNombre(id, nombrePublicacion(producto));
+            }
             if (inferido == null && "EMPTY_GTIN_REASON".equals(id)) {
                 inferido = primerValorPermitido(id, definicion);
             }
-            if (inferido == null && !Set.of("GTIN", "SIZE_GRID_ID", "SIZE_GRID_ROW_ID")
-                    .contains(id)) {
-                inferido = atributoNoAplica(id);
+            if (inferido == null && "boolean".equals(definicion.path("value_type").asText())) {
+                inferido = valorBooleanoNegativo(id, definicion);
             }
             if (inferido == null) continue;
             adicionales.put(id, inferido);
@@ -338,9 +343,12 @@ public class MercadoLibrePublicador implements PublicadorCanal {
                 .replaceFirst("^(con|tiene|incluye) ", "");
         if ("boolean".equals(definicion.path("value_type").asText())
                 && !concepto.isBlank() && normalizado.contains(" " + concepto + " ")) {
+            boolean negado = normalizado.contains(" sin " + concepto + " ")
+                    || normalizado.contains(" no " + concepto + " ");
             for (JsonNode valor : definicion.path("values")) {
                 String nombre = normalizarTextoBusqueda(valor.path("name").asText(""));
-                if (Set.of("si", "yes", "true").contains(nombre)) return atributoConValor(id, valor);
+                if (negado && Set.of("no", "false").contains(nombre)) return atributoConValor(id, valor);
+                if (!negado && Set.of("si", "yes", "true").contains(nombre)) return atributoConValor(id, valor);
             }
         }
         if (id.contains("YEAR")) {
@@ -366,6 +374,14 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         atributo.put("id", id);
         atributo.put("value_name", nombre);
         return atributo;
+    }
+
+    private Map<String, Object> valorBooleanoNegativo(String id, JsonNode definicion) {
+        for (JsonNode valor : definicion.path("values")) {
+            String nombre = normalizarTextoBusqueda(valor.path("name").asText(""));
+            if (Set.of("no", "false").contains(nombre)) return atributoConValor(id, valor);
+        }
+        return atributoConNombre(id, "No");
     }
 
     private String modeloAutomatico(Producto producto, JsonNode definicion) {
@@ -394,14 +410,6 @@ public class MercadoLibrePublicador implements PublicadorCanal {
             }
         }
         return primero == null ? null : atributoConValor(id, primero);
-    }
-
-    private Map<String, Object> atributoNoAplica(String id) {
-        Map<String, Object> atributo = new LinkedHashMap<>();
-        atributo.put("id", id);
-        atributo.put("value_id", "-1");
-        atributo.put("value_name", null);
-        return atributo;
     }
 
     private String nombreValor(JsonNode definicion, String valueId) {
@@ -746,10 +754,9 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         Map<String, Object> body = construirPayload(producto, nuevaPublicacion);
         body.remove("title");
         body.remove("variations");
-        if (nuevaPublicacion) body.put("family_name", producto.getDescripcion());
+        if (nuevaPublicacion) body.put("family_name", nombrePublicacion(producto));
         else body.remove("family_name");
-        body.put("price", Optional.ofNullable(variante.getPrecioContado())
-                .orElse(producto.getPrecioContado()));
+        body.put("price", precioVariantePublicacion(producto, variante));
         body.put("available_quantity", Optional.ofNullable(variante.getStock()).orElse(0));
         body.put("attributes", construirAtributosUserProduct(producto, variante, filaGuia));
         List<Map<String, String>> fotos = construirFotos(variante, producto);
@@ -881,7 +888,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         // En el modelo User Products, family_name se envía solamente al crear. Mercado Libre
         // rechaza ese campo dentro del PUT /items; su modificación usa un recurso separado.
         if (nuevaPublicacion) {
-            body.put(userProducts && variantes.isEmpty() ? "family_name" : "title", producto.getDescripcion());
+            body.put(userProducts && variantes.isEmpty() ? "family_name" : "title", nombrePublicacion(producto));
         } else if (!userProducts) {
             body.put("title", producto.getDescripcion());
         }
@@ -948,9 +955,36 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     }
 
     private java.math.BigDecimal precioPublicacion(Producto producto, List<ProductoVariante> variantes) {
-        if (producto.getPrecioContado() != null) return producto.getPrecioContado();
-        return variantes.stream().map(ProductoVariante::getPrecioContado).filter(Objects::nonNull).findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("El producto y sus variantes no tienen precio de contado"));
+        if (precioPositivo(producto.getPrecioContado())) return producto.getPrecioContado();
+        return variantes.stream().map(ProductoVariante::getPrecioContado).filter(this::precioPositivo).findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Ingrese un precio de contado mayor a cero antes de publicar en Mercado Libre"));
+    }
+
+    private java.math.BigDecimal precioVariantePublicacion(Producto producto, ProductoVariante variante) {
+        java.math.BigDecimal precio = precioPositivo(variante.getPrecioContado())
+                ? variante.getPrecioContado() : producto.getPrecioContado();
+        if (!precioPositivo(precio)) {
+            throw new IllegalArgumentException("Ingrese un precio de contado mayor a cero para la variante "
+                    + variante.getNombreMostrar() + " antes de publicar en Mercado Libre");
+        }
+        return precio;
+    }
+
+    private boolean precioPositivo(java.math.BigDecimal precio) {
+        return precio != null && precio.signum() > 0;
+    }
+
+    private String nombrePublicacion(Producto producto) {
+        LinkedHashSet<String> partes = new LinkedHashSet<>();
+        for (String parte : List.of(texto(producto.getDescripcion(), ""),
+                texto(producto.getMercadoLibreMarca(), ""), texto(producto.getMercadoLibreModelo(), ""),
+                texto(producto.getCategoriaOrigen(), ""))) {
+            if (!parte.isBlank()) partes.add(parte.trim());
+        }
+        String nombre = String.join(" ", partes).replaceAll("\\s+", " ").trim();
+        if (nombre.isBlank()) nombre = texto(producto.getSku(), "Producto");
+        if (nombre.length() < 12) nombre = nombre + " producto nuevo";
+        return nombre.substring(0, Math.min(nombre.length(), 60)).trim();
     }
 
     private List<Map<String, Object>> construirVariaciones(List<ProductoVariante> variantes,

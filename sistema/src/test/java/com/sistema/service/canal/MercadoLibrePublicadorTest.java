@@ -241,7 +241,7 @@ class MercadoLibrePublicadorTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void completaMarcaModeloYMarcaNoAplicaSoloDondeCorresponde() throws Exception {
+    void completaMarcaModeloYColeccionSinUsarNoAplica() throws Exception {
         Producto producto = productoBase();
         JsonNode definiciones = new ObjectMapper().readTree("""
                 [
@@ -260,8 +260,7 @@ class MercadoLibrePublicadorTest {
         assertTrue(atributos.stream().anyMatch(a -> "MODEL".equals(a.get("id"))
                 && "Producto de prueba".equals(a.get("value_name"))));
         assertTrue(atributos.stream().anyMatch(a -> "COLLECTION_NAME".equals(a.get("id"))
-                && "-1".equals(a.get("value_id")) && a.containsKey("value_name")
-                && a.get("value_name") == null));
+                && "Producto de prueba".equals(a.get("value_name"))));
         assertTrue(atributos.stream().anyMatch(a -> "EMPTY_GTIN_REASON".equals(a.get("id"))));
     }
 
@@ -284,6 +283,117 @@ class MercadoLibrePublicadorTest {
 
         assertTrue(atributos.stream().anyMatch(a -> "WITH_USB".equals(a.get("id"))
                 && "242085".equals(a.get("value_id"))));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void completaComoNoUnBooleanoObligatorioQueNoFiguraEnElProducto() throws Exception {
+        Producto producto = productoBase();
+        JsonNode definiciones = new ObjectMapper().readTree("""
+                [{
+                  "id":"WITH_USB","name":"Con USB","value_type":"boolean",
+                  "tags":{"catalog_required":true},
+                  "values":[{"id":"242085","name":"Sí"},{"id":"242084","name":"No"}]
+                }]
+                """);
+
+        publicador.autocompletarAtributosObligatorios(producto, List.of(), definiciones);
+        List<Map<String, Object>> atributos = (List<Map<String, Object>>)
+                publicador.construirPayload(producto, true).get("attributes");
+
+        assertTrue(atributos.stream().anyMatch(a -> "WITH_USB".equals(a.get("id"))
+                && "242084".equals(a.get("value_id"))));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void interpretaSinUsbComoNo() throws Exception {
+        Producto producto = productoBase();
+        producto.setDescripcion("Lámpara decorativa sin USB");
+        JsonNode definiciones = new ObjectMapper().readTree("""
+                [{
+                  "id":"WITH_USB","name":"Con USB","value_type":"boolean",
+                  "tags":{"catalog_required":true},
+                  "values":[{"id":"242085","name":"Sí"},{"id":"242084","name":"No"}]
+                }]
+                """);
+
+        publicador.autocompletarAtributosObligatorios(producto, List.of(), definiciones);
+        List<Map<String, Object>> atributos = (List<Map<String, Object>>)
+                publicador.construirPayload(producto, true).get("attributes");
+
+        assertTrue(atributos.stream().anyMatch(a -> "WITH_USB".equals(a.get("id"))
+                && "242084".equals(a.get("value_id"))));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void completaFabricanteGenericoSinUsarNoAplica() throws Exception {
+        Producto producto = productoBase();
+        JsonNode definiciones = new ObjectMapper().readTree("""
+                [{"id":"MANUFACTURER","name":"Fabricante","value_type":"string",
+                  "tags":{"catalog_required":true}}]
+                """);
+
+        publicador.autocompletarAtributosObligatorios(producto, List.of(), definiciones);
+        List<Map<String, Object>> atributos = (List<Map<String, Object>>)
+                publicador.construirPayload(producto, true).get("attributes");
+
+        assertTrue(atributos.stream().anyMatch(a -> "MANUFACTURER".equals(a.get("id"))
+                && "Genérica".equals(a.get("value_name"))));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void noMarcaNoAplicaEnUnObligatorioQueMercadoLibreDebeValidar() throws Exception {
+        Producto producto = productoBase();
+        JsonNode definiciones = new ObjectMapper().readTree("""
+                [{"id":"ORIGIN","name":"Origen","value_type":"list",
+                  "tags":{"required":true},"values":[{"id":"1","name":"Nacional"}]}]
+                """);
+
+        publicador.autocompletarAtributosObligatorios(producto, List.of(), definiciones);
+        List<Map<String, Object>> atributos = (List<Map<String, Object>>)
+                publicador.construirPayload(producto, true).get("attributes");
+
+        assertFalse(atributos.stream().anyMatch(a -> "ORIGIN".equals(a.get("id"))));
+    }
+
+    @Test
+    void limitaFamilyNameASesentaCaracteres() {
+        ReflectionTestUtils.setField(publicador, "userProducts", true);
+        Producto producto = productoBase();
+        producto.setDescripcion("Manta tejida artesanal decorativa de algodón con flecos para sillón y dormitorio");
+
+        Map<String, Object> payload = publicador.construirPayload(producto, true);
+
+        assertEquals(60, payload.get("family_name").toString().length());
+    }
+
+    @Test
+    void usaUnaVarianteConPrecioPositivoSiElPrecioGeneralEsCero() {
+        Producto producto = productoBase();
+        producto.setId(10L);
+        producto.setPrecioContado(BigDecimal.ZERO);
+        ProductoVariante variante = new ProductoVariante();
+        variante.setProducto(producto);
+        variante.setPrecioContado(new BigDecimal("2500"));
+        when(variantes.findByProductoIdOrderByNombreAsc(10L)).thenReturn(List.of(variante));
+
+        Map<String, Object> payload = publicador.construirPayload(producto, true);
+
+        assertEquals(new BigDecimal("2500"), payload.get("price"));
+    }
+
+    @Test
+    void rechazaPrecioCeroAntesDeEnviarAMercadoLibre() {
+        Producto producto = productoBase();
+        producto.setPrecioContado(BigDecimal.ZERO);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> publicador.construirPayload(producto, true));
+
+        assertTrue(error.getMessage().contains("mayor a cero"));
     }
 
     @Test

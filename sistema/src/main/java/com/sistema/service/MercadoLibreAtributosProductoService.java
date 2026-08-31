@@ -38,7 +38,9 @@ public class MercadoLibreAtributosProductoService {
                     || "CHILD_PK".equals(atributo.path("hierarchy").asText());
             boolean productoConVariantes = Boolean.TRUE.equals(producto.getUsaVariantes());
             boolean obligatorio = tags.path("required").asBoolean(false)
+                    || tags.path("new_required").asBoolean(false)
                     || tags.path("catalog_required").asBoolean(false)
+                    || tags.path("catalog_listing_required").asBoolean(false)
                     || ("LOAD_INDEX".equals(id) && !productoConVariantes);
             if ((!obligatorio && !motivoGtin)
                     || tags.path("read_only").asBoolean(false)
