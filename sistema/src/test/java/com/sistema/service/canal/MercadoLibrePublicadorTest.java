@@ -241,12 +241,12 @@ class MercadoLibrePublicadorTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void completaComoNoAplicaLosObligatoriosQueNoPuedeInferir() throws Exception {
+    void completaMarcaModeloYMarcaNoAplicaSoloDondeCorresponde() throws Exception {
         Producto producto = productoBase();
         JsonNode definiciones = new ObjectMapper().readTree("""
                 [
-                  {"id":"BRAND","name":"Marca","value_type":"string","tags":{"required":true}},
-                  {"id":"MODEL","name":"Modelo","value_type":"string","tags":{"required":true}},
+                  {"id":"BRAND","name":"Marca","value_type":"string","tags":{"catalog_required":true}},
+                  {"id":"MODEL","name":"Modelo","value_type":"string","tags":{"catalog_listing_required":true}},
                   {"id":"COLLECTION_NAME","name":"Nombre de la colección","value_type":"string","tags":{"required":true}}
                 ]
                 """);
@@ -255,9 +255,14 @@ class MercadoLibrePublicadorTest {
         List<Map<String, Object>> atributos = (List<Map<String, Object>>)
                 publicador.construirPayload(producto, true).get("attributes");
 
-        assertTrue(atributos.stream().filter(a -> Set.of("BRAND", "MODEL", "COLLECTION_NAME").contains(a.get("id")))
-                .allMatch(a -> "-1".equals(a.get("value_id")) && a.containsKey("value_name")
-                        && a.get("value_name") == null));
+        assertTrue(atributos.stream().anyMatch(a -> "BRAND".equals(a.get("id"))
+                && "Genérica".equals(a.get("value_name"))));
+        assertTrue(atributos.stream().anyMatch(a -> "MODEL".equals(a.get("id"))
+                && "Producto de prueba".equals(a.get("value_name"))));
+        assertTrue(atributos.stream().anyMatch(a -> "COLLECTION_NAME".equals(a.get("id"))
+                && "-1".equals(a.get("value_id")) && a.containsKey("value_name")
+                && a.get("value_name") == null));
+        assertTrue(atributos.stream().anyMatch(a -> "EMPTY_GTIN_REASON".equals(a.get("id"))));
     }
 
     @Test

@@ -224,7 +224,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
                 .filter(id -> !id.isBlank()).collect(java.util.stream.Collectors.toSet());
         List<String> faltantes = new ArrayList<>();
         for (JsonNode definicion : definiciones) {
-            if (!definicion.path("tags").path("required").asBoolean(false)) continue;
+            if (!esObligatorio(definicion)) continue;
             String id = definicion.path("id").asText("");
             boolean presenteEnVariantes = !variantes.isEmpty() && variantes.stream()
                     .allMatch(v -> AtributosVarianteHelper.obtener(v).containsKey(id));
@@ -275,6 +275,12 @@ public class MercadoLibrePublicador implements PublicadorCanal {
                 }
                 continue;
             }
+            if (inferido == null && "BRAND".equals(id)) {
+                inferido = atributoConNombre(id, "Genérica");
+            }
+            if (inferido == null && "MODEL".equals(id)) {
+                inferido = atributoConNombre(id, modeloAutomatico(producto, definicion));
+            }
             if (inferido == null && "EMPTY_GTIN_REASON".equals(id)) {
                 inferido = primerValorPermitido(id, definicion);
             }
@@ -287,13 +293,27 @@ public class MercadoLibrePublicador implements PublicadorCanal {
             presentesProducto.add(id);
             cambio = true;
         }
+        boolean sinGtin = !tieneTexto(producto.getMercadoLibreGtin()) && variantes.stream()
+                .noneMatch(variante -> tieneTexto(variante.getMercadoLibreGtin()));
+        if (sinGtin && !presentesProducto.contains("EMPTY_GTIN_REASON")) {
+            JsonNode definicionMotivo = buscarDefinicion(definiciones, "EMPTY_GTIN_REASON");
+            Map<String, Object> motivo = definicionMotivo == null
+                    ? atributoConNombre("EMPTY_GTIN_REASON", "El producto no tiene código registrado")
+                    : primerValorPermitido("EMPTY_GTIN_REASON", definicionMotivo);
+            if (motivo != null) {
+                adicionales.put("EMPTY_GTIN_REASON", motivo);
+                cambio = true;
+            }
+        }
         if (cambio) guardarAtributosAdicionales(producto, adicionales);
     }
 
     private boolean esObligatorio(JsonNode definicion) {
         JsonNode tags = definicion.path("tags");
         return tags.path("required").asBoolean(false)
-                || tags.path("new_required").asBoolean(false);
+                || tags.path("new_required").asBoolean(false)
+                || tags.path("catalog_required").asBoolean(false)
+                || tags.path("catalog_listing_required").asBoolean(false);
     }
 
     private Map<String, Object> inferirAtributo(Producto producto, JsonNode definicion) {
@@ -346,6 +366,21 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         atributo.put("id", id);
         atributo.put("value_name", nombre);
         return atributo;
+    }
+
+    private String modeloAutomatico(Producto producto, JsonNode definicion) {
+        String modelo = texto(producto.getDescripcion(), producto.getSku());
+        if (modelo.isBlank()) modelo = "Modelo genérico";
+        int maximo = definicion.path("value_max_length").asInt(255);
+        if (maximo <= 0) maximo = 255;
+        return modelo.substring(0, Math.min(modelo.length(), maximo));
+    }
+
+    private JsonNode buscarDefinicion(JsonNode definiciones, String id) {
+        for (JsonNode definicion : definiciones) {
+            if (id.equals(definicion.path("id").asText(""))) return definicion;
+        }
+        return null;
     }
 
     private Map<String, Object> primerValorPermitido(String id, JsonNode definicion) {
@@ -739,6 +774,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         }
         agregarAtributo(atributos, "SELLER_SKU", null, variante.getSku());
         if (tieneTexto(variante.getMercadoLibreGtin())) {
+            atributos.remove("EMPTY_GTIN_REASON");
             agregarAtributo(atributos, "GTIN", null, variante.getMercadoLibreGtin());
         }
         AtributosVarianteHelper.obtener(variante).forEach((id, valor) ->
