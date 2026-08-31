@@ -28,6 +28,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     private final ObjectMapper objectMapper;
     private final ProductoVarianteRepository varianteRepository;
     private final Map<String, Set<String>> atributosSoloLecturaPorCategoria = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, Set<String>> nombresAtributosPorCategoria = new java.util.concurrent.ConcurrentHashMap<>();
     @Value("${integraciones.mercadolibre.category-id:}") private String categoryId;
     @Value("${integraciones.mercadolibre.listing-type-id:gold_special}") private String listingTypeId;
     @Value("${integraciones.mercadolibre.user-products:true}") private boolean userProducts;
@@ -59,7 +60,6 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         long sellerId = obtenerSellerIdActual();
         prepararGuiaTallesParaCuentaConectada(producto, variantes);
         if (debePublicarVariantesComoUserProducts(variantes, idActual, producto)) {
-            validarFotosDeVariantesVisuales(producto, variantes);
             return publicarVariantesComoUserProducts(producto, variantes, sellerId);
         }
         String id = resolverId(producto, idActual);
@@ -210,12 +210,15 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         if (!definiciones.isArray()) return;
         autocompletarAtributosObligatorios(producto, variantes, definiciones);
         Set<String> soloLectura = new LinkedHashSet<>();
+        Set<String> nombresAtributos = new LinkedHashSet<>();
         for (JsonNode definicion : definiciones) {
+            nombresAtributos.add(normalizarTextoBusqueda(definicion.path("name").asText("")));
             if (definicion.path("tags").path("read_only").asBoolean(false)) {
                 soloLectura.add(definicion.path("id").asText(""));
             }
         }
         atributosSoloLecturaPorCategoria.put(producto.getMercadoLibreCategoriaId(), Set.copyOf(soloLectura));
+        nombresAtributosPorCategoria.put(producto.getMercadoLibreCategoriaId(), Set.copyOf(nombresAtributos));
         Set<String> presentesProducto = construirAtributos(producto).stream()
                 .map(a -> Objects.toString(a.get("id"), ""))
                 .filter(id -> !id.isBlank()).collect(java.util.stream.Collectors.toSet());
@@ -499,54 +502,6 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         boolean esPublicacionLegacy = variantes.stream().anyMatch(v -> tieneTexto(v.getMercadoLibreVariationId()));
         boolean noTienePublicacion = resolverId(producto, idActual) == null;
         return yaTieneItemsPorVariante || (noTienePublicacion && !esPublicacionLegacy);
-    }
-
-    void validarFotosDeVariantesVisuales(Producto producto, List<ProductoVariante> variantes) {
-        Map<String, List<ProductoVariante>> porFoto = new LinkedHashMap<>();
-        for (ProductoVariante variante : variantes) {
-            String firmaVisual = firmaVisual(variante);
-            if (firmaVisual.isBlank()) continue;
-            String firmaFoto = firmaFoto(variante, producto);
-            porFoto.computeIfAbsent(firmaFoto, ignorada -> new ArrayList<>()).add(variante);
-        }
-        for (List<ProductoVariante> grupo : porFoto.values()) {
-            Set<String> aspectos = new LinkedHashSet<>();
-            grupo.forEach(v -> aspectos.add(firmaVisual(v)));
-            if (aspectos.size() > 1) {
-                String nombres = grupo.stream().map(ProductoVariante::getNombreMostrar)
-                        .filter(Objects::nonNull).limit(4).reduce((a, b) -> a + ", " + b).orElse("variantes");
-                throw new IllegalArgumentException("Las variantes " + nombres
-                        + " cambian de color, diseño o piedra, pero usan la misma foto. "
-                        + "Cargue una imagen que corresponda a cada variante antes de publicar en Mercado Libre.");
-            }
-        }
-    }
-
-    private String firmaVisual(ProductoVariante variante) {
-        return AtributosVarianteHelper.obtener(variante).entrySet().stream()
-                .filter(e -> esAtributoVisual(e.getKey()))
-                .sorted(Map.Entry.comparingByKey())
-                .map(e -> e.getKey().toUpperCase(Locale.ROOT) + "=" + normalizarTexto(e.getValue()))
-                .reduce((a, b) -> a + "|" + b).orElse("");
-    }
-
-    private boolean esAtributoVisual(String id) {
-        String valor = id == null ? "" : id.toUpperCase(Locale.ROOT);
-        return valor.contains("COLOR") || valor.contains("DESIGN") || valor.contains("PATTERN")
-                || valor.contains("GEMSTONE") || valor.contains("STONE_TYPE");
-    }
-
-    private String firmaFoto(ProductoVariante variante, Producto producto) {
-        if (variante.tieneFotoLocal()) return "LOCAL:" + Arrays.hashCode(variante.getFotoContenido());
-        if (tieneTexto(variante.getFotoUrlExterna())) return "URL:" + variante.getFotoUrlExterna().trim();
-        if (producto.tieneFotoLocal()) return "GENERAL_LOCAL:" + Arrays.hashCode(producto.getFotoContenido());
-        String externas = texto(producto.getFotoUrlExterna(), "") + "\n"
-                + texto(producto.getFotosUrlsExternas(), "");
-        return "GENERAL_URL:" + externas.trim();
-    }
-
-    private String normalizarTexto(String valor) {
-        return valor == null ? "" : valor.trim().toUpperCase(Locale.ROOT);
     }
 
     private ResultadoPublicacion publicarVariantesComoUserProducts(Producto producto,
@@ -964,24 +919,35 @@ public class MercadoLibrePublicador implements PublicadorCanal {
 
     private List<Map<String, Object>> construirVariaciones(List<ProductoVariante> variantes,
                                                             Map<Long, FilaGuiaAsignada> filasGuia) {
-        Set<String> idsEsperados = new LinkedHashSet<>(AtributosVarianteHelper.obtener(variantes.get(0)).keySet());
-        return variantes.stream().map(variante -> {
+        List<Map<String, String>> atributosPorVariante = variantes.stream()
+                .map(variante -> Map.<String, String>copyOf(AtributosVarianteHelper.obtener(variante)))
+                .toList();
+        Set<String> idsEsperados = new LinkedHashSet<>(atributosPorVariante.get(0).keySet());
+        boolean usarPresentacionPersonalizada = idsEsperados.isEmpty()
+                || atributosPorVariante.stream().anyMatch(atributos -> !atributos.keySet().equals(idsEsperados))
+                || atributosPorVariante.stream().map(this::firmaAtributosVariacion).distinct().count()
+                != atributosPorVariante.size();
+        Set<String> etiquetasUsadas = new LinkedHashSet<>();
+        String nombrePresentacion = nombreAtributoPersonalizado(variantes.get(0).getProducto());
+        List<Map<String, Object>> resultado = new ArrayList<>();
+        for (int indice = 0; indice < variantes.size(); indice++) {
+            ProductoVariante variante = variantes.get(indice);
             List<Map<String, Object>> combinaciones = new ArrayList<>();
-            Map<String, String> atributosImportados = new LinkedHashMap<>(AtributosVarianteHelper.obtener(variante));
-            if (!atributosImportados.keySet().equals(idsEsperados)) {
-                throw new IllegalArgumentException("Todas las variantes deben completar las mismas características. Revise "
-                        + variante.getNombreMostrar());
-            }
+            Map<String, String> atributosImportados = new LinkedHashMap<>(atributosPorVariante.get(indice));
             FilaGuiaAsignada filaGuia = variante.getId() == null ? null : filasGuia.get(variante.getId());
             if (filaGuia != null && tieneTexto(filaGuia.tallePrincipal())) {
                 atributosImportados.put("SIZE", filaGuia.tallePrincipal());
             }
-            atributosImportados.forEach((id, valor) -> {
-                if (!esSoloLectura(variante.getProducto(), id) && !esAtributoGuiaImportado(id)) {
-                    combinaciones.add(Map.of("id", id, "value_name", valor));
-                }
-            });
-            if (combinaciones.isEmpty()) throw new IllegalArgumentException("La variante " + variante.getSku() + " no tiene atributos de variación");
+            if (usarPresentacionPersonalizada) {
+                combinaciones.add(Map.of("name", nombrePresentacion,
+                        "value_name", etiquetaPresentacion(variante, indice, etiquetasUsadas)));
+            } else {
+                atributosImportados.forEach((id, valor) -> {
+                    if (!esSoloLectura(variante.getProducto(), id) && !esAtributoGuiaImportado(id)) {
+                        combinaciones.add(Map.of("id", id, "value_name", valor));
+                    }
+                });
+            }
             Map<String, Object> json = new LinkedHashMap<>();
             if (variante.getMercadoLibreVariationId() != null && !variante.getMercadoLibreVariationId().isBlank())
                 json.put("id", variante.getMercadoLibreVariationId());
@@ -998,8 +964,40 @@ public class MercadoLibrePublicador implements PublicadorCanal {
                 atributosPropios.add(Map.of("id", "SIZE_GRID_ROW_ID", "value_name", filaGuia.id()));
             }
             json.put("attributes", atributosPropios);
-            return json;
-        }).toList();
+            resultado.add(json);
+        }
+        return resultado;
+    }
+
+    private String firmaAtributosVariacion(Map<String, String> atributos) {
+        return atributos.entrySet().stream().sorted(Map.Entry.comparingByKey())
+                .map(entrada -> entrada.getKey() + "=" + entrada.getValue())
+                .collect(java.util.stream.Collectors.joining("|"));
+    }
+
+    private String nombreAtributoPersonalizado(Producto producto) {
+        Set<String> existentes = nombresAtributosPorCategoria.getOrDefault(
+                producto == null ? "" : texto(producto.getMercadoLibreCategoriaId(), ""), Set.of());
+        for (String candidato : List.of("Presentación", "Opción", "Variante", "Código de presentación")) {
+            if (!existentes.contains(normalizarTextoBusqueda(candidato))) return candidato;
+        }
+        return "Opción del vendedor";
+    }
+
+    private String etiquetaPresentacion(ProductoVariante variante, int indice,
+                                         Set<String> usadas) {
+        String base = texto(variante.getNombreMostrar(), variante.getSku());
+        if (base.isBlank()) base = "Presentación " + (indice + 1);
+        String etiqueta = base.length() > 100 ? base.substring(0, 100) : base;
+        if (usadas.add(etiqueta.toLowerCase(Locale.ROOT))) return etiqueta;
+        String sufijo = texto(variante.getSku(), String.valueOf(indice + 1));
+        int maximoBase = Math.max(1, 97 - Math.min(sufijo.length(), 50));
+        etiqueta = base.substring(0, Math.min(base.length(), maximoBase)) + " - " + sufijo;
+        int repeticion = 2;
+        while (!usadas.add(etiqueta.toLowerCase(Locale.ROOT))) {
+            etiqueta = base.substring(0, Math.min(base.length(), 90)) + " - " + repeticion++;
+        }
+        return etiqueta;
     }
 
     private record FilaGuiaAsignada(String id, String tallePrincipal) {}

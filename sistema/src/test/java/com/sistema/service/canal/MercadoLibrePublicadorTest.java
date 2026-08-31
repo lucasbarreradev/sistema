@@ -407,26 +407,39 @@ class MercadoLibrePublicadorTest {
     }
 
     @Test
-    void rechazaLaMismaFotoParaVariantesDeDistintoColor() {
+    void permiteLaMismaFotoParaVariantesDeDistintoColor() {
         Producto producto = productoBase();
         ProductoVariante naranja = varianteVisual(producto, "Naranja", "foto-igual");
         ProductoVariante coral = varianteVisual(producto, "Coral", "foto-igual");
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> publicador.validarFotosDeVariantesVisuales(producto, List.of(naranja, coral)));
-
-        assertTrue(error.getMessage().contains("misma foto"));
+        assertDoesNotThrow(() -> publicador.construirPayloadVarianteUserProduct(producto, naranja, true));
+        assertDoesNotThrow(() -> publicador.construirPayloadVarianteUserProduct(producto, coral, true));
     }
 
     @Test
-    void permiteLaMismaFotoCuandoSoloCambiaElTalle() {
+    @SuppressWarnings("unchecked")
+    void usaPresentacionPersonalizadaSiFaltanAtributosDeVariacion() {
         Producto producto = productoBase();
-        ProductoVariante talleM = varianteVisual(producto, "Negro", "foto-igual");
-        talleM.setMercadoLibreAtributosJson("{\"COLOR\":\"Negro\",\"SIZE\":\"M\"}");
-        ProductoVariante talleL = varianteVisual(producto, "Negro", "foto-igual");
-        talleL.setMercadoLibreAtributosJson("{\"COLOR\":\"Negro\",\"SIZE\":\"L\"}");
+        producto.setId(10L);
+        ProductoVariante primera = new ProductoVariante();
+        primera.setProducto(producto); primera.setSku("MANT-003-001"); primera.setNombre("Presentación 1");
+        primera.setStock(2); primera.setPrecioContado(BigDecimal.TEN);
+        ProductoVariante segunda = new ProductoVariante();
+        segunda.setProducto(producto); segunda.setSku("MANT-003-002"); segunda.setNombre("Presentación 2");
+        segunda.setStock(3); segunda.setPrecioContado(BigDecimal.TEN);
+        when(variantes.findByProductoIdOrderByNombreAsc(10L)).thenReturn(List.of(primera, segunda));
 
-        assertDoesNotThrow(() -> publicador.validarFotosDeVariantesVisuales(producto, List.of(talleM, talleL)));
+        Map<String, Object> payload = publicador.construirPayload(producto, true);
+
+        List<Map<String, Object>> variaciones = (List<Map<String, Object>>) payload.get("variations");
+        List<Map<String, Object>> primeraCombinacion =
+                (List<Map<String, Object>>) variaciones.get(0).get("attribute_combinations");
+        List<Map<String, Object>> segundaCombinacion =
+                (List<Map<String, Object>>) variaciones.get(1).get("attribute_combinations");
+
+        assertEquals("Presentación", primeraCombinacion.get(0).get("name"));
+        assertEquals("Presentación 1", primeraCombinacion.get(0).get("value_name"));
+        assertEquals("Presentación 2", segundaCombinacion.get(0).get("value_name"));
     }
 
     private ProductoVariante varianteVisual(Producto producto, String color, String foto) {
