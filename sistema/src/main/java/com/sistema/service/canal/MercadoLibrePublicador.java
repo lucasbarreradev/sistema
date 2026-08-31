@@ -356,6 +356,79 @@ public class MercadoLibrePublicador implements PublicadorCanal {
                     .matcher(textoProducto);
             if (anio.find()) return atributoConNombre(id, anio.group());
         }
+        if (id.contains("CAPACITY")) {
+            Map<String, Object> capacidad = inferirCapacidad(id, textoProducto);
+            if (capacidad != null) return capacidad;
+        }
+        if (id.contains("MATERIAL")) {
+            Map<String, Object> material = inferirMaterial(id, definicion, normalizado);
+            if (material != null) return material;
+        }
+        Map<String, Object> tipoExplicito = inferirTipoExplicito(id, definicion, normalizado);
+        if (tipoExplicito != null) return tipoExplicito;
+        return null;
+    }
+
+    private Map<String, Object> inferirCapacidad(String id, String textoProducto) {
+        java.util.regex.Matcher medida = java.util.regex.Pattern.compile(
+                        "(?i)(?<!\\d)(\\d+(?:[.,]\\d+)?)\\s*(ml|cc|l|lt|lts|litro|litros)\\b")
+                .matcher(textoProducto);
+        if (!medida.find()) return null;
+        String numero = medida.group(1).replace(',', '.');
+        String unidadOriginal = medida.group(2).toLowerCase(Locale.ROOT);
+        String unidad = Set.of("ml", "cc").contains(unidadOriginal) ? "mL" : "L";
+        return atributoConNombre(id, numero + " " + unidad);
+    }
+
+    private Map<String, Object> inferirMaterial(String id, JsonNode definicion, String textoNormalizado) {
+        LinkedHashMap<String, String> materiales = new LinkedHashMap<>();
+        materiales.put("acero inoxidable", "Acero inoxidable");
+        materiales.put("plastico", "Plástico");
+        materiales.put("poliester", "Poliéster");
+        materiales.put("ceramica", "Cerámica");
+        materiales.put("aluminio", "Aluminio");
+        materiales.put("silicona", "Silicona");
+        materiales.put("seagrass", "Seagrass");
+        materiales.put("algodon", "Algodón");
+        materiales.put("mimbre", "Mimbre");
+        materiales.put("bambu", "Bambú");
+        materiales.put("vidrio", "Vidrio");
+        materiales.put("hierro", "Hierro");
+        materiales.put("madera", "Madera");
+        materiales.put("cuero", "Cuero");
+        materiales.put("acero", "Acero");
+        materiales.put("lana", "Lana");
+        for (Map.Entry<String, String> material : materiales.entrySet()) {
+            if (!textoNormalizado.contains(" " + material.getKey() + " ")) continue;
+            for (JsonNode valor : definicion.path("values")) {
+                String permitido = normalizarTextoBusqueda(valor.path("name").asText(""));
+                if (permitido.equals(material.getKey()) || permitido.contains(material.getKey())) {
+                    return atributoConValor(id, valor);
+                }
+            }
+            return atributoConNombre(id, material.getValue());
+        }
+        return null;
+    }
+
+    private Map<String, Object> inferirTipoExplicito(String id, JsonNode definicion, String textoNormalizado) {
+        Map<String, List<String>> palabrasPorAtributo = Map.of(
+                "MATE_GOURD_TYPE", List.of("camionero", "imperial", "torpedo"),
+                "CANDLE_TYPE", List.of("votiva", "tealight", "aromatica"),
+                "DOCUMENT_TYPE", List.of("pasaporte", "dni", "cedula"),
+                "PRODUCT_TYPE", List.of("aromatizador", "humidificador", "difusor"));
+        List<String> palabras = palabrasPorAtributo.getOrDefault(id, List.of());
+        for (String palabra : palabras) {
+            if (!textoNormalizado.contains(" " + palabra + " ")) continue;
+            for (JsonNode valor : definicion.path("values")) {
+                String permitido = normalizarTextoBusqueda(valor.path("name").asText(""));
+                if (permitido.equals(palabra) || permitido.contains(palabra)) {
+                    return atributoConValor(id, valor);
+                }
+            }
+            String nombre = palabra.substring(0, 1).toUpperCase(Locale.ROOT) + palabra.substring(1);
+            return atributoConNombre(id, nombre);
+        }
         return null;
     }
 
@@ -559,7 +632,26 @@ public class MercadoLibrePublicador implements PublicadorCanal {
             boolean nueva = id == null;
             Map<String, Object> payload = construirPayloadVarianteUserProduct(producto, variante, nueva,
                     filasGuia.get(variante.getId()));
-            JsonNode response = publicarItemConFallbackGtin(payload, id);
+            JsonNode response;
+            try {
+                response = publicarItemConFallbackGtin(payload, id);
+            } catch (RestClientResponseException e) {
+                String userProductId = nueva ? extraerUserProductDuplicado(e) : "";
+                if (!tieneTexto(userProductId)) throw e;
+                String itemRecuperado = buscarItemDeUserProduct(userProductId, sellerId);
+                if (tieneTexto(itemRecuperado)) {
+                    id = itemRecuperado;
+                    nueva = false;
+                    variante.setMercadoLibreItemId(id);
+                    variante.setMercadoLibreVariationId(null);
+                    varianteRepository.save(variante);
+                    Map<String, Object> actualizacion = construirPayloadVarianteUserProduct(
+                            producto, variante, false, filasGuia.get(variante.getId()));
+                    response = publicarItemConFallbackGtin(actualizacion, id);
+                } else {
+                    response = crearCondicionVenta(userProductId, payload);
+                }
+            }
             String idPublicado = response == null ? id : response.path("id").asText(id);
             if (!tieneTexto(idPublicado)) {
                 throw new IllegalStateException("Mercado Libre no devolvió el identificador de la variante "
@@ -573,6 +665,59 @@ public class MercadoLibrePublicador implements PublicadorCanal {
             if (primerId == null) primerId = idPublicado;
         }
         return new ResultadoPublicacion(primerId);
+    }
+
+    String extraerUserProductDuplicado(RestClientResponseException error) {
+        String respuesta = error.getResponseBodyAsString();
+        if (respuesta == null || !respuesta.contains("item.user_product.repeated.conflict")) return "";
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("\\bMLAU\\d+\\b")
+                .matcher(respuesta);
+        return matcher.find() ? matcher.group() : "";
+    }
+
+    private String buscarItemDeUserProduct(String userProductId, long sellerId) {
+        for (int intento = 0; intento < 3; intento++) {
+            JsonNode respuesta = getMercadoLibreConRenovacion("/users/" + sellerId
+                    + "/items/search?user_product_id=" + userProductId);
+            JsonNode resultados = respuesta.path("results");
+            if (resultados.isArray() && !resultados.isEmpty()) {
+                String itemId = resultados.get(0).asText("");
+                if (tieneTexto(itemId)) return itemId;
+            }
+            if (intento < 2) esperarReintento(250L * (intento + 1));
+        }
+        return "";
+    }
+
+    private JsonNode crearCondicionVenta(String userProductId, Map<String, Object> payloadOriginal) {
+        Set<String> permitidos = Set.of("price", "category_id", "currency_id", "buying_mode",
+                "listing_type_id", "shipping", "channels", "tags", "sale_terms", "catalog_listing",
+                "catalog_product_id", "official_store_id");
+        Map<String, Object> condicion = new LinkedHashMap<>();
+        payloadOriginal.forEach((clave, valor) -> {
+            if (permitidos.contains(clave)) condicion.put(clave, valor);
+        });
+        return ejecutarConReintentosDeConflicto(() -> publicarCondicionVentaConTokenRenovable(
+                userProductId, condicion));
+    }
+
+    private JsonNode publicarCondicionVentaConTokenRenovable(String userProductId,
+                                                              Map<String, Object> condicion) {
+        try {
+            return publicarCondicionVenta(userProductId, condicion, tokenService.obtenerAccessToken());
+        } catch (RestClientResponseException e) {
+            if (e.getStatusCode() != HttpStatus.UNAUTHORIZED) throw e;
+            tokenService.invalidarAccessToken();
+            return publicarCondicionVenta(userProductId, condicion, tokenService.obtenerAccessToken());
+        }
+    }
+
+    private JsonNode publicarCondicionVenta(String userProductId, Map<String, Object> condicion, String token) {
+        JsonNode respuesta = restClient.post()
+                .uri("https://api.mercadolibre.com/user-products/" + userProductId + "/items")
+                .headers(h -> h.setBearerAuth(token)).contentType(MediaType.APPLICATION_JSON)
+                .body(condicion).retrieve().body(JsonNode.class);
+        return respuesta == null ? objectMapper.createObjectNode() : respuesta;
     }
 
     boolean requiereNuevaPublicacion(String itemId, long sellerId) {
@@ -643,12 +788,42 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     }
 
     private JsonNode publicarItemConRenovacion(Map<String, Object> payload, String id) {
+        return ejecutarConReintentosDeConflicto(() -> publicarItemConTokenRenovable(payload, id));
+    }
+
+    private JsonNode publicarItemConTokenRenovable(Map<String, Object> payload, String id) {
         try {
             return publicarItem(payload, id, tokenService.obtenerAccessToken());
         } catch (RestClientResponseException e) {
             if (e.getStatusCode() != HttpStatus.UNAUTHORIZED) throw e;
             tokenService.invalidarAccessToken();
             return publicarItem(payload, id, tokenService.obtenerAccessToken());
+        }
+    }
+
+    private JsonNode ejecutarConReintentosDeConflicto(java.util.function.Supplier<JsonNode> operacion) {
+        for (int intento = 0; intento < 3; intento++) {
+            try {
+                return operacion.get();
+            } catch (RestClientResponseException e) {
+                if (e.getStatusCode() != HttpStatus.CONFLICT) throw e;
+                if (intento == 2) {
+                    throw new IllegalStateException("Mercado Libre respondió con un conflicto temporal después "
+                            + "de 3 intentos. Vuelva a sincronizar este producto en unos minutos; el sistema "
+                            + "recuperará la publicación si Mercado Libre llegó a crearla.", e);
+                }
+                esperarReintento(250L * (intento + 1));
+            }
+        }
+        throw new IllegalStateException("No se pudo completar la operación con Mercado Libre");
+    }
+
+    private void esperarReintento(long milisegundos) {
+        try {
+            Thread.sleep(milisegundos);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Se interrumpió el reintento con Mercado Libre", e);
         }
     }
 

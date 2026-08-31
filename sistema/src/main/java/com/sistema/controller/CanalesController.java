@@ -1,7 +1,9 @@
 package com.sistema.controller;
 
 import com.sistema.dto.ResultadoImportacion;
+import com.sistema.dto.ErrorSincronizacionDto;
 import com.sistema.model.CanalVenta;
+import com.sistema.model.TrabajoSincronizacion;
 import com.sistema.service.ImportacionCsvService;
 import com.sistema.service.ProductoService;
 import com.sistema.service.PublicacionService;
@@ -18,11 +20,17 @@ import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.util.List;
+import java.util.ArrayList;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.springframework.data.domain.PageRequest;
 
 @Controller
 @RequestMapping("/canales")
 public class CanalesController {
+    private static final Pattern ERROR_PUBLICACION = Pattern.compile("^(.+?) / ([^:]+): (.*)$");
+    private static final Pattern CAMPOS_OBLIGATORIOS = Pattern.compile(
+            "campos obligatorios de Mercado Libre: (.+?)(?:\\. Si |\\.$|$)", Pattern.CASE_INSENSITIVE);
     private final ProductoService productoService;
     private final ImportacionCsvService importacionCsvService;
     private final PublicacionService publicacionService;
@@ -74,7 +82,11 @@ public class CanalesController {
         model.addAttribute("configuracionImportacion", java.util.Arrays.stream(CanalVenta.values())
                 .collect(java.util.stream.Collectors.toMap(c -> c, importacionCanalService::configurado)));
         model.addAttribute("publicaciones", publicacionService.historial());
-        model.addAttribute("trabajosSincronizacion", trabajoSincronizacionService.ultimos());
+        List<TrabajoSincronizacion> trabajos = trabajoSincronizacionService.ultimos();
+        model.addAttribute("trabajosSincronizacion", trabajos);
+        TrabajoSincronizacion ultimoTrabajo = trabajos.isEmpty() ? null : trabajos.get(0);
+        model.addAttribute("ultimaSincronizacion", ultimoTrabajo);
+        model.addAttribute("erroresUltimaSincronizacion", mapearErrores(ultimoTrabajo));
         model.addAttribute("sincronizacionActiva", trabajoSincronizacionService.hayTrabajoActivo());
         boolean mercadoLibreConectado = mercadoLibreTokenService.conectado();
         model.addAttribute("mercadoLibreConectado", mercadoLibreConectado);
@@ -99,6 +111,52 @@ public class CanalesController {
         model.addAttribute("webhookMercadoLibreUrl",
                 publicBaseUrl.isBlank() ? "" : publicBaseUrl + "/webhooks/mercadolibre");
         return "canales/index";
+    }
+
+    List<ErrorSincronizacionDto> mapearErrores(TrabajoSincronizacion trabajo) {
+        if (trabajo == null || trabajo.getDetalle() == null || trabajo.getDetalle().isBlank()) return List.of();
+        List<ErrorSincronizacionDto> resultado = new ArrayList<>();
+        trabajo.getDetalle().lines().map(String::trim).filter(linea -> !linea.isBlank()).forEach(linea -> {
+            Matcher error = ERROR_PUBLICACION.matcher(linea);
+            String referencia = error.matches() ? error.group(1).trim() : referenciaGenerica(linea);
+            String canal = error.matches() ? error.group(2).trim() : "";
+            String mensaje = error.matches() ? error.group(3).trim() : mensajeGenerico(linea);
+            Long productoId = productoService.getProductoBySku(referencia).map(p -> p.getId()).orElse(null);
+            resultado.add(new ErrorSincronizacionDto(
+                    referencia, canal, mensaje, correcciones(mensaje), productoId));
+        });
+        return resultado;
+    }
+
+    private String referenciaGenerica(String linea) {
+        int separador = linea.indexOf(':');
+        return separador > 0 ? linea.substring(0, separador).trim() : "Sin referencia";
+    }
+
+    private String mensajeGenerico(String linea) {
+        int separador = linea.indexOf(':');
+        return separador > 0 ? linea.substring(separador + 1).trim() : linea;
+    }
+
+    private List<String> correcciones(String mensaje) {
+        Matcher campos = CAMPOS_OBLIGATORIOS.matcher(mensaje);
+        if (campos.find()) {
+            return java.util.Arrays.stream(campos.group(1).split(","))
+                    .map(String::trim).filter(valor -> !valor.isBlank()).toList();
+        }
+        String normalizado = mensaje.toLowerCase(java.util.Locale.ROOT);
+        if (normalizado.contains("precio de contado")) return List.of("Precio");
+        if (normalizado.contains("gtin real")) return List.of("GTIN real");
+        if (normalizado.contains("categoría final") || normalizado.contains("cambie la categoría")) {
+            return List.of("Categoría de Mercado Libre");
+        }
+        if (normalizado.contains("under_review") || normalizado.contains("está en revisión")) {
+            return List.of("Esperar revisión de Mercado Libre");
+        }
+        if (normalizado.contains("conflicto temporal") || normalizado.contains("repeated user-product")) {
+            return List.of("Reintentar sincronización");
+        }
+        return List.of("Revisar detalle");
     }
 
     @PostMapping("/importar/{canal}")

@@ -70,7 +70,7 @@ public class PublicacionService {
         } catch (Exception e) {
             publicacion.setEstado(EstadoPublicacion.ERROR);
             publicacion.setUltimoError(mensajeSeguro(e));
-            lote.error(producto.getSku() + " / " + canal.getDescripcion() + ": " + mensajeSeguro(e));
+            lote.error(referenciaProducto(producto) + " / " + canal.getDescripcion() + ": " + mensajeSeguro(e));
         }
         publicacion.setFechaActualizacion(LocalDateTime.now());
         publicacionRepository.save(publicacion);
@@ -87,5 +87,13 @@ public class PublicacionService {
         String mensaje = e.getMessage();
         if (mensaje == null || mensaje.isBlank()) mensaje = e.getClass().getSimpleName();
         return mensaje.length() > 1900 ? mensaje.substring(0, 1900) : mensaje;
+    }
+
+    private String referenciaProducto(Producto producto) {
+        if (producto.getSku() != null && !producto.getSku().isBlank()) return producto.getSku().trim();
+        if (producto.getDescripcion() != null && !producto.getDescripcion().isBlank()) {
+            return producto.getDescripcion().trim();
+        }
+        return "Producto " + producto.getId();
     }
 }

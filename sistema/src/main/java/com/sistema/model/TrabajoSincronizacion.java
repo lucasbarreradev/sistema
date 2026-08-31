@@ -54,7 +54,7 @@ public class TrabajoSincronizacion extends TenantAwareEntity {
     private String resumen;
 
     @Lob
-    @Column(columnDefinition = "TEXT")
+    @Column(columnDefinition = "LONGTEXT")
     private String detalle;
 
     @Version

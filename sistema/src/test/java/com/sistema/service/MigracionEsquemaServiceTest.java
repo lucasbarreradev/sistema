@@ -106,4 +106,23 @@ class MigracionEsquemaServiceTest {
         verify(jdbc).execute(
                 "ALTER TABLE configuracion_arca MODIFY COLUMN condicion_fiscal VARCHAR(60) NOT NULL");
     }
+
+    @Test
+    void ampliaElDetalleDeSincronizacionParaGuardarTodosLosErrores() {
+        JdbcTemplate jdbc = mock(JdbcTemplate.class);
+        when(jdbc.queryForObject(anyString(), eq(Integer.class), any(), any())).thenReturn(1);
+        when(jdbc.queryForList(anyString(), eq(String.class), any(), any()))
+                .thenAnswer(invocacion -> {
+                    String tabla = invocacion.getArgument(2);
+                    String columna = invocacion.getArgument(3);
+                    if ("trabajo_sincronizacion".equals(tabla) && "detalle".equals(columna)) {
+                        return List.of("text");
+                    }
+                    return List.of("varchar(60)");
+                });
+
+        new MigracionEsquemaService(jdbc).run(mock(ApplicationArguments.class));
+
+        verify(jdbc).execute("ALTER TABLE trabajo_sincronizacion MODIFY COLUMN detalle LONGTEXT NULL");
+    }
 }

@@ -360,6 +360,49 @@ class MercadoLibrePublicadorTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void infiereCapacidadYMaterialDesdeElNombre() throws Exception {
+        Producto producto = productoBase();
+        producto.setDescripcion("Botella térmica de acero 500ml");
+        JsonNode definiciones = new ObjectMapper().readTree("""
+                [
+                  {"id":"BOTTLE_CAPACITY","name":"Capacidad de la botella","value_type":"number_unit",
+                   "tags":{"catalog_required":true}},
+                  {"id":"BOTTLE_MATERIAL","name":"Material de la botella","value_type":"string",
+                   "tags":{"catalog_required":true}}
+                ]
+                """);
+
+        publicador.autocompletarAtributosObligatorios(producto, List.of(), definiciones);
+        List<Map<String, Object>> atributos = (List<Map<String, Object>>)
+                publicador.construirPayload(producto, true).get("attributes");
+
+        assertTrue(atributos.stream().anyMatch(a -> "BOTTLE_CAPACITY".equals(a.get("id"))
+                && "500 mL".equals(a.get("value_name"))));
+        assertTrue(atributos.stream().anyMatch(a -> "BOTTLE_MATERIAL".equals(a.get("id"))
+                && "Acero".equals(a.get("value_name"))));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void infiereUnTipoExplicitoDesdeElNombre() throws Exception {
+        Producto producto = productoBase();
+        producto.setDescripcion("Vela votiva en caja");
+        JsonNode definiciones = new ObjectMapper().readTree("""
+                [{"id":"CANDLE_TYPE","name":"Tipo de vela","value_type":"list",
+                  "tags":{"catalog_required":true},
+                  "values":[{"id":"123","name":"Votiva"},{"id":"456","name":"Flotante"}]}]
+                """);
+
+        publicador.autocompletarAtributosObligatorios(producto, List.of(), definiciones);
+        List<Map<String, Object>> atributos = (List<Map<String, Object>>)
+                publicador.construirPayload(producto, true).get("attributes");
+
+        assertTrue(atributos.stream().anyMatch(a -> "CANDLE_TYPE".equals(a.get("id"))
+                && "123".equals(a.get("value_id"))));
+    }
+
+    @Test
     void limitaFamilyNameASesentaCaracteres() {
         ReflectionTestUtils.setField(publicador, "userProducts", true);
         Producto producto = productoBase();
@@ -480,6 +523,18 @@ class MercadoLibrePublicadorTest {
         assertTrue(error.getMessage().contains("under_review"));
         assertTrue(error.getMessage().contains("no creó una publicación duplicada"));
         servidor.verify();
+    }
+
+    @Test
+    void extraeElUserProductDeUnConflictoDuplicado() {
+        org.springframework.web.client.HttpClientErrorException error =
+                org.springframework.web.client.HttpClientErrorException.create(
+                        HttpStatus.BAD_REQUEST, "Bad Request", org.springframework.http.HttpHeaders.EMPTY,
+                        ("{\"code\":\"item.user_product.repeated.conflict\","
+                                + "\"message\":\"Repeated user-product. Conflict id: MLAU5077086088\"}")
+                                .getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+
+        assertEquals("MLAU5077086088", publicador.extraerUserProductDuplicado(error));
     }
 
     @Test

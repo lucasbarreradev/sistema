@@ -27,6 +27,57 @@
                     </ul></div>
                 </c:if>
 
+                <c:if test="${not empty erroresUltimaSincronizacion}">
+                    <div class="card shadow mb-4 border-left-warning" id="errores-ultima-sincronizacion">
+                        <div class="card-header py-3 d-flex flex-wrap align-items-center justify-content-between">
+                            <div>
+                                <h6 class="m-0 font-weight-bold text-warning">
+                                    Errores de la última sincronización #${ultimaSincronizacion.id}
+                                </h6>
+                                <small class="text-muted">
+                                    ${fn:length(erroresUltimaSincronizacion)} producto(s) para revisar. Se muestran todos los errores guardados.
+                                </small>
+                            </div>
+                            <input id="filtroErroresSincronizacion" type="search" class="form-control form-control-sm mt-2 mt-md-0"
+                                   style="max-width:320px" placeholder="Buscar SKU, color, material, GTIN...">
+                        </div>
+                        <div class="card-body table-responsive p-0">
+                            <table class="table table-sm table-striped table-bordered mb-0" id="tablaErroresSincronizacion">
+                                <thead class="thead-light">
+                                <tr><th>Producto / SKU</th><th>Canal</th><th>Qué corregir</th><th>Detalle completo</th><th>Acción</th></tr>
+                                </thead>
+                                <tbody>
+                                <c:forEach items="${erroresUltimaSincronizacion}" var="errorSinc">
+                                    <tr class="fila-error-sincronizacion">
+                                        <td class="font-weight-bold"><c:out value="${errorSinc.referencia}"/></td>
+                                        <td><c:out value="${errorSinc.canal}"/></td>
+                                        <td style="min-width:190px">
+                                            <c:forEach items="${errorSinc.correcciones}" var="correccion">
+                                                <span class="badge badge-warning mr-1 mb-1"><c:out value="${correccion}"/></span>
+                                            </c:forEach>
+                                        </td>
+                                        <td class="small" style="min-width:380px; white-space:normal">
+                                            <c:out value="${errorSinc.mensaje}"/>
+                                        </td>
+                                        <td class="text-nowrap">
+                                            <c:choose>
+                                                <c:when test="${not empty errorSinc.productoId}">
+                                                    <a class="btn btn-sm btn-primary"
+                                                       href="${pageContext.request.contextPath}/productos/editar/${errorSinc.productoId}">
+                                                        <i class="fa-solid fa-pen mr-1"></i>Editar producto
+                                                    </a>
+                                                </c:when>
+                                                <c:otherwise><span class="text-muted small">Sin producto local vinculado</span></c:otherwise>
+                                            </c:choose>
+                                        </td>
+                                    </tr>
+                                </c:forEach>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </c:if>
+
 
                 <div class="row mb-4">
                     <div class="col-lg-5 mb-3">
@@ -504,6 +555,15 @@ document.querySelectorAll('.pagina-productos-link').forEach(link => {
         this.href = destino.toString();
     });
 });
+const filtroErrores = document.getElementById('filtroErroresSincronizacion');
+if (filtroErrores) {
+    filtroErrores.addEventListener('input', function () {
+        const consulta = this.value.trim().toLocaleLowerCase('es');
+        document.querySelectorAll('.fila-error-sincronizacion').forEach(fila => {
+            fila.style.display = fila.textContent.toLocaleLowerCase('es').includes(consulta) ? '' : 'none';
+        });
+    });
+}
 <c:if test="${sincronizacionActiva}">
 window.setTimeout(function () { window.location.reload(); }, 8000);
 </c:if>

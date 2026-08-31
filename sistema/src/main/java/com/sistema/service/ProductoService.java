@@ -68,6 +68,12 @@ public class ProductoService {
         return productoRepo.findById(id);
     }
 
+    @Transactional(readOnly = true)
+    public Optional<Producto> getProductoBySku(String sku) {
+        if (sku == null || sku.isBlank()) return Optional.empty();
+        return productoRepo.findBySkuIgnoreCase(sku.trim());
+    }
+
     public String generarSku(String descripcion) {
 
         String base = descripcion

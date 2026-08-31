@@ -42,6 +42,10 @@ public class MigracionEsquemaService implements ApplicationRunner {
                     MODIFY COLUMN estado VARCHAR(40) NOT NULL
                     """);
         }
+        if (tipoColumna("trabajo_sincronizacion", "detalle")
+                .map(tipo -> !tipo.equals("longtext")).orElse(false)) {
+            jdbcTemplate.execute("ALTER TABLE trabajo_sincronizacion MODIFY COLUMN detalle LONGTEXT NULL");
+        }
         List<String> tipos = jdbcTemplate.queryForList("""
                 SELECT COLUMN_TYPE
                 FROM information_schema.COLUMNS
