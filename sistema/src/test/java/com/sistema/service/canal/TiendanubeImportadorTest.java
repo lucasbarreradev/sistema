@@ -37,4 +37,36 @@ class TiendanubeImportadorTest {
         assertEquals("M", variantes.get(0).atributos().get("SIZE"));
         assertEquals("Azul / M", variantes.get(0).nombre());
     }
+
+    @Test
+    void conservaElNombreDeUnaPresentacionUnicaRecibidaDeTiendanube() throws Exception {
+        JsonNode producto = mapper.readTree("""
+                {
+                  "name": {"es":"Aceite aromatizante"},
+                  "attributes": [{"es":"Fragancia"}],
+                  "variants": [{
+                    "id": 102, "sku": "ACE-NEG", "stock": 4, "price": "2500",
+                    "values": [{"es":"Black vetiver"}]
+                  }]
+                }
+                """);
+
+        List<VarianteCanalImportada> variantes = importador.mapearVariantes(producto);
+
+        assertEquals("Black vetiver", variantes.get(0).nombre());
+    }
+
+    @Test
+    void usaElNombreDelProductoCuandoTiendanubeNoInformaValoresDeVariante() throws Exception {
+        JsonNode producto = mapper.readTree("""
+                {
+                  "name": {"es":"Aceite aromatizante Black vetiver"},
+                  "variants": [{"id": 103, "sku": "ACE-001", "stock": 4, "price": "2500"}]
+                }
+                """);
+
+        List<VarianteCanalImportada> variantes = importador.mapearVariantes(producto);
+
+        assertEquals("Aceite aromatizante Black vetiver", variantes.get(0).nombre());
+    }
 }

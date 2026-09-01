@@ -67,10 +67,20 @@ public class ProductoVariante extends TenantAwareEntity {
     }
 
     public String getNombreMostrar() {
-        if (nombre != null && !nombre.isBlank()) return nombre;
+        if (nombre != null && !nombre.isBlank() && !esNombreGenerico(nombre)) return nombre;
         String combinacion = String.join(" / ",
                 talle == null ? "" : talle.trim(), color == null ? "" : color.trim()).replaceAll("(^ / | / $)", "");
-        return combinacion.isBlank() ? sku : combinacion;
+        if (!combinacion.isBlank()) return combinacion;
+        if (producto != null && producto.getDescripcion() != null
+                && !producto.getDescripcion().isBlank()) {
+            return producto.getDescripcion();
+        }
+        return sku;
+    }
+
+    private boolean esNombreGenerico(String valor) {
+        return "Presentación única".equalsIgnoreCase(valor.trim())
+                || "Presentacion unica".equalsIgnoreCase(valor.trim());
     }
 
     public BigDecimal precio(FormaPago formaPago) {

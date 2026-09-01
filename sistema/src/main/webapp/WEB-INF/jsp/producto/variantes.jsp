@@ -6,16 +6,23 @@
 <div id="content-wrapper" class="d-flex flex-column"><div class="container-fluid py-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div><h1 class="h3 text-gray-800 mb-1">Presentaciones y variantes</h1><div class="text-muted"><c:out value="${producto.descripcion}"/></div></div>
-        <a class="btn btn-secondary" href="${pageContext.request.contextPath}/productos">Volver</a>
+        <a class="btn btn-secondary" href="${pageContext.request.contextPath}${empty volver ? '/productos' : volver}">Volver</a>
     </div>
     <c:if test="${not empty mensaje}"><div class="alert alert-success">${mensaje}</div></c:if>
     <c:if test="${not empty error}"><div class="alert alert-danger">${error}</div></c:if>
     <c:if test="${not empty advertenciaAtributos}"><div class="alert alert-warning"><c:out value="${advertenciaAtributos}"/></div></c:if>
-    <div class="alert alert-info">Cargá aquí stock, precios, foto, GTIN y características de la categoría. Con una sola presentación el producto se publica como simple; con dos o más, como producto con variantes.</div>
+    <div class="alert alert-info">Cargá aquí stock, precios, foto, GTIN y características de la categoría. Con una sola presentación el producto se publica como simple; con dos o más, como producto con variantes. Los campos con <span class="text-danger font-weight-bold">*</span> son obligatorios para Mercado Libre.</div>
     <div class="card shadow mb-4"><div class="card-header"><strong>${empty variante.id ? 'Agregar presentación' : 'Editar presentación'}</strong></div><div class="card-body">
         <form method="post" enctype="multipart/form-data" class="row" action="${pageContext.request.contextPath}/productos/${producto.id}/variantes">
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
             <input type="hidden" name="id" value="${variante.id}">
+            <input type="hidden" name="volver" value="${fn:escapeXml(volver)}">
+            <div class="col-md-4 mb-3">
+                <label>Nombre de la presentación</label>
+                <input name="nombre" value="${fn:escapeXml(variante.nombreMostrar)}" class="form-control"
+                       placeholder="Ej.: Black vetiver">
+                <small class="form-text text-muted">Se conserva el nombre recibido de Tiendanube y podés modificarlo.</small>
+            </div>
             <c:choose>
                 <c:when test="${not empty atributosVariante}">
                     <c:forEach items="${atributosVariante}" var="atributo">
@@ -23,7 +30,7 @@
                             <c:if test="${atributo.permiteVariar}">
                                 <input type="hidden" name="es_variacion_${atributo.id}" value="true">
                             </c:if>
-                            <label><c:out value="${atributo.nombre}"/></label>
+                            <label><c:out value="${atributo.nombre}"/><c:if test="${atributo.obligatorio}"> <span class="text-danger font-weight-bold" title="Obligatorio para Mercado Libre">*</span></c:if></label>
                             <c:choose>
                                 <c:when test="${atributo.tipo == 'number_unit'}">
                                     <div class="input-group">
@@ -37,6 +44,20 @@
                                             </select>
                                         </div>
                                     </div>
+                                </c:when>
+                                <c:when test="${atributo.permiteValorLibre and not empty atributo.valores}">
+                                    <input name="atributo_${atributo.id}"
+                                           value="${fn:escapeXml(valoresAtributos[atributo.id])}"
+                                           class="form-control"
+                                           list="sugerencias_${atributo.id}"
+                                           autocomplete="off"
+                                           <c:if test="${atributo.obligatorio}">required</c:if>>
+                                    <datalist id="sugerencias_${atributo.id}">
+                                        <c:forEach items="${atributo.valores}" var="opcion">
+                                            <option value="${fn:escapeXml(opcion)}"></option>
+                                        </c:forEach>
+                                    </datalist>
+                                    <small class="form-text text-muted">Podés elegir una sugerencia o escribir otro valor.</small>
                                 </c:when>
                                 <c:when test="${not empty atributo.valores}">
                                     <div class="campo-opciones-buscables">
@@ -106,9 +127,10 @@
             <td><c:if test="${v.tieneFoto}"><img class="img-thumbnail" style="width:64px;height:64px;object-fit:contain;background:#fff" alt="Foto" src="${pageContext.request.contextPath}/productos/${producto.id}/variantes/${v.id}/foto"></c:if><c:if test="${not v.tieneFoto}"><span class="text-muted">General</span></c:if></td>
             <td><c:out value="${v.nombreMostrar}"/></td><td><c:out value="${v.sku}"/></td><td><c:out value="${v.codigoBarras}"/></td>
             <td>${v.stock}</td><td>${empty v.precioContado ? producto.precioContado : v.precioContado}</td>
-            <td><a class="btn btn-sm btn-warning" href="${pageContext.request.contextPath}/productos/${producto.id}/variantes/${v.id}/editar">Editar</a>
+            <td><c:url var="urlEditarVariante" value="/productos/${producto.id}/variantes/${v.id}/editar"><c:param name="volver" value="${volver}"/></c:url>
+            <a class="btn btn-sm btn-warning" href="${urlEditarVariante}">Editar</a>
             <form class="d-inline" method="post" action="${pageContext.request.contextPath}/productos/${producto.id}/variantes/${v.id}/eliminar">
-                <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/><button class="btn btn-sm btn-danger">Eliminar</button>
+                <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/><input type="hidden" name="volver" value="${fn:escapeXml(volver)}"><button class="btn btn-sm btn-danger">Eliminar</button>
             </form></td></tr></c:forEach>
         <c:if test="${empty variantes}"><tr><td colspan="7" class="text-center text-muted">Todavía no hay presentaciones. Agregá al menos una para completar el producto.</td></tr></c:if>
         </tbody></table></div></div>

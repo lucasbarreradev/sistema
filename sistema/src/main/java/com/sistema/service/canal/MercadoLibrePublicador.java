@@ -649,7 +649,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
                             producto, variante, false, filasGuia.get(variante.getId()));
                     response = publicarItemConFallbackGtin(actualizacion, id);
                 } else {
-                    response = crearCondicionVenta(userProductId, payload);
+                    response = crearCondicionVenta(userProductId, payload, sellerId);
                 }
             }
             String idPublicado = response == null ? id : response.path("id").asText(id);
@@ -676,20 +676,28 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     }
 
     private String buscarItemDeUserProduct(String userProductId, long sellerId) {
-        for (int intento = 0; intento < 3; intento++) {
-            JsonNode respuesta = getMercadoLibreConRenovacion("/users/" + sellerId
-                    + "/items/search?user_product_id=" + userProductId);
-            JsonNode resultados = respuesta.path("results");
-            if (resultados.isArray() && !resultados.isEmpty()) {
-                String itemId = resultados.get(0).asText("");
+        for (int intento = 0; intento < 5; intento++) {
+            try {
+                String itemId = buscarItemDeUserProductUnaVez(userProductId, sellerId);
                 if (tieneTexto(itemId)) return itemId;
+            } catch (RestClientResponseException e) {
+                if (e.getStatusCode() != HttpStatus.CONFLICT) throw e;
             }
-            if (intento < 2) esperarReintento(250L * (intento + 1));
+            if (intento < 4) esperarReintento(demoraReintento(intento));
         }
         return "";
     }
 
-    private JsonNode crearCondicionVenta(String userProductId, Map<String, Object> payloadOriginal) {
+    private String buscarItemDeUserProductUnaVez(String userProductId, long sellerId) {
+        JsonNode respuesta = getMercadoLibreConRenovacion("/users/" + sellerId
+                + "/items/search?user_product_id=" + userProductId);
+        JsonNode resultados = respuesta.path("results");
+        if (!resultados.isArray() || resultados.isEmpty()) return "";
+        return resultados.get(0).asText("");
+    }
+
+    JsonNode crearCondicionVenta(String userProductId, Map<String, Object> payloadOriginal,
+                                  long sellerId) {
         Set<String> permitidos = Set.of("price", "category_id", "currency_id", "buying_mode",
                 "listing_type_id", "shipping", "channels", "tags", "sale_terms", "catalog_listing",
                 "catalog_product_id", "official_store_id");
@@ -697,8 +705,35 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         payloadOriginal.forEach((clave, valor) -> {
             if (permitidos.contains(clave)) condicion.put(clave, valor);
         });
-        return ejecutarConReintentosDeConflicto(() -> publicarCondicionVentaConTokenRenovable(
-                userProductId, condicion));
+        RuntimeException ultimoError = null;
+        for (int intento = 0; intento < 5; intento++) {
+            try {
+                return publicarCondicionVentaConTokenRenovable(userProductId, condicion);
+            } catch (RestClientResponseException e) {
+                boolean conflictoTemporal = e.getStatusCode() == HttpStatus.CONFLICT;
+                boolean duplicado = tieneTexto(extraerUserProductDuplicado(e));
+                if (!conflictoTemporal && !duplicado) throw e;
+                ultimoError = e;
+                try {
+                    String itemRecuperado = buscarItemDeUserProductUnaVez(userProductId, sellerId);
+                    if (tieneTexto(itemRecuperado)) return respuestaConId(itemRecuperado);
+                } catch (RestClientResponseException busqueda) {
+                    if (busqueda.getStatusCode() != HttpStatus.CONFLICT) throw busqueda;
+                    ultimoError = busqueda;
+                }
+                if (intento < 4) esperarReintento(demoraReintento(intento));
+            }
+        }
+        String itemRecuperado = buscarItemDeUserProduct(userProductId, sellerId);
+        if (tieneTexto(itemRecuperado)) return respuestaConId(itemRecuperado);
+        throw new IllegalStateException("Mercado Libre reconoció el producto, pero todavía no permitió "
+                + "recuperar su publicación por un conflicto temporal. Vuelva a publicar este artículo "
+                + "en unos minutos; el sistema reutilizará el User Product " + userProductId + ".",
+                ultimoError);
+    }
+
+    private JsonNode respuestaConId(String itemId) {
+        return objectMapper.createObjectNode().put("id", itemId);
     }
 
     private JsonNode publicarCondicionVentaConTokenRenovable(String userProductId,
@@ -802,20 +837,24 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     }
 
     private JsonNode ejecutarConReintentosDeConflicto(java.util.function.Supplier<JsonNode> operacion) {
-        for (int intento = 0; intento < 3; intento++) {
+        for (int intento = 0; intento < 5; intento++) {
             try {
                 return operacion.get();
             } catch (RestClientResponseException e) {
                 if (e.getStatusCode() != HttpStatus.CONFLICT) throw e;
-                if (intento == 2) {
+                if (intento == 4) {
                     throw new IllegalStateException("Mercado Libre respondió con un conflicto temporal después "
-                            + "de 3 intentos. Vuelva a sincronizar este producto en unos minutos; el sistema "
+                            + "de 5 intentos. Vuelva a sincronizar este producto en unos minutos; el sistema "
                             + "recuperará la publicación si Mercado Libre llegó a crearla.", e);
                 }
-                esperarReintento(250L * (intento + 1));
+                esperarReintento(demoraReintento(intento));
             }
         }
         throw new IllegalStateException("No se pudo completar la operación con Mercado Libre");
+    }
+
+    private long demoraReintento(int intento) {
+        return 300L * (1L << Math.min(intento, 3));
     }
 
     private void esperarReintento(long milisegundos) {

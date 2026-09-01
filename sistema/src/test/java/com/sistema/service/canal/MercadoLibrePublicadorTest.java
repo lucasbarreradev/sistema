@@ -538,6 +538,33 @@ class MercadoLibrePublicadorTest {
     }
 
     @Test
+    void recuperaElItemSiKvsDevuelveConflictoDespuesDeCrearElUserProduct() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer servidor = MockRestServiceServer.bindTo(builder).build();
+        MercadoLibrePublicador publicadorConApi = new MercadoLibrePublicador(
+                tokens, new ObjectMapper(), variantes, builder.build());
+
+        servidor.expect(requestTo("https://api.mercadolibre.com/user-products/MLAU5077086088/items"))
+                .andExpect(method(HttpMethod.POST))
+                .andRespond(withStatus(HttpStatus.CONFLICT)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body("{\"error\":\"conflict\",\"status\":409}"));
+        servidor.expect(requestTo("https://api.mercadolibre.com/users/222/items/search?user_product_id=MLAU5077086088"))
+                .andExpect(method(HttpMethod.GET))
+                .andRespond(withSuccess("{\"results\":[\"MLA3897297956\"]}",
+                        MediaType.APPLICATION_JSON));
+
+        JsonNode respuesta = publicadorConApi.crearCondicionVenta(
+                "MLAU5077086088", Map.of(
+                        "price", BigDecimal.TEN,
+                        "category_id", "MLA123",
+                        "attributes", List.of()), 222L);
+
+        assertEquals("MLA3897297956", respuesta.path("id").asText());
+        servidor.verify();
+    }
+
+    @Test
     void validaElDigitoDeControlDelGtin() {
         assertFalse(publicador.gtinValido("12345678"));
         assertTrue(publicador.gtinValido("7898945080293"));

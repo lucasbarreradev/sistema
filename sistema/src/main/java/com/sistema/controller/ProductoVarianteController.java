@@ -52,7 +52,9 @@ public class ProductoVarianteController {
     }
 
     @GetMapping
-    public String listar(@PathVariable Long productoId, Model model) {
+    public String listar(@PathVariable Long productoId,
+                         @RequestParam(defaultValue = "") String volver,
+                         Model model) {
         Producto producto = productoService.getProductoById(productoId)
                 .orElseThrow(() -> new IllegalArgumentException("Producto no encontrado"));
         List<ProductoVariante> variantes = varianteService.listar(productoId);
@@ -67,6 +69,7 @@ public class ProductoVarianteController {
         }
         model.addAttribute("producto", producto);
         model.addAttribute("variantes", variantes);
+        model.addAttribute("volver", rutaVolver(volver));
         prepararAtributos(producto, nueva, model);
         return "producto/variantes";
     }
@@ -75,6 +78,7 @@ public class ProductoVarianteController {
     public String guardar(@PathVariable Long productoId, @ModelAttribute ProductoVariante variante,
                           @RequestParam Map<String, String> parametros,
                           @RequestParam(required = false) MultipartFile foto,
+                          @RequestParam(defaultValue = "") String volver,
                           RedirectAttributes ra) {
         try {
             aplicarAtributosDinamicos(variante, parametros);
@@ -82,7 +86,7 @@ public class ProductoVarianteController {
             varianteService.guardar(productoId, variante);
             ra.addFlashAttribute("mensaje", "Presentación guardada");
         } catch (Exception e) { ra.addFlashAttribute("error", e.getMessage()); }
-        return "redirect:/productos/" + productoId + "/variantes";
+        return redireccionDespuesDeGuardar(productoId, volver);
     }
 
     @GetMapping({"/{id}/foto", "/{id}/foto/{nombre:.+}"})
@@ -140,21 +144,37 @@ public class ProductoVarianteController {
     }
 
     @GetMapping("/{id}/editar")
-    public String editar(@PathVariable Long productoId, @PathVariable Long id, Model model) {
+    public String editar(@PathVariable Long productoId, @PathVariable Long id,
+                         @RequestParam(defaultValue = "") String volver,
+                         Model model) {
         ProductoVariante variante = varianteService.buscar(id)
                 .orElseThrow(() -> new IllegalArgumentException("Variante no encontrada"));
         if (!variante.getProducto().getId().equals(productoId)) throw new IllegalArgumentException("Variante inválida");
         model.addAttribute("producto", variante.getProducto());
         model.addAttribute("variantes", varianteService.listar(productoId));
+        model.addAttribute("volver", rutaVolver(volver));
         prepararAtributos(variante.getProducto(), variante, model);
         return "producto/variantes";
     }
 
     @PostMapping("/{id}/eliminar")
-    public String eliminar(@PathVariable Long productoId, @PathVariable Long id, RedirectAttributes ra) {
+    public String eliminar(@PathVariable Long productoId, @PathVariable Long id,
+                           @RequestParam(defaultValue = "") String volver,
+                           RedirectAttributes ra) {
         try { varianteService.eliminar(id); ra.addFlashAttribute("mensaje", "Variante eliminada"); }
         catch (Exception e) { ra.addFlashAttribute("error", e.getMessage()); }
-        return "redirect:/productos/" + productoId + "/variantes";
+        return redireccionDespuesDeGuardar(productoId, volver);
+    }
+
+    private String redireccionDespuesDeGuardar(Long productoId, String volver) {
+        String segura = rutaVolver(volver);
+        return segura.isBlank()
+                ? "redirect:/productos/" + productoId + "/variantes"
+                : "redirect:" + segura + "#producto-" + productoId;
+    }
+
+    private String rutaVolver(String volver) {
+        return "/canales/publicar/revision".equals(volver) ? volver : "";
     }
 
     void prepararAtributos(Producto producto, ProductoVariante variante, Model model) {
@@ -221,10 +241,14 @@ public class ProductoVarianteController {
         }
 
         Map<String, String> atributos = new LinkedHashMap<>();
+        boolean tieneNombreExistente = false;
         if (variante.getId() != null) {
-            varianteService.buscar(variante.getId())
-                    .map(this::leerAtributos)
-                    .ifPresent(atributos::putAll);
+            ProductoVariante existente = varianteService.buscar(variante.getId()).orElse(null);
+            if (existente != null) {
+                atributos.putAll(leerAtributos(existente));
+                tieneNombreExistente = existente.getNombre() != null
+                        && !existente.getNombre().isBlank();
+            }
         }
         parametros.forEach((clave, valor) -> {
             if (!clave.startsWith("atributo_")) return;
@@ -263,7 +287,8 @@ public class ProductoVarianteController {
             if ("FILTRABLE_SIZE".equals(id) && atributos.containsKey("SIZE")) return;
             partesNombre.add(valor.trim());
         });
-        if (!partesNombre.isEmpty()) {
+        if (!partesNombre.isEmpty() && !tieneNombreExistente
+                && (variante.getNombre() == null || variante.getNombre().isBlank())) {
             variante.setNombre(String.join(" / ", partesNombre));
         }
     }

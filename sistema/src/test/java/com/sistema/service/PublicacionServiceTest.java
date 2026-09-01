@@ -21,6 +21,27 @@ import static org.mockito.Mockito.*;
 class PublicacionServiceTest {
 
     @Test
+    void noPublicaProductosSinStock() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        PublicadorCanal publicador = mock(PublicadorCanal.class);
+        Producto agotado = producto(9L, "SIN-STOCK");
+        agotado.setCantidad(0);
+        when(publicador.canal()).thenReturn(CanalVenta.MERCADO_LIBRE);
+        when(productos.findById(9L)).thenReturn(Optional.of(agotado));
+        PublicacionService service = new PublicacionService(
+                productos, publicaciones, List.of(publicador));
+
+        ResultadoPublicacionLote resultado = service.publicar(
+                List.of(9L), List.of(CanalVenta.MERCADO_LIBRE));
+
+        assertEquals(0, resultado.getExitosas());
+        assertTrue(resultado.getErrores().isEmpty());
+        verify(publicador, never()).publicar(any(), any());
+        verifyNoInteractions(publicaciones);
+    }
+
+    @Test
     void detieneElLoteAntesDelSiguienteProductoCuandoSeSolicitaCancelar() {
         ProductoRepository productos = mock(ProductoRepository.class);
         PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
@@ -70,6 +91,7 @@ class PublicacionServiceTest {
         producto.setId(id);
         producto.setSku(sku);
         producto.setDescripcion(sku);
+        producto.setCantidad(1);
         return producto;
     }
 }

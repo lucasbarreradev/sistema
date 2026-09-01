@@ -71,7 +71,8 @@ public class TiendanubeImportador implements ImportadorCanal {
         if (!marca.isBlank()) datos.put("marca", marca);
         if (p.has("published")) datos.put("estado", p.path("published").asBoolean() ? "active" : "inactive");
         return new ProductoCanalImportado(p.path("id").asText(), variante.path("sku").asText(), nombre,
-                variante.path("stock").asInt(0), decimal(variante.path("price").asText("0")), imagen, null, datos, mapearVariantes(p));
+                variante.path("stock").asInt(0), decimal(variante.path("price").asText("0")), imagen, null, datos,
+                mapearVariantes(p, nombre));
     }
 
     private Map<String, String> obtenerCategorias(TiendanubeCredencialesService.Credenciales c,
@@ -124,6 +125,10 @@ public class TiendanubeImportador implements ImportadorCanal {
     }
 
     List<VarianteCanalImportada> mapearVariantes(JsonNode producto) {
+        return mapearVariantes(producto, localizado(producto.path("name")));
+    }
+
+    private List<VarianteCanalImportada> mapearVariantes(JsonNode producto, String nombreProducto) {
         List<VarianteCanalImportada> resultado = new ArrayList<>();
         if (!producto.path("variants").isArray() || producto.path("variants").isEmpty()) return resultado;
         List<String> nombresAtributos = new ArrayList<>();
@@ -150,7 +155,12 @@ public class TiendanubeImportador implements ImportadorCanal {
             }
             String nombre = valores.stream().filter(valor -> !valor.isBlank())
                     .collect(java.util.stream.Collectors.joining(" / "));
-            if (nombre.isBlank()) nombre = "Presentación única";
+            if (nombre.isBlank()) {
+                nombre = nombreProducto == null || nombreProducto.isBlank()
+                        || "Producto sin nombre".equals(nombreProducto)
+                        ? "Presentación única"
+                        : nombreProducto;
+            }
             resultado.add(new VarianteCanalImportada(v.path("id").asText(), v.path("sku").asText(),
                     nombre, talle, color,
                     v.path("stock").asInt(0), decimal(v.path("price").asText("0")), v.path("barcode").asText(null), null,

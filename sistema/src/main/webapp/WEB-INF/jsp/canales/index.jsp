@@ -390,7 +390,7 @@
                     </c:if>
                 </form>
 
-                <form method="post" action="${pageContext.request.contextPath}/canales/publicar">
+                <form method="post" action="${pageContext.request.contextPath}/canales/publicar/revisar">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
                     <input type="hidden" name="productoQ" value="${fn:escapeXml(busquedaProductos)}">
                     <input type="hidden" id="seleccionarTodosResultadosInput"
@@ -490,9 +490,9 @@
                             </div>
                             <button type="submit" class="btn btn-success mt-3" ${sincronizacionActiva ? 'disabled' : ''}>
                                 <i class="fa-solid ${sincronizacionActiva ? 'fa-spinner fa-spin' : 'fa-cloud-arrow-up'} mr-1"></i>
-                                ${sincronizacionActiva ? 'Hay un trabajo en proceso' : 'Publicar seleccionados'}
+                                ${sincronizacionActiva ? 'Hay un trabajo en proceso' : 'Revisar seleccionados'}
                             </button>
-                            <small class="text-muted d-block mt-2">La publicación continúa en segundo plano aunque cierre esta página. El resultado aparecerá en la tabla de trabajos.</small>
+                            <small class="text-muted d-block mt-2">El siguiente paso no publica nada: muestra qué productos están listos y cuáles necesitan correcciones.</small>
                         </div>
                     </div>
                 </form>

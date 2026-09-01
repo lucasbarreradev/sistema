@@ -26,6 +26,55 @@ import static org.mockito.Mockito.*;
 
 class ImportacionCanalServiceTest {
     @Test
+    void noTraeNiImportaProductosSinStock() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        ProductoService productoService = mock(ProductoService.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        ImportadorCanal importador = mock(ImportadorCanal.class);
+        when(importador.canal()).thenReturn(CanalVenta.TIENDANUBE);
+        when(importador.configurado()).thenReturn(true);
+        ProductoCanalImportado agotado = new ProductoCanalImportado(
+                "TN-0", "BOT-0", "Botella agotada", 0, BigDecimal.TEN,
+                null, null, Map.of(), List.of());
+        ProductoCanalImportado disponible = new ProductoCanalImportado(
+                "TN-1", "BOT-1", "Botella disponible", 2, BigDecimal.TEN,
+                null, null, Map.of(), List.of());
+        when(importador.obtenerProductos()).thenReturn(List.of(agotado, disponible));
+        ImportacionCanalService service = new ImportacionCanalService(
+                productos, productoService, publicaciones, List.of(importador),
+                mock(ProductoVarianteRepository.class), mock(ProductoVarianteService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper());
+
+        List<ProductoCanalImportado> recibidos =
+                service.obtenerProductos(CanalVenta.TIENDANUBE);
+
+        assertEquals(List.of(disponible), recibidos);
+    }
+
+    @Test
+    void traeProductoSiAlgunaVarianteTieneStock() {
+        ImportadorCanal importador = mock(ImportadorCanal.class);
+        when(importador.canal()).thenReturn(CanalVenta.TIENDANUBE);
+        when(importador.configurado()).thenReturn(true);
+        ProductoCanalImportado producto = new ProductoCanalImportado(
+                "TN-2", "BOT-2", "Botella con variantes", 0, BigDecimal.TEN,
+                null, null, Map.of(), List.of(
+                new VarianteCanalImportada("1", "BOT-500", "500 ml", "", "", 0,
+                        BigDecimal.TEN, null, null, null, Map.of(), null, false),
+                new VarianteCanalImportada("2", "BOT-750", "750 ml", "", "", 3,
+                        BigDecimal.TEN, null, null, null, Map.of(), null, false)));
+        when(importador.obtenerProductos()).thenReturn(List.of(producto));
+        ImportacionCanalService service = new ImportacionCanalService(
+                mock(ProductoRepository.class), mock(ProductoService.class),
+                mock(PublicacionCanalRepository.class), List.of(importador),
+                mock(ProductoVarianteRepository.class), mock(ProductoVarianteService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper());
+
+        assertEquals(List.of(producto),
+                service.obtenerProductos(CanalVenta.TIENDANUBE));
+    }
+
+    @Test
     void noImportaProductosCuandoLaCancelacionYaFueSolicitada() {
         ProductoRepository productos = mock(ProductoRepository.class);
         ProductoService productoService = mock(ProductoService.class);

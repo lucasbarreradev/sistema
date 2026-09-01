@@ -25,4 +25,7 @@ public record AtributoVarianteMl(
     public String getUnidadPredeterminada() { return unidadPredeterminada; }
     public boolean isObligatorio() { return obligatorio; }
     public boolean isPermiteVariar() { return permiteVariar; }
+    public boolean isPermiteValorLibre() {
+        return "BRAND".equals(id) || "MODEL".equals(id) || "MANUFACTURER".equals(id);
+    }
 }

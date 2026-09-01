@@ -19,7 +19,9 @@ import java.util.List;
 import java.util.LinkedHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -34,6 +36,14 @@ class ProductoVarianteControllerTest {
             atributosService,
             mock(TenantPublicResourceService.class),
             mock(ImagenWooCommerceService.class), objectMapper);
+
+    @Test
+    void marcaYModeloPermitenValoresFueraDeLasSugerencias() {
+        assertTrue(atributo("BRAND", "Marca", true, false).isPermiteValorLibre());
+        assertTrue(atributo("MODEL", "Modelo", true, false).isPermiteValorLibre());
+        assertTrue(atributo("MANUFACTURER", "Fabricante", true, false).isPermiteValorLibre());
+        assertFalse(atributo("COLOR", "Color", true, true).isPermiteValorLibre());
+    }
 
     @Test
     void conservaTalleYColorCuandoSeUsaElFormularioAlternativo() {
@@ -122,6 +132,37 @@ class ProductoVarianteControllerTest {
         assertEquals("Celeste / 40 AR", variante.getNombre());
         assertEquals("Celeste", variante.getColor());
         assertEquals("40 AR", variante.getTalle());
+    }
+
+    @Test
+    void alEditarMililitrosConservaElNombreImportadoDeTiendanube() {
+        ProductoVariante existente = new ProductoVariante();
+        existente.setId(91L);
+        existente.setNombre("Presentación única");
+        when(varianteService.buscar(91L)).thenReturn(Optional.of(existente));
+
+        ProductoVariante edicion = new ProductoVariante();
+        edicion.setId(91L);
+        controller.aplicarAtributosDinamicos(edicion, Map.of(
+                "atributo_CAPACITY", "500",
+                "unidad_CAPACITY", "ml",
+                "es_variacion_CAPACITY", "true"));
+
+        assertNull(edicion.getNombre());
+        assertEquals("{\"CAPACITY\":\"500 ml\"}",
+                edicion.getMercadoLibreAtributosJson());
+    }
+
+    @Test
+    void elNombreEscritoNoSeReemplazaConLosAtributosDinamicos() {
+        ProductoVariante variante = new ProductoVariante();
+        variante.setNombre("Black vetiver");
+
+        controller.aplicarAtributosDinamicos(variante, Map.of(
+                "atributo_FRAGRANCE", "Vetiver negro",
+                "es_variacion_FRAGRANCE", "true"));
+
+        assertEquals("Black vetiver", variante.getNombre());
     }
 
     private AtributoVarianteMl atributo(

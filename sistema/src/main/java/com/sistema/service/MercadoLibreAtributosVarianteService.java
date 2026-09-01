@@ -10,6 +10,7 @@ import org.springframework.web.client.RestClientResponseException;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 @Service
@@ -19,6 +20,8 @@ public class MercadoLibreAtributosVarianteService {
             "SIZE_GRID_ID", "SIZE_GRID_ROW_ID", "GTIN");
     private final RestClient restClient = RestClient.create();
     private final MercadoLibreTokenService tokenService;
+    private final Map<String, List<AtributoVarianteMl>> atributosPorCategoria =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     public MercadoLibreAtributosVarianteService(MercadoLibreTokenService tokenService) {
         this.tokenService = tokenService;
@@ -29,6 +32,8 @@ public class MercadoLibreAtributosVarianteService {
         String categoria = producto.getMercadoLibreCategoriaId();
         if (categoria == null || categoria.isBlank()) categoria = predecirCategoria(producto.getDescripcion());
         if (categoria == null || categoria.isBlank()) return new Resultado(null, List.of());
+        List<AtributoVarianteMl> guardados = atributosPorCategoria.get(categoria);
+        if (guardados != null) return new Resultado(categoria, guardados);
         JsonNode respuesta = get("/categories/" + categoria + "/attributes");
         List<AtributoVarianteMl> atributos = new ArrayList<>();
         if (respuesta != null && respuesta.isArray()) {
@@ -39,7 +44,9 @@ public class MercadoLibreAtributosVarianteService {
                         || "CHILD_PK".equals(atributo.path("hierarchy").asText());
                 String id = atributo.path("id").asText();
                 boolean obligatorio = tags.path("required").asBoolean(false)
-                        || tags.path("catalog_required").asBoolean(false);
+                        || tags.path("new_required").asBoolean(false)
+                        || tags.path("catalog_required").asBoolean(false)
+                        || tags.path("catalog_listing_required").asBoolean(false);
                 boolean condicional = tags.path("conditional_required").asBoolean(false);
                 boolean marcaOModelo = "BRAND".equals(id) || "MODEL".equals(id);
                 if ((!permiteVariar && !obligatorio && !condicional && !marcaOModelo)
@@ -66,7 +73,9 @@ public class MercadoLibreAtributosVarianteService {
                         permiteVariar));
             }
         }
-        return new Resultado(categoria, atributos);
+        List<AtributoVarianteMl> inmutables = List.copyOf(atributos);
+        atributosPorCategoria.put(categoria, inmutables);
+        return new Resultado(categoria, inmutables);
     }
 
     private String predecirCategoria(String descripcion) {

@@ -64,7 +64,7 @@ public class ImportacionCanalService {
     }
 
     public List<ProductoCanalImportado> obtenerProductos(CanalVenta canal) {
-        return importadorConfigurado(canal).obtenerProductos();
+        return filtrarConStock(importadorConfigurado(canal).obtenerProductos());
     }
 
     public List<ProductoCanalImportado> obtenerProductos(
@@ -76,7 +76,8 @@ public class ImportacionCanalService {
             CanalVenta canal, boolean incluirInactivas,
             BooleanSupplier cancelacionSolicitada) {
         ImportadorCanal importador = importadorConfigurado(canal);
-        return importador.obtenerProductos(incluirInactivas, cancelacionSolicitada);
+        return filtrarConStock(importador.obtenerProductos(
+                incluirInactivas, cancelacionSolicitada));
     }
 
     public List<ProductoCanalImportado> obtenerUltimasPublicacionesMercadoLibre(
@@ -86,8 +87,8 @@ public class ImportacionCanalService {
         if (!(importador instanceof MercadoLibreImportador mercadoLibre)) {
             throw new IllegalStateException("El importador de Mercado Libre no está disponible");
         }
-        return mercadoLibre.obtenerUltimasPublicaciones(
-                cantidad, categoria, incluirInactivas, cancelacionSolicitada);
+        return filtrarConStock(mercadoLibre.obtenerUltimasPublicaciones(
+                cantidad, categoria, incluirInactivas, cancelacionSolicitada));
     }
 
     public ResultadoImportacionCanal importar(CanalVenta canal,
@@ -101,8 +102,9 @@ public class ImportacionCanalService {
         importadorConfigurado(canal);
         ResultadoImportacionCanal resultado = new ResultadoImportacionCanal();
         if (productos == null) return resultado;
-        resultado.recibidos(productos.size());
-        for (ProductoCanalImportado dato : productos) {
+        List<ProductoCanalImportado> productosConStock = filtrarConStock(productos);
+        resultado.recibidos(productosConStock.size());
+        for (ProductoCanalImportado dato : productosConStock) {
             if (cancelacionSolicitada.getAsBoolean()) return resultado;
             try { guardar(canal, dato, resultado); }
             catch (Exception e) {
@@ -111,6 +113,23 @@ public class ImportacionCanalService {
             }
         }
         return resultado;
+    }
+
+    private List<ProductoCanalImportado> filtrarConStock(
+            Collection<ProductoCanalImportado> productos) {
+        if (productos == null || productos.isEmpty()) return List.of();
+        return productos.stream()
+                .filter(Objects::nonNull)
+                .filter(this::tieneStockPositivo)
+                .toList();
+    }
+
+    private boolean tieneStockPositivo(ProductoCanalImportado producto) {
+        if (Optional.ofNullable(producto.cantidad()).orElse(0) > 0) return true;
+        if (producto.variantes() == null) return false;
+        return producto.variantes().stream()
+                .filter(Objects::nonNull)
+                .anyMatch(variante -> Optional.ofNullable(variante.stock()).orElse(0) > 0);
     }
 
     private ImportadorCanal importadorConfigurado(CanalVenta canal) {
