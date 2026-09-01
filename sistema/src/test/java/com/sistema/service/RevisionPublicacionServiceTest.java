@@ -61,7 +61,37 @@ class RevisionPublicacionServiceTest {
 
         assertFalse(revision.isListo());
         assertTrue(revision.faltantes().contains("Categoría de Mercado Libre"));
+        verify(atributos).predecirCategoria("Producto de prueba");
         verify(atributos, never()).obtenerPorCategoria(any());
+    }
+
+    @Test
+    void detectaYReutilizaLaCategoriaDeOrigenParaTodoElGrupo() {
+        Producto primero = producto(20L);
+        Producto segundo = producto(21L);
+        primero.setCategoriaOrigen("Aromatizantes");
+        segundo.setCategoriaOrigen("Aromatizantes");
+        primero.setFotoUrlExterna("https://img.test/20.jpg");
+        segundo.setFotoUrlExterna("https://img.test/21.jpg");
+        List<Long> ids = List.of(20L, 21L);
+        when(productos.findAllById(ids)).thenReturn(List.of(primero, segundo));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of());
+        when(atributos.predecirCategoria("Aromatizantes")).thenReturn("MLA123");
+        when(atributos.obtenerPorCategoria("MLA123")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA123", List.of()));
+
+        var revisiones = service.revisar(
+                ids, List.of(CanalVenta.MERCADO_LIBRE));
+
+        assertEquals(2, revisiones.size());
+        assertEquals("MLA123", primero.getMercadoLibreCategoriaId());
+        assertEquals("MLA123", segundo.getMercadoLibreCategoriaId());
+        verify(atributos).predecirCategoria("Aromatizantes");
+        verify(atributos).obtenerPorCategoria("MLA123");
+        verify(productos).save(primero);
+        verify(productos).save(segundo);
     }
 
     @Test

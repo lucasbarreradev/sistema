@@ -132,8 +132,20 @@ public class RevisionPublicacionService {
             List<AtributoVarianteMl> atributosDeVariante,
             ConsultasMercadoLibre consultas) {
         if (!tieneTexto(producto.getMercadoLibreCategoriaId())) {
-            faltantes.add("Categoría de Mercado Libre");
-            return;
+            ConsultaCategoria categoria = consultas.predecir(producto);
+            if (categoria.error() != null) {
+                faltantes.add("Categoría de Mercado Libre");
+                faltantes.add("No se pudo detectar la categoría: "
+                        + mensaje(categoria.error()));
+                return;
+            }
+            if (tieneTexto(categoria.categoriaId())) {
+                producto.setMercadoLibreCategoriaId(categoria.categoriaId());
+                productoRepository.save(producto);
+            } else {
+                faltantes.add("Categoría de Mercado Libre");
+                return;
+            }
         }
         try {
             ConsultaAtributos consulta = consultas.obtener(
@@ -178,6 +190,8 @@ public class RevisionPublicacionService {
         private final long limiteNanos;
         private final Map<String, ConsultaAtributos> porCategoria =
                 new LinkedHashMap<>();
+        private final Map<String, ConsultaCategoria> predicciones =
+                new LinkedHashMap<>();
 
         private ConsultasMercadoLibre(long limiteNanos) {
             this.limiteNanos = limiteNanos;
@@ -201,11 +215,48 @@ public class RevisionPublicacionService {
             porCategoria.put(categoria, nueva);
             return nueva;
         }
+
+        private ConsultaCategoria predecir(Producto producto) {
+            String origen = limpiar(producto.getCategoriaOrigen());
+            String descripcion = limpiar(producto.getDescripcion());
+            String consulta = origen != null ? origen : descripcion;
+            String clave = normalizarClave(consulta);
+            ConsultaCategoria existente = predicciones.get(clave);
+            if (existente != null) return existente;
+            ConsultaCategoria nueva;
+            if (consulta == null) {
+                nueva = new ConsultaCategoria("", null);
+            } else if (System.nanoTime() >= limiteNanos) {
+                nueva = new ConsultaCategoria("", new IllegalStateException(
+                        "se alcanzó el tiempo máximo de consulta"));
+            } else {
+                try {
+                    nueva = new ConsultaCategoria(
+                            atributosMercadoLibre.predecirCategoria(consulta), null);
+                } catch (RuntimeException e) {
+                    nueva = new ConsultaCategoria("", e);
+                }
+            }
+            predicciones.put(clave, nueva);
+            return nueva;
+        }
+
+        private String normalizarClave(String valor) {
+            if (valor == null) return "";
+            return java.text.Normalizer.normalize(
+                            valor, java.text.Normalizer.Form.NFD)
+                    .replaceAll("\\p{M}", "")
+                    .replaceAll("[^A-Za-z0-9]+", " ")
+                    .trim().toLowerCase(java.util.Locale.ROOT);
+        }
     }
 
     private record ConsultaAtributos(
             MercadoLibreAtributosVarianteService.Resultado resultado,
             RuntimeException error) {
+    }
+
+    private record ConsultaCategoria(String categoriaId, RuntimeException error) {
     }
 
     private Set<String> atributosProducto(Producto producto) {
