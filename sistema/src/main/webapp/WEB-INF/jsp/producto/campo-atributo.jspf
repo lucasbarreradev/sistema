@@ -1,3 +1,4 @@
+<%@ page pageEncoding="UTF-8" %>
 <div class="col-md-3 mb-3">
     <c:if test="${marcarComoVariacion}">
         <input type="hidden" name="es_variacion_${atributo.id}" value="true">
