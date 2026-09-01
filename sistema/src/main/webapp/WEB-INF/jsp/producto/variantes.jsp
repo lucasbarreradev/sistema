@@ -17,81 +17,32 @@
             <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/>
             <input type="hidden" name="id" value="${variante.id}">
             <input type="hidden" name="volver" value="${fn:escapeXml(volver)}">
+            <input type="hidden" name="atributos_separados" value="true">
+            <c:if test="${not empty atributosGenerales}">
+                <div class="col-12"><h5 class="font-weight-bold text-primary border-bottom pb-2">Atributos generales del producto</h5></div>
+                <c:set var="valoresCampos" value="${valoresAtributosGenerales}"/>
+                <c:set var="unidadesCampos" value="${unidadesAtributosGenerales}"/>
+                <c:set var="marcarComoVariacion" value="${false}"/>
+                <c:set var="seccionCampos" value="general"/>
+                <c:forEach items="${atributosGenerales}" var="atributo">
+                    <%@ include file="campo-atributo.jspf" %>
+                </c:forEach>
+            </c:if>
+            <div class="col-12 mt-2"><h5 class="font-weight-bold text-primary border-bottom pb-2">Datos de la presentación</h5></div>
             <div class="col-md-4 mb-3">
                 <label>Nombre de la presentación</label>
-                <input name="nombre" value="${fn:escapeXml(variante.nombreMostrar)}" class="form-control"
-                       placeholder="Ej.: Black vetiver">
-                <small class="form-text text-muted">Se conserva el nombre recibido de Tiendanube y podés modificarlo.</small>
+                <input name="nombre" value="${fn:escapeXml(variante.nombreMostrar)}" class="form-control">
             </div>
-            <c:choose>
-                <c:when test="${not empty atributosVariante}">
-                    <c:forEach items="${atributosVariante}" var="atributo">
-                        <div class="col-md-3 mb-3">
-                            <c:if test="${atributo.permiteVariar}">
-                                <input type="hidden" name="es_variacion_${atributo.id}" value="true">
-                            </c:if>
-                            <label><c:out value="${atributo.nombre}"/><c:if test="${atributo.obligatorio}"> <span class="text-danger font-weight-bold" title="Obligatorio para Mercado Libre">*</span></c:if></label>
-                            <c:choose>
-                                <c:when test="${atributo.tipo == 'number_unit'}">
-                                    <div class="input-group">
-                                        <input name="atributo_${atributo.id}" value="${valoresAtributos[atributo.id]}"
-                                               class="form-control" inputmode="decimal" <c:if test="${atributo.obligatorio}">required</c:if>>
-                                        <div class="input-group-append">
-                                            <select name="unidad_${atributo.id}" class="form-control">
-                                                <c:forEach items="${atributo.unidades}" var="unidad">
-                                                    <option value="${unidad}" <c:if test="${unidadesAtributos[atributo.id] == unidad}">selected</c:if>><c:out value="${unidad}"/></option>
-                                                </c:forEach>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </c:when>
-                                <c:when test="${atributo.permiteValorLibre and not empty atributo.valores}">
-                                    <input name="atributo_${atributo.id}"
-                                           value="${fn:escapeXml(valoresAtributos[atributo.id])}"
-                                           class="form-control"
-                                           list="sugerencias_${atributo.id}"
-                                           autocomplete="off"
-                                           <c:if test="${atributo.obligatorio}">required</c:if>>
-                                    <datalist id="sugerencias_${atributo.id}">
-                                        <c:forEach items="${atributo.valores}" var="opcion">
-                                            <option value="${fn:escapeXml(opcion)}"></option>
-                                        </c:forEach>
-                                    </datalist>
-                                    <small class="form-text text-muted">Podés elegir una sugerencia o escribir otro valor.</small>
-                                </c:when>
-                                <c:when test="${not empty atributo.valores}">
-                                    <div class="campo-opciones-buscables">
-                                        <input type="text"
-                                               class="form-control atributo-buscador"
-                                               value="${fn:escapeXml(valoresAtributos[atributo.id])}"
-                                               placeholder="Escribí para buscar..."
-                                               autocomplete="off"
-                                               <c:if test="${atributo.obligatorio}">required</c:if>>
-                                        <select name="atributo_${atributo.id}"
-                                                class="atributo-select-buscable d-none">
-                                            <option value="">Seleccionar</option>
-                                            <c:forEach items="${atributo.valores}" var="opcion">
-                                                <option value="${fn:escapeXml(opcion)}" <c:if test="${valoresAtributos[atributo.id] == opcion}">selected</c:if>><c:out value="${opcion}"/></option>
-                                            </c:forEach>
-                                        </select>
-                                        <div class="opciones-buscables list-group shadow-sm"></div>
-                                        <small class="form-text text-muted">Escribí y seleccioná una opción correcta.</small>
-                                    </div>
-                                </c:when>
-                                <c:otherwise>
-                                    <input name="atributo_${atributo.id}" value="${valoresAtributos[atributo.id]}"
-                                           class="form-control" <c:if test="${atributo.obligatorio}">required</c:if>>
-                                </c:otherwise>
-                            </c:choose>
-                            <c:if test="${atributo.id == 'EMPTY_GTIN_REASON'}"><small class="form-text text-muted">Elegir solamente si esta variante no tiene GTIN.</small></c:if>
-                        </div>
-                    </c:forEach>
-                </c:when>
-                <c:otherwise>
-                    <div class="col-md-3 mb-3"><label>Talle</label><input name="talle" value="${variante.talle}" class="form-control" placeholder="M, 42..."></div>
-                    <div class="col-md-3 mb-3"><label>Color</label><input name="color" value="${variante.color}" class="form-control"></div>
-                </c:otherwise>
-            </c:choose>
+            <c:if test="${not empty atributosDeVariante}">
+                <div class="col-12"><h6 class="font-weight-bold">Atributos de esta variante</h6></div>
+                <c:set var="valoresCampos" value="${valoresAtributos}"/>
+                <c:set var="unidadesCampos" value="${unidadesAtributos}"/>
+                <c:set var="marcarComoVariacion" value="${true}"/>
+                <c:set var="seccionCampos" value="variante"/>
+                <c:forEach items="${atributosDeVariante}" var="atributo">
+                    <%@ include file="campo-atributo.jspf" %>
+                </c:forEach>
+            </c:if>
             <div class="col-md-3 mb-3">
                 <label>GTIN / código universal</label>
                 <input name="mercadoLibreGtin" value="${variante.mercadoLibreGtin}" class="form-control" placeholder="EAN, UPC o ISBN">
@@ -122,17 +73,26 @@
         <small class="text-muted">El precio de compra, tarjeta y cuenta corriente son opcionales. Si tarjeta o cuenta corriente quedan vacíos, se usará el precio contado.</small>
     </div></div>
     <div class="card shadow"><div class="card-body table-responsive"><table class="table table-bordered">
-        <thead><tr><th>Foto</th><th>Presentación</th><th>SKU</th><th>Código</th><th>Stock</th><th>Contado</th><th></th></tr></thead><tbody>
+        <thead><tr><th>Foto</th><th>Presentación</th><c:if test="${not empty atributosDeVariante}"><th>Atributos de variante</th></c:if><th>SKU</th><th>Código</th><th>Stock</th><th>Contado</th><th></th></tr></thead><tbody>
         <c:forEach items="${variantes}" var="v"><tr>
             <td><c:if test="${v.tieneFoto}"><img class="img-thumbnail" style="width:64px;height:64px;object-fit:contain;background:#fff" alt="Foto" src="${pageContext.request.contextPath}/productos/${producto.id}/variantes/${v.id}/foto"></c:if><c:if test="${not v.tieneFoto}"><span class="text-muted">General</span></c:if></td>
-            <td><c:out value="${v.nombreMostrar}"/></td><td><c:out value="${v.sku}"/></td><td><c:out value="${v.codigoBarras}"/></td>
+            <td><c:out value="${v.nombreMostrar}"/></td>
+            <c:if test="${not empty atributosDeVariante}"><td>
+                <c:forEach items="${atributosDeVariante}" var="atributo">
+                    <c:set var="valorAtributo" value="${valoresAtributosVariantes[v.id][atributo.id]}"/>
+                    <div class="small"><strong><c:out value="${atributo.nombre}"/>:</strong>
+                        <c:choose><c:when test="${not empty valorAtributo}"><c:out value="${valorAtributo}"/></c:when><c:otherwise><span class="text-warning">Sin completar</span></c:otherwise></c:choose>
+                    </div>
+                </c:forEach>
+            </td></c:if>
+            <td><c:out value="${v.sku}"/></td><td><c:out value="${v.codigoBarras}"/></td>
             <td>${v.stock}</td><td>${empty v.precioContado ? producto.precioContado : v.precioContado}</td>
             <td><c:url var="urlEditarVariante" value="/productos/${producto.id}/variantes/${v.id}/editar"><c:param name="volver" value="${volver}"/></c:url>
             <a class="btn btn-sm btn-warning" href="${urlEditarVariante}">Editar</a>
             <form class="d-inline" method="post" action="${pageContext.request.contextPath}/productos/${producto.id}/variantes/${v.id}/eliminar">
                 <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}"/><input type="hidden" name="volver" value="${fn:escapeXml(volver)}"><button class="btn btn-sm btn-danger">Eliminar</button>
             </form></td></tr></c:forEach>
-        <c:if test="${empty variantes}"><tr><td colspan="7" class="text-center text-muted">Todavía no hay presentaciones. Agregá al menos una para completar el producto.</td></tr></c:if>
+        <c:if test="${empty variantes}"><tr><td colspan="${empty atributosDeVariante ? 7 : 8}" class="text-center text-muted">Todavía no hay presentaciones. Agregá al menos una para completar el producto.</td></tr></c:if>
         </tbody></table></div></div>
 </div></div></div>
 <style>

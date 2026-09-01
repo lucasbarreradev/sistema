@@ -45,7 +45,8 @@ class RevisionPublicacionServiceTest {
         assertTrue(propiedades.containsAll(Set.of(
                 "producto", "variantes", "faltantes", "atributosFaltantes",
                 "atributosObligatorios", "listo", "marcaObligatoria",
-                "modeloObligatorio")));
+                "modeloObligatorio", "atributosGenerales", "atributosDeVariante",
+                "valoresAtributosGenerales", "valoresAtributosVariantes")));
     }
 
     @Test
@@ -83,6 +84,9 @@ class RevisionPublicacionServiceTest {
         assertEquals(List.of("Marca"), revision.atributosObligatorios());
         assertTrue(revision.isMarcaObligatoria());
         assertFalse(revision.isModeloObligatorio());
+        assertEquals(List.of("BRAND"), revision.atributosGenerales().stream()
+                .map(AtributoVarianteMl::id).toList());
+        assertTrue(revision.atributosDeVariante().isEmpty());
         assertTrue(revision.faltantes().get(0).contains("Marca"));
     }
 
@@ -109,6 +113,37 @@ class RevisionPublicacionServiceTest {
     }
 
     @Test
+    void muestraLosAtributosDeUnaUnicaVarianteEnLaRevision() {
+        Producto producto = producto(12L);
+        producto.setMercadoLibreCategoriaId("MLA123");
+        producto.setFotoUrlExterna("https://img.test/12.jpg");
+        ProductoVariante variante = new ProductoVariante();
+        variante.setId(120L);
+        variante.setProducto(producto);
+        variante.setNombre("Black vetiver");
+        variante.setColor("Negro");
+        variante.setStock(2);
+        variante.setPrecioContado(BigDecimal.TEN);
+        List<Long> ids = List.of(12L);
+        when(productos.findAllById(ids)).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of(variante));
+        when(atributos.obtenerPorCategoria("MLA123")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA123", List.of(new AtributoVarianteMl(
+                        "COLOR", "Color", "string", List.of("Negro", "Blanco"),
+                        List.of(), "", true, true))));
+
+        var revision = service.revisar(
+                ids, List.of(CanalVenta.MERCADO_LIBRE)).get(0);
+
+        assertEquals(List.of("COLOR"), revision.atributosDeVariante().stream()
+                .map(AtributoVarianteMl::id).toList());
+        assertEquals("Negro",
+                revision.valoresAtributosVariantes().get(120L).get("COLOR"));
+    }
+
+    @Test
     void guardaDatosGeneralesStockYPrecioDeCadaVariante() {
         Producto producto = producto(3L);
         ProductoVariante variante = new ProductoVariante();
@@ -123,15 +158,21 @@ class RevisionPublicacionServiceTest {
                 3L, "Título nuevo", "Descripción nueva", "MLA999",
                 "BIG MISTY", "BM-500", null, new BigDecimal("8000"),
                 "me2", true, true, "gold_pro",
-                List.of(30L), List.of(7), List.of(new BigDecimal("9500")));
+                List.of(30L), List.of(7), List.of(new BigDecimal("9500")),
+                java.util.Map.of(
+                        "ml_general_BRAND", "Marca editada",
+                        "ml_variante_30_COLOR", "Negro"));
 
         assertEquals("Título nuevo", producto.getDescripcion());
         assertEquals("MLA999", producto.getMercadoLibreCategoriaId());
-        assertEquals("BIG MISTY", producto.getMercadoLibreMarca());
+        assertEquals("Marca editada", producto.getMercadoLibreMarca());
         assertEquals("gold_pro", producto.getMercadoLibreListingTypeId());
         assertEquals(7, producto.getCantidad());
         assertEquals(7, variante.getStock());
         assertEquals(new BigDecimal("9500"), variante.getPrecioContado());
+        assertEquals("Negro", variante.getColor());
+        assertEquals("{\"COLOR\":\"Negro\"}",
+                variante.getMercadoLibreAtributosJson());
         assertTrue(producto.getMercadoLibreEnvioGratis());
         assertTrue(producto.getMercadoLibreRetiroPersonal());
         verify(variantes).saveAll(any());

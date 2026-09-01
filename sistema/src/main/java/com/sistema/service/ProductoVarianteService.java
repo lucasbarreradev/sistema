@@ -11,6 +11,9 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.Optional;
 import java.util.Objects;
+import java.util.Set;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
@@ -115,6 +118,30 @@ public class ProductoVarianteService {
         repository.flush();
         if (!repository.existsByProductoId(producto.getId())) producto.setUsaVariantes(false);
         sincronizarStock(producto);
+    }
+
+    public void quitarAtributosMercadoLibre(Long productoId, Set<String> ids) {
+        if (ids == null || ids.isEmpty()) return;
+        ObjectMapper mapper = new ObjectMapper();
+        List<ProductoVariante> variantes = repository
+                .findByProductoIdOrderByNombreAsc(productoId);
+        for (ProductoVariante variante : variantes) {
+            String json = variante.getMercadoLibreAtributosJson();
+            if (json == null || json.isBlank()) continue;
+            try {
+                java.util.LinkedHashMap<String, String> atributos = mapper.readValue(
+                        json, new TypeReference<>() {});
+                if (atributos.keySet().removeAll(ids)) {
+                    variante.setMercadoLibreAtributosJson(
+                            mapper.writeValueAsString(atributos));
+                }
+            } catch (Exception e) {
+                throw new IllegalArgumentException(
+                        "Los atributos de la variante " + variante.getSku()
+                                + " no son válidos", e);
+            }
+        }
+        repository.saveAll(variantes);
     }
 
     public void sincronizarStock(Producto producto) {

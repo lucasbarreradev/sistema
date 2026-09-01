@@ -41,12 +41,22 @@
                 <div class="card-body table-responsive p-0">
                     <table class="table table-bordered mb-0">
                         <thead class="thead-dark">
-                        <tr><th style="width:115px">Estado</th><th>Artículo</th><th>Resultado de la revisión</th><th style="width:190px">Acciones</th></tr>
+                        <tr><th style="width:85px">Publicar</th><th style="width:115px">Estado</th><th>Artículo</th><th>Resultado de la revisión</th><th style="width:210px">Acciones</th></tr>
                         </thead>
                         <tbody>
                         <c:forEach items="${revisionProductos}" var="revision">
                             <c:set var="p" value="${revision.producto}"/>
                             <tr id="producto-${p.id}" class="${revision.listo ? 'table-success' : 'table-warning'}">
+                                <td class="text-center align-middle">
+                                    <c:choose>
+                                        <c:when test="${revision.listo}">
+                                            <input type="checkbox" class="producto-listo" name="productoIds"
+                                                   value="${p.id}" form="form-publicar-seleccion" checked
+                                                   aria-label="Publicar ${fn:escapeXml(p.descripcion)}">
+                                        </c:when>
+                                        <c:otherwise><span class="text-muted">—</span></c:otherwise>
+                                    </c:choose>
+                                </td>
                                 <td>
                                     <span class="badge ${revision.listo ? 'badge-success' : 'badge-warning'} p-2">
                                         ${revision.listo ? 'LISTO' : 'PENDIENTE'}
@@ -70,7 +80,8 @@
                                 </td>
                                 <td class="text-nowrap">
                                     <button type="button" class="btn btn-sm btn-primary"
-                                            data-toggle="collapse" data-target="#editar-${p.id}">
+                                            data-toggle="collapse" data-target="#editar-${p.id}"
+                                            aria-expanded="false" aria-controls="editar-${p.id}">
                                         <i class="fa-solid fa-pen mr-1"></i>Editar aquí
                                     </button>
                                     <c:url var="urlVariantes" value="/productos/${p.id}/variantes">
@@ -81,10 +92,21 @@
                                             Completar atributos
                                         </a>
                                     </c:if>
+                                    <form method="post" class="d-inline"
+                                          action="${pageContext.request.contextPath}/canales/publicar/revision/quitar"
+                                          onsubmit="return confirm('¿Quitar este producto de la revisión? No se eliminará del sistema.');">
+                                        <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
+                                        <input type="hidden" name="productoId" value="${p.id}">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger mt-1">
+                                            <i class="fa-solid fa-xmark mr-1"></i>Quitar
+                                        </button>
+                                    </form>
                                 </td>
                             </tr>
-                            <tr class="collapse ${revision.listo ? '' : 'show'}" id="editar-${p.id}">
-                                <td colspan="4" class="bg-light p-3">
+                            <tr>
+                                <td colspan="5" class="p-0 border-0">
+                                    <div class="collapse" id="editar-${p.id}">
+                                    <div class="bg-light p-3">
                                     <form method="post" action="${pageContext.request.contextPath}/canales/publicar/revision/guardar">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
                                         <input type="hidden" name="productoId" value="${p.id}">
@@ -112,14 +134,16 @@
                                                 <label>Descripción para Mercado Libre</label>
                                                 <textarea name="descripcionMercadoLibre" class="form-control" rows="4"><c:out value="${p.mercadoLibreDescripcion}"/></textarea>
                                             </div>
-                                            <div class="col-lg-3 mb-3">
-                                                <label>Marca<c:if test="${revision.marcaObligatoria}"> <span class="text-danger font-weight-bold" title="Obligatorio para Mercado Libre">*</span></c:if></label>
-                                                <input name="marca" class="form-control" value="${fn:escapeXml(p.mercadoLibreMarca)}">
-                                            </div>
-                                            <div class="col-lg-3 mb-3">
-                                                <label>Modelo<c:if test="${revision.modeloObligatorio}"> <span class="text-danger font-weight-bold" title="Obligatorio para Mercado Libre">*</span></c:if></label>
-                                                <input name="modelo" class="form-control" value="${fn:escapeXml(p.mercadoLibreModelo)}">
-                                            </div>
+                                            <c:if test="${empty revision.atributosGenerales}">
+                                                <div class="col-lg-3 mb-3">
+                                                    <label>Marca<c:if test="${revision.marcaObligatoria}"> <span class="text-danger font-weight-bold" title="Obligatorio para Mercado Libre">*</span></c:if></label>
+                                                    <input name="marca" class="form-control" value="${fn:escapeXml(p.mercadoLibreMarca)}">
+                                                </div>
+                                                <div class="col-lg-3 mb-3">
+                                                    <label>Modelo<c:if test="${revision.modeloObligatorio}"> <span class="text-danger font-weight-bold" title="Obligatorio para Mercado Libre">*</span></c:if></label>
+                                                    <input name="modelo" class="form-control" value="${fn:escapeXml(p.mercadoLibreModelo)}">
+                                                </div>
+                                            </c:if>
                                             <div class="col-md-4 mb-3">
                                                 <label>Modalidad de envío</label>
                                                 <select name="modoEnvio" class="form-control">
@@ -144,6 +168,29 @@
                                             </div>
                                         </div>
 
+                                        <c:if test="${not empty revision.atributosGenerales}">
+                                            <div class="border rounded bg-white p-3 mb-3">
+                                                <h6 class="font-weight-bold text-primary">Atributos generales del producto</h6>
+                                                <div class="form-row">
+                                                    <c:forEach items="${revision.atributosGenerales}" var="atributo">
+                                                        <div class="col-md-3 mb-2">
+                                                            <label><c:out value="${atributo.nombre}"/><c:if test="${atributo.obligatorio}"> <span class="text-danger font-weight-bold" title="Obligatorio para Mercado Libre">*</span></c:if></label>
+                                                            <input name="ml_general_${atributo.id}"
+                                                                   value="${fn:escapeXml(revision.valoresAtributosGenerales[atributo.id])}"
+                                                                   class="form-control"
+                                                                   <c:if test="${not empty atributo.valores}">list="revision-general-${p.id}-${atributo.id}"</c:if>
+                                                                   <c:if test="${atributo.obligatorio}">required</c:if>>
+                                                            <c:if test="${not empty atributo.valores}">
+                                                                <datalist id="revision-general-${p.id}-${atributo.id}">
+                                                                    <c:forEach items="${atributo.valores}" var="opcion"><option value="${fn:escapeXml(opcion)}"></option></c:forEach>
+                                                                </datalist>
+                                                            </c:if>
+                                                        </div>
+                                                    </c:forEach>
+                                                </div>
+                                            </div>
+                                        </c:if>
+
                                         <div class="border rounded bg-white p-3 mb-3">
                                             <h6 class="font-weight-bold">Stock y precio</h6>
                                             <c:choose>
@@ -156,11 +203,28 @@
                                                 <c:otherwise>
                                                     <div class="table-responsive">
                                                         <table class="table table-sm table-bordered mb-0">
-                                                            <thead><tr><th>Variante</th><th>SKU</th><th>Stock</th><th>Precio</th></tr></thead>
+                                                            <thead><tr><th>Variante</th><c:if test="${not empty revision.atributosDeVariante}"><th>Atributos de variante</th></c:if><th>SKU</th><th>Stock</th><th>Precio</th></tr></thead>
                                                             <tbody>
                                                             <c:forEach items="${revision.variantes}" var="v">
                                                                 <tr>
                                                                     <td><c:out value="${v.nombreMostrar}"/></td>
+                                                                    <c:if test="${not empty revision.atributosDeVariante}"><td style="min-width:260px">
+                                                                        <c:forEach items="${revision.atributosDeVariante}" var="atributo">
+                                                                            <div class="mb-2">
+                                                                                <label class="small mb-1"><c:out value="${atributo.nombre}"/><c:if test="${atributo.obligatorio}"> <span class="text-danger font-weight-bold">*</span></c:if></label>
+                                                                                <input name="ml_variante_${v.id}_${atributo.id}"
+                                                                                       value="${fn:escapeXml(revision.valoresAtributosVariantes[v.id][atributo.id])}"
+                                                                                       class="form-control form-control-sm"
+                                                                                       <c:if test="${not empty atributo.valores}">list="revision-variante-${p.id}-${v.id}-${atributo.id}"</c:if>
+                                                                                       <c:if test="${atributo.obligatorio}">required</c:if>>
+                                                                                <c:if test="${not empty atributo.valores}">
+                                                                                    <datalist id="revision-variante-${p.id}-${v.id}-${atributo.id}">
+                                                                                        <c:forEach items="${atributo.valores}" var="opcion"><option value="${fn:escapeXml(opcion)}"></option></c:forEach>
+                                                                                    </datalist>
+                                                                                </c:if>
+                                                                            </div>
+                                                                        </c:forEach>
+                                                                    </td></c:if>
                                                                     <td><c:out value="${v.sku}"/></td>
                                                                     <td><input type="hidden" name="varianteIds" value="${v.id}"><input type="number" min="0" name="stocksVariantes" class="form-control form-control-sm" value="${v.stock}" required></td>
                                                                     <td><input name="preciosVariantes" class="form-control form-control-sm precio-decimal" value="${v.precioContado}" placeholder="Usar precio general"></td>
@@ -179,6 +243,8 @@
                                         <button class="btn btn-success" type="submit"><i class="fa-solid fa-floppy-disk mr-1"></i>Guardar y volver a validar</button>
                                         <a class="btn btn-outline-secondary" href="${urlVariantes}">Editar atributos y fotos</a>
                                     </form>
+                                    </div>
+                                    </div>
                                 </td>
                             </tr>
                         </c:forEach>
@@ -192,20 +258,31 @@
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
                     <button class="btn btn-secondary" type="submit">Volver a seleccionar</button>
                 </form>
-                <form method="post" action="${pageContext.request.contextPath}/canales/publicar/revision/confirmar">
+                <form id="form-publicar-seleccion" method="post" action="${pageContext.request.contextPath}/canales/publicar/revision/confirmar">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
-                    <button class="btn btn-success btn-lg" type="submit" <c:if test="${not todosListos}">disabled</c:if>>
-                        <i class="fa-solid fa-cloud-arrow-up mr-1"></i>Publicar todos
+                    <div class="text-right mb-2">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="marcar-listos">Marcar listos</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="desmarcar-listos">Desmarcar todos</button>
+                    </div>
+                    <button class="btn btn-success btn-lg" type="submit" <c:if test="${cantidadListos == 0}">disabled</c:if>>
+                        <i class="fa-solid fa-cloud-arrow-up mr-1"></i>Publicar seleccionados
                     </button>
-                    <c:if test="${not todosListos}"><div class="small text-warning mt-1">Complete los pendientes para habilitar la publicación.</div></c:if>
+                    <div class="small text-muted mt-1">Sólo se publicarán los productos listos que estén marcados.</div>
                 </form>
             </div>
         </div>
     </div>
 </div>
+<jsp:include page="/WEB-INF/jsp/foot.jsp"/>
 <script>
 document.querySelectorAll('.precio-decimal').forEach(function (campo) {
     campo.addEventListener('input', function () { this.value = this.value.replace(',', '.'); });
+});
+document.getElementById('marcar-listos').addEventListener('click', function () {
+    document.querySelectorAll('.producto-listo').forEach(function (campo) { campo.checked = true; });
+});
+document.getElementById('desmarcar-listos').addEventListener('click', function () {
+    document.querySelectorAll('.producto-listo').forEach(function (campo) { campo.checked = false; });
 });
 </script>
 </body>

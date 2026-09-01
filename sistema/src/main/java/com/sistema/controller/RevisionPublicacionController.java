@@ -20,7 +20,10 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Controller
 @RequestMapping("/canales/publicar")
@@ -124,6 +127,7 @@ public class RevisionPublicacionController {
             @RequestParam(required = false) List<Long> varianteIds,
             @RequestParam(required = false) List<Integer> stocksVariantes,
             @RequestParam(required = false) List<String> preciosVariantes,
+            @RequestParam Map<String, String> parametros,
             HttpSession session,
             RedirectAttributes ra) {
         if (seleccion(session) == null) return "redirect:/canales#productos-publicacion";
@@ -133,7 +137,8 @@ public class RevisionPublicacionController {
                     marca, modelo, stock, decimal(precio), modoEnvio, envioGratis,
                     retiroPersonal, tipoPublicacion, varianteIds, stocksVariantes,
                     preciosVariantes == null ? List.of()
-                            : preciosVariantes.stream().map(this::decimal).toList());
+                            : preciosVariantes.stream().map(this::decimal).toList(),
+                    parametros);
             ra.addFlashAttribute("mensaje", "Cambios guardados. El producto se volvió a validar.");
         } catch (IllegalArgumentException e) {
             ra.addFlashAttribute("error", e.getMessage());
@@ -142,28 +147,73 @@ public class RevisionPublicacionController {
     }
 
     @PostMapping("/revision/confirmar")
-    public String confirmar(HttpSession session, RedirectAttributes ra) {
+    public String confirmar(
+            @RequestParam(required = false) List<Long> productoIds,
+            HttpSession session,
+            RedirectAttributes ra) {
         RevisionPublicacionSesion seleccion = seleccion(session);
         if (seleccion == null) return "redirect:/canales#productos-publicacion";
         try {
+            List<Long> elegidos = productoIds == null ? List.of()
+                    : productoIds.stream().filter(java.util.Objects::nonNull)
+                    .distinct().toList();
+            if (elegidos.isEmpty()) {
+                throw new IllegalArgumentException(
+                        "Seleccione al menos un producto listo para publicar");
+            }
+            Set<Long> permitidos = new LinkedHashSet<>(seleccion.productoIds());
+            if (!permitidos.containsAll(elegidos)) {
+                throw new IllegalArgumentException(
+                        "La selección contiene productos que no pertenecen a esta revisión");
+            }
             List<RevisionProductoPublicacionDto> revision = revisionService.revisar(
-                    seleccion.productoIds(), seleccion.canales());
+                    elegidos, seleccion.canales());
+            if (revision.size() != elegidos.size()) {
+                throw new IllegalArgumentException(
+                        "Uno de los productos seleccionados ya no está disponible");
+            }
             List<RevisionProductoPublicacionDto> pendientes = revision.stream()
                     .filter(producto -> !producto.isListo()).toList();
             if (!pendientes.isEmpty()) {
                 throw new IllegalArgumentException("Todavía hay " + pendientes.size()
-                        + " producto(s) con datos pendientes. Corríjalos antes de publicar todo.");
+                        + " producto(s) seleccionados con datos pendientes. Corríjalos o desmárquelos.");
             }
             var trabajo = trabajoService.iniciarPublicacion(
-                    seleccion.productoIds(), seleccion.canales());
+                    elegidos, seleccion.canales());
             session.removeAttribute(ATRIBUTO_SESION);
             ra.addFlashAttribute("mensaje", "Publicación iniciada en segundo plano (trabajo #"
                     + trabajo.getId() + ") para " + revision.size() + " producto(s).");
             return "redirect:/canales";
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             ra.addFlashAttribute("error", e.getMessage());
             return "redirect:/canales/publicar/revision";
         }
+    }
+
+    @PostMapping("/revision/quitar")
+    public String quitarDeRevision(
+            @RequestParam Long productoId,
+            HttpSession session,
+            RedirectAttributes ra) {
+        RevisionPublicacionSesion seleccion = seleccion(session);
+        if (seleccion == null) return "redirect:/canales#productos-publicacion";
+        List<Long> restantes = seleccion.productoIds().stream()
+                .filter(id -> !id.equals(productoId))
+                .toList();
+        if (restantes.size() == seleccion.productoIds().size()) {
+            ra.addFlashAttribute("error", "El producto no pertenece a esta revisión");
+            return "redirect:/canales/publicar/revision";
+        }
+        if (restantes.isEmpty()) {
+            session.removeAttribute(ATRIBUTO_SESION);
+            ra.addFlashAttribute("mensaje", "Se quitaron todos los productos de la revisión");
+            return "redirect:/canales#productos-publicacion";
+        }
+        session.setAttribute(ATRIBUTO_SESION, new RevisionPublicacionSesion(
+                seleccion.tenantId(), restantes, seleccion.canales()));
+        ra.addFlashAttribute("mensaje",
+                "Producto quitado de esta revisión. No fue eliminado del sistema.");
+        return "redirect:/canales/publicar/revision";
     }
 
     @PostMapping("/revision/cancelar")

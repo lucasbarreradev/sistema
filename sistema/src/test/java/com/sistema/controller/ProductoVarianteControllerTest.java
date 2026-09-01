@@ -104,6 +104,7 @@ class ProductoVarianteControllerTest {
                         atributo("COLOR", "Color", true, true),
                         atributo("SIZE", "Talle", true, true))));
         ExtendedModelMap model = new ExtendedModelMap();
+        model.addAttribute("variantes", List.of(variante));
 
         controller.prepararAtributos(producto, variante, model);
 
@@ -112,6 +113,13 @@ class ProductoVarianteControllerTest {
         assertEquals("Campera", valores.get("GARMENT_TYPE"));
         assertEquals("Naranja", valores.get("COLOR"));
         assertEquals("S", valores.get("SIZE"));
+        assertEquals(List.of("GARMENT_TYPE"), ((List<AtributoVarianteMl>)
+                model.get("atributosGenerales")).stream().map(AtributoVarianteMl::id).toList());
+        assertEquals(List.of("COLOR", "SIZE"), ((List<AtributoVarianteMl>)
+                model.get("atributosDeVariante")).stream().map(AtributoVarianteMl::id).toList());
+        Map<Long, Map<String, String>> valoresPorVariante =
+                (Map<Long, Map<String, String>>) model.get("valoresAtributosVariantes");
+        assertEquals("S", valoresPorVariante.get(829L).get("SIZE"));
     }
 
     @Test
@@ -163,6 +171,27 @@ class ProductoVarianteControllerTest {
                 "es_variacion_FRAGRANCE", "true"));
 
         assertEquals("Black vetiver", variante.getNombre());
+    }
+
+    @Test
+    void separaLosAtributosGeneralesDeLosAtributosDeVariante() throws Exception {
+        Producto producto = new Producto();
+        ProductoVariante variante = new ProductoVariante();
+        Map<String, String> parametros = new LinkedHashMap<>();
+        parametros.put("atributos_separados", "true");
+        parametros.put("atributo_BRAND", "BIG MISTY");
+        parametros.put("atributo_MODEL", "BM-500");
+        parametros.put("atributo_COLOR", "Negro");
+        parametros.put("es_variacion_COLOR", "true");
+
+        controller.aplicarAtributosGenerales(producto, parametros);
+        controller.aplicarAtributosDinamicos(variante, parametros);
+
+        assertEquals("BIG MISTY", producto.getMercadoLibreMarca());
+        assertEquals("BM-500", producto.getMercadoLibreModelo());
+        Map<String, String> atributosVariante = objectMapper.readValue(
+                variante.getMercadoLibreAtributosJson(), new TypeReference<>() {});
+        assertEquals(Map.of("COLOR", "Negro"), atributosVariante);
     }
 
     private AtributoVarianteMl atributo(

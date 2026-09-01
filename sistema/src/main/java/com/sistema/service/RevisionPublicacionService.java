@@ -84,6 +84,12 @@ public class RevisionPublicacionService {
         LinkedHashSet<String> faltantes = new LinkedHashSet<>();
         LinkedHashSet<String> atributosFaltantes = new LinkedHashSet<>();
         LinkedHashSet<String> atributosObligatorios = new LinkedHashSet<>();
+        List<AtributoVarianteMl> atributosGenerales = new ArrayList<>();
+        List<AtributoVarianteMl> atributosDeVariante = new ArrayList<>();
+        Map<String, String> valoresGenerales = valoresAtributosProducto(producto);
+        Map<Long, Map<String, String>> valoresPorVariante = new LinkedHashMap<>();
+        variantes.stream().filter(v -> v.getId() != null).forEach(v ->
+                valoresPorVariante.put(v.getId(), valoresAtributosVariante(v)));
 
         if (!tieneTexto(producto.getDescripcion())) faltantes.add("Título");
         int stockTotal = variantes.isEmpty()
@@ -101,11 +107,19 @@ public class RevisionPublicacionService {
 
         if (revisarMercadoLibre) revisarMercadoLibre(
                 producto, variantes, faltantes, atributosFaltantes,
-                atributosObligatorios, consultas);
+                atributosObligatorios, atributosGenerales,
+                atributosDeVariante, consultas);
         return new RevisionProductoPublicacionDto(
                 producto, variantes, List.copyOf(faltantes),
                 List.copyOf(atributosFaltantes),
-                List.copyOf(atributosObligatorios));
+                List.copyOf(atributosObligatorios),
+                List.copyOf(atributosGenerales),
+                List.copyOf(atributosDeVariante),
+                Map.copyOf(valoresGenerales),
+                valoresPorVariante.entrySet().stream().collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entrada -> Map.copyOf(entrada.getValue()),
+                        (a, b) -> a, LinkedHashMap::new)));
     }
 
     private void revisarMercadoLibre(
@@ -114,6 +128,8 @@ public class RevisionPublicacionService {
             Set<String> faltantes,
             Set<String> atributosFaltantes,
             Set<String> atributosObligatorios,
+            List<AtributoVarianteMl> atributosGenerales,
+            List<AtributoVarianteMl> atributosDeVariante,
             ConsultasMercadoLibre consultas) {
         if (!tieneTexto(producto.getMercadoLibreCategoriaId())) {
             faltantes.add("Categoría de Mercado Libre");
@@ -132,6 +148,8 @@ public class RevisionPublicacionService {
             List<Set<String>> atributosVariantes = variantes.stream()
                     .map(this::atributosVariante).toList();
             for (AtributoVarianteMl atributo : resultado.atributos()) {
+                if (atributo.permiteVariar()) atributosDeVariante.add(atributo);
+                else atributosGenerales.add(atributo);
                 if (!atributo.obligatorio()) continue;
                 atributosObligatorios.add(atributo.nombre());
                 String id = atributo.id();
@@ -219,6 +237,35 @@ public class RevisionPublicacionService {
         return ids;
     }
 
+    private Map<String, String> valoresAtributosProducto(Producto producto) {
+        Map<String, String> valores = new LinkedHashMap<>();
+        agregarValor(valores, "BRAND", producto.getMercadoLibreMarca());
+        agregarValor(valores, "MODEL", producto.getMercadoLibreModelo());
+        agregarValor(valores, "GARMENT_TYPE", producto.getMercadoLibreTipoPrenda());
+        agregarValor(valores, "GENDER", producto.getMercadoLibreGenero());
+        agregarValor(valores, "GTIN", producto.getMercadoLibreGtin());
+        leerAtributosProductoPayload(producto).forEach((id, atributo) -> {
+            Object valor = atributo.get("value_name");
+            if (valor != null && !valor.toString().isBlank()) valores.put(id, valor.toString());
+        });
+        return valores;
+    }
+
+    private Map<String, String> valoresAtributosVariante(ProductoVariante variante) {
+        Map<String, String> valores = new LinkedHashMap<>();
+        agregarValor(valores, "SIZE", variante.getTalle());
+        agregarValor(valores, "COLOR", variante.getColor());
+        String json = variante.getMercadoLibreAtributosJson();
+        if (!tieneTexto(json)) return valores;
+        try {
+            valores.putAll(objectMapper.readValue(
+                    json, new TypeReference<LinkedHashMap<String, String>>() {}));
+        } catch (Exception ignored) {
+            // La validación ya informa los JSON inválidos.
+        }
+        return valores;
+    }
+
     private Set<String> atributosVariante(ProductoVariante variante) {
         Set<String> ids = new LinkedHashSet<>();
         agregarSiTiene(ids, "SIZE", variante.getTalle());
@@ -251,7 +298,8 @@ public class RevisionPublicacionService {
             String tipoPublicacion,
             List<Long> varianteIds,
             List<Integer> stocksVariantes,
-            List<BigDecimal> preciosVariantes) {
+            List<BigDecimal> preciosVariantes,
+            Map<String, String> parametros) {
         Producto producto = productoRepository.findById(productoId)
                 .orElseThrow(() -> new IllegalArgumentException("Producto no encontrado"));
         if (!tieneTexto(titulo)) throw new IllegalArgumentException("Ingrese el título");
@@ -264,6 +312,8 @@ public class RevisionPublicacionService {
         producto.setMercadoLibreEnvioGratis(envioGratis);
         producto.setMercadoLibreRetiroPersonal(retiroPersonal);
         producto.setMercadoLibreListingTypeId(limpiar(tipoPublicacion));
+        Set<String> idsGeneralesActualizados = actualizarAtributosGenerales(
+                producto, parametros);
 
         List<ProductoVariante> variantes = varianteRepository
                 .findByProductoIdOrderByNombreAsc(productoId);
@@ -271,6 +321,8 @@ public class RevisionPublicacionService {
             producto.setCantidad(Math.max(Optional.ofNullable(stock).orElse(0), 0));
             producto.setPrecioContado(precio);
         } else {
+            actualizarAtributosDeVariantes(
+                    variantes, parametros, idsGeneralesActualizados);
             Map<Long, ProductoVariante> porId = new LinkedHashMap<>();
             variantes.forEach(variante -> porId.put(variante.getId(), variante));
             int cantidad = varianteIds == null ? 0 : varianteIds.size();
@@ -288,6 +340,96 @@ public class RevisionPublicacionService {
             producto.setUsaVariantes(true);
         }
         productoRepository.save(producto);
+    }
+
+    private Set<String> actualizarAtributosGenerales(
+            Producto producto, Map<String, String> parametros) {
+        if (parametros == null) return Set.of();
+        String prefijo = "ml_general_";
+        Set<String> ids = parametros.keySet().stream()
+                .filter(clave -> clave.startsWith(prefijo))
+                .map(clave -> clave.substring(prefijo.length()))
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        if (ids.isEmpty()) return ids;
+        Map<String, Map<String, Object>> adicionales =
+                leerAtributosProductoPayload(producto);
+        for (String id : ids) {
+            String valor = limpiar(parametros.get(prefijo + id));
+            if ("BRAND".equals(id)) {
+                producto.setMercadoLibreMarca(valor); adicionales.remove(id);
+            } else if ("MODEL".equals(id)) {
+                producto.setMercadoLibreModelo(valor); adicionales.remove(id);
+            } else if ("GARMENT_TYPE".equals(id)) {
+                producto.setMercadoLibreTipoPrenda(valor); adicionales.remove(id);
+            } else if (valor == null) {
+                adicionales.remove(id);
+            } else {
+                Map<String, Object> atributo = new LinkedHashMap<>();
+                atributo.put("id", id);
+                atributo.put("value_name", valor);
+                adicionales.put(id, atributo);
+            }
+        }
+        try {
+            producto.setMercadoLibreAtributosJson(
+                    objectMapper.writeValueAsString(adicionales.values()));
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "No se pudieron guardar los atributos generales", e);
+        }
+        return ids;
+    }
+
+    private void actualizarAtributosDeVariantes(
+            List<ProductoVariante> variantes,
+            Map<String, String> parametros,
+            Set<String> idsGenerales) {
+        if (parametros == null) return;
+        for (ProductoVariante variante : variantes) {
+            Map<String, String> atributos = valoresAtributosVariante(variante);
+            atributos.keySet().removeAll(idsGenerales);
+            String prefijo = "ml_variante_" + variante.getId() + "_";
+            parametros.forEach((clave, valor) -> {
+                if (!clave.startsWith(prefijo)) return;
+                String id = clave.substring(prefijo.length());
+                if (valor == null || valor.isBlank()) atributos.remove(id);
+                else atributos.put(id, valor.trim());
+            });
+            variante.setTalle(atributos.get("SIZE"));
+            variante.setColor(atributos.get("COLOR"));
+            try {
+                variante.setMercadoLibreAtributosJson(
+                        objectMapper.writeValueAsString(atributos));
+            } catch (Exception e) {
+                throw new IllegalArgumentException(
+                        "No se pudieron guardar los atributos de la variante "
+                                + variante.getNombreMostrar(), e);
+            }
+        }
+    }
+
+    private Map<String, Map<String, Object>> leerAtributosProductoPayload(
+            Producto producto) {
+        Map<String, Map<String, Object>> resultado = new LinkedHashMap<>();
+        String json = producto.getMercadoLibreAtributosJson();
+        if (!tieneTexto(json)) return resultado;
+        try {
+            List<Map<String, Object>> lista = objectMapper.readValue(
+                    json, new TypeReference<>() {});
+            for (Map<String, Object> atributo : lista) {
+                Object id = atributo.get("id");
+                if (id != null) resultado.put(
+                        id.toString(), new LinkedHashMap<>(atributo));
+            }
+            return resultado;
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "Los atributos generales guardados no son válidos", e);
+        }
+    }
+
+    private void agregarValor(Map<String, String> valores, String id, String valor) {
+        if (tieneTexto(valor)) valores.put(id, valor.trim());
     }
 
     private <T> T valor(List<T> valores, int indice) {

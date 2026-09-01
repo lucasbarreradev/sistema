@@ -81,9 +81,16 @@ public class ProductoVarianteController {
                           @RequestParam(defaultValue = "") String volver,
                           RedirectAttributes ra) {
         try {
+            Producto producto = productoService.getProductoById(productoId)
+                    .orElseThrow(() -> new IllegalArgumentException("Producto no encontrado"));
+            Set<String> atributosGenerales = aplicarAtributosGenerales(producto, parametros);
             aplicarAtributosDinamicos(variante, parametros);
             varianteService.guardarFoto(variante, foto);
             varianteService.guardar(productoId, variante);
+            if (!atributosGenerales.isEmpty()) {
+                varianteService.quitarAtributosMercadoLibre(productoId, atributosGenerales);
+                productoService.saveProducto(producto);
+            }
             ra.addFlashAttribute("mensaje", "Presentación guardada");
         } catch (Exception e) { ra.addFlashAttribute("error", e.getMessage()); }
         return redireccionDespuesDeGuardar(productoId, volver);
@@ -225,9 +232,34 @@ public class ProductoVarianteController {
             }
         });
         Map<String, String> unidades = separarUnidades(atributos, valores);
+        List<AtributoVarianteMl> atributosGenerales = atributos.stream()
+                .filter(a -> !a.permiteVariar()).toList();
+        List<AtributoVarianteMl> atributosDeVariante = atributos.stream()
+                .filter(AtributoVarianteMl::permiteVariar).toList();
+        Map<String, String> valoresGenerales = new LinkedHashMap<>(anteriores);
+        atributosGenerales.forEach(a -> {
+            String valor = valores.get(a.id());
+            if (valor != null && !valor.isBlank()) valoresGenerales.putIfAbsent(a.id(), valor);
+        });
+        Map<String, String> unidadesGenerales = separarUnidades(
+                atributosGenerales, valoresGenerales);
+        Map<Long, Map<String, String>> valoresPorVariante = new LinkedHashMap<>();
+        Object variantesModelo = model.asMap().get("variantes");
+        if (variantesModelo instanceof Iterable<?> lista) {
+            for (Object item : lista) {
+                if (item instanceof ProductoVariante existente && existente.getId() != null) {
+                    valoresPorVariante.put(existente.getId(), leerAtributos(existente));
+                }
+            }
+        }
         model.addAttribute("atributosVariante", atributos);
+        model.addAttribute("atributosGenerales", atributosGenerales);
+        model.addAttribute("atributosDeVariante", atributosDeVariante);
         model.addAttribute("valoresAtributos", valores);
+        model.addAttribute("valoresAtributosGenerales", valoresGenerales);
+        model.addAttribute("valoresAtributosVariantes", valoresPorVariante);
         model.addAttribute("unidadesAtributos", unidades);
+        model.addAttribute("unidadesAtributosGenerales", unidadesGenerales);
         model.addAttribute("variante", variante);
     }
 
@@ -250,9 +282,17 @@ public class ProductoVarianteController {
                         && !existente.getNombre().isBlank();
             }
         }
+        boolean atributosSeparados = parametros.containsKey("atributos_separados");
+        Set<String> idsGenerales = parametros.keySet().stream()
+                .filter(clave -> clave.startsWith("atributo_"))
+                .map(clave -> clave.substring("atributo_".length()))
+                .filter(id -> !parametros.containsKey("es_variacion_" + id))
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        if (atributosSeparados) atributos.keySet().removeAll(idsGenerales);
         parametros.forEach((clave, valor) -> {
             if (!clave.startsWith("atributo_")) return;
             String id = clave.substring("atributo_".length());
+            if (atributosSeparados && !parametros.containsKey("es_variacion_" + id)) return;
             if (valor == null || valor.isBlank()) atributos.remove(id);
             else atributos.put(id, valor.trim());
         });
@@ -290,6 +330,68 @@ public class ProductoVarianteController {
         if (!partesNombre.isEmpty() && !tieneNombreExistente
                 && (variante.getNombre() == null || variante.getNombre().isBlank())) {
             variante.setNombre(String.join(" / ", partesNombre));
+        }
+    }
+
+    Set<String> aplicarAtributosGenerales(Producto producto, Map<String, String> parametros) {
+        if (!parametros.containsKey("atributos_separados")) return Set.of();
+        Set<String> ids = parametros.keySet().stream()
+                .filter(clave -> clave.startsWith("atributo_"))
+                .map(clave -> clave.substring("atributo_".length()))
+                .filter(id -> !parametros.containsKey("es_variacion_" + id))
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+        if (ids.isEmpty()) return ids;
+        Map<String, Map<String, Object>> adicionales = leerAtributosProductoPayload(producto);
+        for (String id : ids) {
+            String valor = parametros.get("atributo_" + id);
+            valor = valor == null ? "" : valor.trim();
+            String unidad = parametros.get("unidad_" + id);
+            if (!valor.isBlank() && unidad != null && !unidad.isBlank()
+                    && valor.replace(',', '.').matches("[-+]?\\d+(\\.\\d+)?")) {
+                valor = valor.replace(',', '.') + " " + unidad.trim();
+            }
+            if ("BRAND".equals(id)) {
+                producto.setMercadoLibreMarca(valor.isBlank() ? null : valor);
+                adicionales.remove(id);
+            } else if ("MODEL".equals(id)) {
+                producto.setMercadoLibreModelo(valor.isBlank() ? null : valor);
+                adicionales.remove(id);
+            } else if ("GARMENT_TYPE".equals(id)) {
+                producto.setMercadoLibreTipoPrenda(valor.isBlank() ? null : valor);
+                adicionales.remove(id);
+            } else if (valor.isBlank()) {
+                adicionales.remove(id);
+            } else {
+                Map<String, Object> atributo = new LinkedHashMap<>();
+                atributo.put("id", id);
+                atributo.put("value_name", valor);
+                adicionales.put(id, atributo);
+            }
+        }
+        try {
+            producto.setMercadoLibreAtributosJson(
+                    objectMapper.writeValueAsString(adicionales.values()));
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "No se pudieron guardar los atributos generales", e);
+        }
+        return ids;
+    }
+
+    private Map<String, Map<String, Object>> leerAtributosProductoPayload(Producto producto) {
+        Map<String, Map<String, Object>> resultado = new LinkedHashMap<>();
+        String json = producto.getMercadoLibreAtributosJson();
+        if (json == null || json.isBlank()) return resultado;
+        try {
+            List<Map<String, Object>> lista = objectMapper.readValue(json, new TypeReference<>() {});
+            for (Map<String, Object> atributo : lista) {
+                Object id = atributo.get("id");
+                if (id != null) resultado.put(id.toString(), new LinkedHashMap<>(atributo));
+            }
+            return resultado;
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "Los atributos generales guardados no son válidos", e);
         }
     }
 

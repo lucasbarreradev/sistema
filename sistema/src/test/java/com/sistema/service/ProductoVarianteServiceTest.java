@@ -162,6 +162,24 @@ class ProductoVarianteServiceTest {
         assertEquals("1500 - 1800", producto.getPrecioCuentaCorrienteListado());
     }
 
+    @Test
+    void quitaDeLasVariantesLosAtributosQuePasaronAlProductoGeneral() {
+        ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
+        ProductoRepository productos = mock(ProductoRepository.class);
+        ProductoVariante variante = new ProductoVariante();
+        variante.setSku("ACE-001");
+        variante.setMercadoLibreAtributosJson(
+                "{\"BRAND\":\"Marca\",\"COLOR\":\"Negro\"}");
+        when(variantes.findByProductoIdOrderByNombreAsc(1L))
+                .thenReturn(List.of(variante));
+
+        new ProductoVarianteService(variantes, productos)
+                .quitarAtributosMercadoLibre(1L, java.util.Set.of("BRAND"));
+
+        assertEquals("{\"COLOR\":\"Negro\"}",
+                variante.getMercadoLibreAtributosJson());
+    }
+
     private Producto producto(Long id, String sku) {
         Producto producto = new Producto();
         producto.setId(id);
