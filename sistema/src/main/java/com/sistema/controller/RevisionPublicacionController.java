@@ -9,6 +9,8 @@ import com.sistema.service.RevisionPublicacionService;
 import com.sistema.service.TrabajoSincronizacionService;
 import com.sistema.tenant.TenantContext;
 import jakarta.servlet.http.HttpSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +25,8 @@ import java.util.List;
 @Controller
 @RequestMapping("/canales/publicar")
 public class RevisionPublicacionController {
+    private static final Logger log = LoggerFactory.getLogger(
+            RevisionPublicacionController.class);
     static final String ATRIBUTO_SESION = "revisionPublicacion";
 
     private final ProductoService productoService;
@@ -84,15 +88,23 @@ public class RevisionPublicacionController {
             ra.addFlashAttribute("error", "Seleccione los productos que desea revisar");
             return "redirect:/canales#productos-publicacion";
         }
-        List<RevisionProductoPublicacionDto> productos = revisionService.revisar(
-                seleccion.productoIds(), seleccion.canales());
-        long listos = productos.stream().filter(RevisionProductoPublicacionDto::isListo).count();
-        model.addAttribute("revisionProductos", productos);
-        model.addAttribute("revisionCanales", seleccion.canales());
-        model.addAttribute("cantidadListos", listos);
-        model.addAttribute("cantidadPendientes", productos.size() - listos);
-        model.addAttribute("todosListos", !productos.isEmpty() && listos == productos.size());
-        return "canales/revision-publicacion";
+        try {
+            List<RevisionProductoPublicacionDto> productos = revisionService.revisar(
+                    seleccion.productoIds(), seleccion.canales());
+            long listos = productos.stream().filter(RevisionProductoPublicacionDto::isListo).count();
+            model.addAttribute("revisionProductos", productos);
+            model.addAttribute("revisionCanales", seleccion.canales());
+            model.addAttribute("cantidadListos", listos);
+            model.addAttribute("cantidadPendientes", productos.size() - listos);
+            model.addAttribute("todosListos", !productos.isEmpty() && listos == productos.size());
+            return "canales/revision-publicacion";
+        } catch (RuntimeException e) {
+            log.error("No se pudo preparar la revisión de {} producto(s) para el tenant {}",
+                    seleccion.productoIds().size(), seleccion.tenantId(), e);
+            ra.addFlashAttribute("error",
+                    "No se pudo preparar la revisión. Intente nuevamente; si continúa, revise el registro del servidor.");
+            return "redirect:/canales#productos-publicacion";
+        }
     }
 
     @PostMapping("/revision/guardar")

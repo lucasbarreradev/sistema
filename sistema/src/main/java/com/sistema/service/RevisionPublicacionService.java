@@ -22,10 +22,13 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
 public class RevisionPublicacionService {
+    private static final long TIEMPO_MAXIMO_CONSULTAS_ML_MS = 15_000;
     private final ProductoRepository productoRepository;
     private final ProductoVarianteRepository varianteRepository;
     private final MercadoLibreAtributosVarianteService atributosMercadoLibre;
@@ -47,17 +50,37 @@ public class RevisionPublicacionService {
         if (productoIds == null) return List.of();
         boolean revisarMercadoLibre = canales != null
                 && canales.contains(CanalVenta.MERCADO_LIBRE);
+        List<Long> ids = productoIds.stream().filter(Objects::nonNull)
+                .distinct().toList();
+        if (ids.isEmpty()) return List.of();
+        Map<Long, Producto> productosPorId = productoRepository.findAllById(ids)
+                .stream().collect(Collectors.toMap(
+                        Producto::getId, Function.identity(), (a, b) -> a,
+                        LinkedHashMap::new));
+        Map<Long, List<ProductoVariante>> variantesPorProducto = varianteRepository
+                .findByProductoIdInOrderByProductoIdAscNombreAsc(ids).stream()
+                .collect(Collectors.groupingBy(
+                        variante -> variante.getProducto().getId(),
+                        LinkedHashMap::new, Collectors.toList()));
+        ConsultasMercadoLibre consultas = new ConsultasMercadoLibre(
+                System.nanoTime() + TIEMPO_MAXIMO_CONSULTAS_ML_MS * 1_000_000L);
         List<RevisionProductoPublicacionDto> resultado = new ArrayList<>();
-        productoIds.stream().filter(Objects::nonNull).distinct().forEach(id ->
-                productoRepository.findById(id).ifPresent(producto ->
-                        resultado.add(revisar(producto, revisarMercadoLibre))));
+        for (Long id : ids) {
+            Producto producto = productosPorId.get(id);
+            if (producto != null) {
+                resultado.add(revisar(producto,
+                        variantesPorProducto.getOrDefault(id, List.of()),
+                        revisarMercadoLibre, consultas));
+            }
+        }
         return resultado;
     }
 
     private RevisionProductoPublicacionDto revisar(
-            Producto producto, boolean revisarMercadoLibre) {
-        List<ProductoVariante> variantes = varianteRepository
-                .findByProductoIdOrderByNombreAsc(producto.getId());
+            Producto producto,
+            List<ProductoVariante> variantes,
+            boolean revisarMercadoLibre,
+            ConsultasMercadoLibre consultas) {
         LinkedHashSet<String> faltantes = new LinkedHashSet<>();
         LinkedHashSet<String> atributosFaltantes = new LinkedHashSet<>();
         LinkedHashSet<String> atributosObligatorios = new LinkedHashSet<>();
@@ -78,7 +101,7 @@ public class RevisionPublicacionService {
 
         if (revisarMercadoLibre) revisarMercadoLibre(
                 producto, variantes, faltantes, atributosFaltantes,
-                atributosObligatorios);
+                atributosObligatorios, consultas);
         return new RevisionProductoPublicacionDto(
                 producto, variantes, List.copyOf(faltantes),
                 List.copyOf(atributosFaltantes),
@@ -90,18 +113,17 @@ public class RevisionPublicacionService {
             List<ProductoVariante> variantes,
             Set<String> faltantes,
             Set<String> atributosFaltantes,
-            Set<String> atributosObligatorios) {
+            Set<String> atributosObligatorios,
+            ConsultasMercadoLibre consultas) {
+        if (!tieneTexto(producto.getMercadoLibreCategoriaId())) {
+            faltantes.add("Categoría de Mercado Libre");
+            return;
+        }
         try {
-            var resultado = atributosMercadoLibre.obtener(producto);
-            if (!tieneTexto(producto.getMercadoLibreCategoriaId())
-                    && resultado != null && tieneTexto(resultado.categoriaId())) {
-                producto.setMercadoLibreCategoriaId(resultado.categoriaId());
-                productoRepository.save(producto);
-            }
-            if (!tieneTexto(producto.getMercadoLibreCategoriaId())) {
-                faltantes.add("Categoría de Mercado Libre");
-                return;
-            }
+            ConsultaAtributos consulta = consultas.obtener(
+                    producto.getMercadoLibreCategoriaId());
+            if (consulta.error() != null) throw consulta.error();
+            var resultado = consulta.resultado();
             boolean tieneFoto = producto.tieneFoto()
                     || variantes.stream().anyMatch(ProductoVariante::tieneFoto);
             if (!tieneFoto) faltantes.add("Foto");
@@ -132,6 +154,40 @@ public class RevisionPublicacionService {
             }
             faltantes.add("Revisar categoría: " + mensaje(e));
         }
+    }
+
+    private final class ConsultasMercadoLibre {
+        private final long limiteNanos;
+        private final Map<String, ConsultaAtributos> porCategoria =
+                new LinkedHashMap<>();
+
+        private ConsultasMercadoLibre(long limiteNanos) {
+            this.limiteNanos = limiteNanos;
+        }
+
+        private ConsultaAtributos obtener(String categoria) {
+            ConsultaAtributos existente = porCategoria.get(categoria);
+            if (existente != null) return existente;
+            ConsultaAtributos nueva;
+            if (System.nanoTime() >= limiteNanos) {
+                nueva = new ConsultaAtributos(null, new IllegalStateException(
+                        "se alcanzó el tiempo máximo de consulta; abra el producto para validar sus atributos"));
+            } else {
+                try {
+                    nueva = new ConsultaAtributos(
+                            atributosMercadoLibre.obtenerPorCategoria(categoria), null);
+                } catch (RuntimeException e) {
+                    nueva = new ConsultaAtributos(null, e);
+                }
+            }
+            porCategoria.put(categoria, nueva);
+            return nueva;
+        }
+    }
+
+    private record ConsultaAtributos(
+            MercadoLibreAtributosVarianteService.Resultado resultado,
+            RuntimeException error) {
     }
 
     private Set<String> atributosProducto(Producto producto) {

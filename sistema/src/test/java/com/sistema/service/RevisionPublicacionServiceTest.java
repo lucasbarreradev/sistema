@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,16 +33,16 @@ class RevisionPublicacionServiceTest {
     @Test
     void marcaCategoriaComoPendienteSinPublicar() {
         Producto producto = producto(1L);
-        when(productos.findById(1L)).thenReturn(Optional.of(producto));
-        when(variantes.findByProductoIdOrderByNombreAsc(1L)).thenReturn(List.of());
-        when(atributos.obtener(producto)).thenReturn(
-                new MercadoLibreAtributosVarianteService.Resultado(null, List.of()));
+        when(productos.findAllById(List.of(1L))).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(List.of(1L)))
+                .thenReturn(List.of());
 
         var revision = service.revisar(
                 List.of(1L), List.of(CanalVenta.MERCADO_LIBRE)).get(0);
 
         assertFalse(revision.isListo());
         assertTrue(revision.faltantes().contains("Categoría de Mercado Libre"));
+        verify(atributos, never()).obtenerPorCategoria(any());
     }
 
     @Test
@@ -49,9 +50,10 @@ class RevisionPublicacionServiceTest {
         Producto producto = producto(2L);
         producto.setMercadoLibreCategoriaId("MLA123");
         producto.setFotoUrlExterna("https://img.test/foto.jpg");
-        when(productos.findById(2L)).thenReturn(Optional.of(producto));
-        when(variantes.findByProductoIdOrderByNombreAsc(2L)).thenReturn(List.of());
-        when(atributos.obtener(producto)).thenReturn(
+        when(productos.findAllById(List.of(2L))).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(List.of(2L)))
+                .thenReturn(List.of());
+        when(atributos.obtenerPorCategoria("MLA123")).thenReturn(
                 new MercadoLibreAtributosVarianteService.Resultado("MLA123", List.of(
                         new AtributoVarianteMl("BRAND", "Marca", "string",
                                 List.of(), List.of(), "", true, false))));
@@ -64,6 +66,28 @@ class RevisionPublicacionServiceTest {
         assertTrue(revision.isMarcaObligatoria());
         assertFalse(revision.isModeloObligatorio());
         assertTrue(revision.faltantes().get(0).contains("Marca"));
+    }
+
+    @Test
+    void consultaUnaCategoriaUnaSolaVezParaTodoElLote() {
+        Producto primero = producto(10L);
+        Producto segundo = producto(11L);
+        primero.setMercadoLibreCategoriaId("MLA123");
+        segundo.setMercadoLibreCategoriaId("MLA123");
+        primero.setFotoUrlExterna("https://img.test/1.jpg");
+        segundo.setFotoUrlExterna("https://img.test/2.jpg");
+        List<Long> ids = List.of(10L, 11L);
+        when(productos.findAllById(ids)).thenReturn(List.of(primero, segundo));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of());
+        when(atributos.obtenerPorCategoria("MLA123")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA123", List.of()));
+
+        assertEquals(2, service.revisar(
+                ids, List.of(CanalVenta.MERCADO_LIBRE)).size());
+
+        verify(atributos).obtenerPorCategoria("MLA123");
     }
 
     @Test

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.sistema.dto.AtributoVarianteMl;
 import com.sistema.model.Producto;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -12,25 +13,41 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.net.http.HttpClient;
+import java.time.Duration;
 
 @Service
 public class MercadoLibreAtributosVarianteService {
     private static final Set<String> CAMPOS_GENERALES = Set.of(
             "SELLER_SKU", "ITEM_CONDITION", "GENDER",
             "SIZE_GRID_ID", "SIZE_GRID_ROW_ID", "GTIN");
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient;
     private final MercadoLibreTokenService tokenService;
     private final Map<String, List<AtributoVarianteMl>> atributosPorCategoria =
             new java.util.concurrent.ConcurrentHashMap<>();
 
     public MercadoLibreAtributosVarianteService(MercadoLibreTokenService tokenService) {
         this.tokenService = tokenService;
+        HttpClient cliente = HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(3))
+                .build();
+        JdkClientHttpRequestFactory requestFactory =
+                new JdkClientHttpRequestFactory(cliente);
+        requestFactory.setReadTimeout(Duration.ofSeconds(5));
+        this.restClient = RestClient.builder()
+                .requestFactory(requestFactory)
+                .build();
     }
 
     public Resultado obtener(Producto producto) {
         if (!tokenService.configurado()) return new Resultado(producto.getMercadoLibreCategoriaId(), List.of());
         String categoria = producto.getMercadoLibreCategoriaId();
         if (categoria == null || categoria.isBlank()) categoria = predecirCategoria(producto.getDescripcion());
+        return obtenerPorCategoria(categoria);
+    }
+
+    public Resultado obtenerPorCategoria(String categoria) {
+        if (!tokenService.configurado()) return new Resultado(categoria, List.of());
         if (categoria == null || categoria.isBlank()) return new Resultado(null, List.of());
         List<AtributoVarianteMl> guardados = atributosPorCategoria.get(categoria);
         if (guardados != null) return new Resultado(categoria, guardados);
