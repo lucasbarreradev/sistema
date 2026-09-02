@@ -11,6 +11,7 @@ import com.sistema.repository.ProductoRepository;
 import com.sistema.repository.ProductoVarianteRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -196,10 +197,7 @@ public class RevisionPublicacionService {
             }
         }
         try {
-            ConsultaAtributos consulta = consultas.obtener(
-                    producto.getMercadoLibreCategoriaId());
-            if (consulta.error() != null) throw consulta.error();
-            var resultado = consulta.resultado();
+            var resultado = obtenerAtributosConRecuperacion(producto, consultas);
             boolean tieneFoto = producto.tieneFoto()
                     || variantes.stream().anyMatch(ProductoVariante::tieneFoto);
             if (!tieneFoto) faltantes.add("Foto");
@@ -234,6 +232,53 @@ public class RevisionPublicacionService {
         }
     }
 
+    private MercadoLibreAtributosVarianteService.Resultado
+            obtenerAtributosConRecuperacion(
+                    Producto producto, ConsultasMercadoLibre consultas) {
+        String categoriaOriginal = producto.getMercadoLibreCategoriaId();
+        ConsultaAtributos consulta = consultas.obtener(categoriaOriginal);
+        if (consulta.error() == null) return consulta.resultado();
+        if (!esCategoriaNoEncontrada(consulta.error())) throw consulta.error();
+
+        ConsultaCategoria reemplazo = consultas.predecirPorTitulo(producto);
+        if (reemplazo.error() != null) throw new IllegalArgumentException(
+                "La categoría " + categoriaOriginal
+                        + " no existe y no se pudo detectar una categoría actual: "
+                        + mensaje(reemplazo.error()), reemplazo.error());
+        if (!tieneTexto(reemplazo.categoriaId())
+                || categoriaOriginal.equalsIgnoreCase(reemplazo.categoriaId())) {
+            throw new IllegalArgumentException(
+                    "La categoría " + categoriaOriginal
+                            + " no existe en Mercado Libre. Ingrese otra categoría.");
+        }
+
+        ConsultaAtributos consultaReemplazo = consultas.obtener(
+                reemplazo.categoriaId());
+        if (consultaReemplazo.error() != null) {
+            throw new IllegalArgumentException(
+                    "La categoría " + categoriaOriginal
+                            + " no existe y Mercado Libre tampoco aceptó la categoría "
+                            + reemplazo.categoriaId() + " detectada por el título: "
+                            + mensaje(consultaReemplazo.error()),
+                    consultaReemplazo.error());
+        }
+        producto.setMercadoLibreCategoriaId(reemplazo.categoriaId());
+        productoRepository.save(producto);
+        return consultaReemplazo.resultado();
+    }
+
+    private boolean esCategoriaNoEncontrada(Throwable error) {
+        Throwable actual = error;
+        while (actual != null) {
+            if (actual instanceof RestClientResponseException respuesta
+                    && respuesta.getStatusCode().value() == 404) return true;
+            String texto = actual.getMessage();
+            if (texto != null && texto.contains("Category not found")) return true;
+            actual = actual.getCause();
+        }
+        return false;
+    }
+
     private final class ConsultasMercadoLibre {
         private final long limiteNanos;
         private final Map<String, ConsultaAtributos> porCategoria =
@@ -266,9 +311,30 @@ public class RevisionPublicacionService {
 
         private ConsultaCategoria predecir(Producto producto) {
             String origen = limpiar(producto.getCategoriaOrigen());
-            String descripcion = limpiar(producto.getDescripcion());
-            String consulta = origen != null ? origen : descripcion;
-            String clave = normalizarClave(consulta);
+            String titulo = limpiar(producto.getDescripcion());
+            ConsultaCategoria porTitulo = predecir(
+                    titulo, "titulo:" + normalizarClave(titulo));
+            if (porTitulo.error() != null || tieneTexto(porTitulo.categoriaId())
+                    || origen == null || normalizarClave(origen)
+                            .equals(normalizarClave(titulo))) {
+                return porTitulo;
+            }
+
+            String tituloYOrigen = titulo == null ? origen : titulo + " " + origen;
+            ConsultaCategoria combinada = predecir(
+                    tituloYOrigen, "combinada:" + normalizarClave(tituloYOrigen));
+            if (combinada.error() != null || tieneTexto(combinada.categoriaId())) {
+                return combinada;
+            }
+            return predecir(origen, "origen:" + normalizarClave(origen));
+        }
+
+        private ConsultaCategoria predecirPorTitulo(Producto producto) {
+            String titulo = limpiar(producto.getDescripcion());
+            return predecir(titulo, "titulo:" + normalizarClave(titulo));
+        }
+
+        private ConsultaCategoria predecir(String consulta, String clave) {
             ConsultaCategoria existente = predicciones.get(clave);
             if (existente != null) return existente;
             ConsultaCategoria nueva;

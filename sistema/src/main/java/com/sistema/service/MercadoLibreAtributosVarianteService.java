@@ -97,7 +97,7 @@ public class MercadoLibreAtributosVarianteService {
 
     public String predecirCategoria(String descripcion) {
         if (!tokenService.configurado()) return "";
-        JsonNode respuesta = get("/sites/MLA/domain_discovery/search?limit=1&q="
+        JsonNode respuesta = get("/sites/MLA/domain_discovery/search?limit=3&q="
                 + java.net.URLEncoder.encode(descripcion == null ? "" : descripcion,
                 java.nio.charset.StandardCharsets.UTF_8));
         return respuesta != null && respuesta.isArray() && !respuesta.isEmpty()

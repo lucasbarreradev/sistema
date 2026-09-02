@@ -8,6 +8,9 @@ import com.sistema.model.ProductoVariante;
 import com.sistema.repository.ProductoRepository;
 import com.sistema.repository.ProductoVarianteRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.math.BigDecimal;
 import java.beans.Introspector;
@@ -66,32 +69,70 @@ class RevisionPublicacionServiceTest {
     }
 
     @Test
-    void detectaYReutilizaLaCategoriaDeOrigenParaTodoElGrupo() {
+    void detectaLaCategoriaUsandoPrimeroElTituloDeCadaProducto() {
         Producto primero = producto(20L);
         Producto segundo = producto(21L);
-        primero.setCategoriaOrigen("Aromatizantes");
-        segundo.setCategoriaOrigen("Aromatizantes");
+        primero.setDescripcion("AROMATIZADOR ULTRASÓNICO THIMOTY");
+        segundo.setDescripcion("Guante exfoliante");
+        primero.setCategoriaOrigen("Hogar");
+        segundo.setCategoriaOrigen("Hogar");
         primero.setFotoUrlExterna("https://img.test/20.jpg");
         segundo.setFotoUrlExterna("https://img.test/21.jpg");
         List<Long> ids = List.of(20L, 21L);
         when(productos.findAllById(ids)).thenReturn(List.of(primero, segundo));
         when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
                 .thenReturn(List.of());
-        when(atributos.predecirCategoria("Aromatizantes")).thenReturn("MLA123");
+        when(atributos.predecirCategoria("AROMATIZADOR ULTRASÓNICO THIMOTY"))
+                .thenReturn("MLA123");
+        when(atributos.predecirCategoria("Guante exfoliante"))
+                .thenReturn("MLA456");
         when(atributos.obtenerPorCategoria("MLA123")).thenReturn(
                 new MercadoLibreAtributosVarianteService.Resultado(
                         "MLA123", List.of()));
+        when(atributos.obtenerPorCategoria("MLA456")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA456", List.of()));
 
         var revisiones = service.revisar(
                 ids, List.of(CanalVenta.MERCADO_LIBRE));
 
         assertEquals(2, revisiones.size());
         assertEquals("MLA123", primero.getMercadoLibreCategoriaId());
-        assertEquals("MLA123", segundo.getMercadoLibreCategoriaId());
-        verify(atributos).predecirCategoria("Aromatizantes");
+        assertEquals("MLA456", segundo.getMercadoLibreCategoriaId());
+        verify(atributos).predecirCategoria("AROMATIZADOR ULTRASÓNICO THIMOTY");
+        verify(atributos).predecirCategoria("Guante exfoliante");
         verify(atributos).obtenerPorCategoria("MLA123");
+        verify(atributos).obtenerPorCategoria("MLA456");
         verify(productos).save(primero);
         verify(productos).save(segundo);
+    }
+
+    @Test
+    void combinaTituloYCategoriaDeOrigenCuandoElTituloSoloNoAlcanza() {
+        Producto producto = producto(22L);
+        producto.setDescripcion("Difusor de Ambiente");
+        producto.setCategoriaOrigen("Aromatizantes");
+        producto.setFotoUrlExterna("https://img.test/22.jpg");
+        List<Long> ids = List.of(22L);
+        when(productos.findAllById(ids)).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of());
+        when(atributos.predecirCategoria("Difusor de Ambiente"))
+                .thenReturn("");
+        when(atributos.predecirCategoria(
+                "Difusor de Ambiente Aromatizantes")).thenReturn("MLA789");
+        when(atributos.obtenerPorCategoria("MLA789")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA789", List.of()));
+
+        var revision = service.revisar(
+                ids, List.of(CanalVenta.MERCADO_LIBRE)).get(0);
+
+        assertEquals("MLA789", producto.getMercadoLibreCategoriaId());
+        assertTrue(revision.faltantes().isEmpty());
+        verify(atributos).predecirCategoria("Difusor de Ambiente");
+        verify(atributos).predecirCategoria(
+                "Difusor de Ambiente Aromatizantes");
     }
 
     @Test
@@ -163,6 +204,37 @@ class RevisionPublicacionServiceTest {
                 .orElseThrow().size());
         assertTrue(service.consumirRevisionPreparada(90L).isEmpty());
         verify(atributos).obtenerPorCategoria("MLA123");
+    }
+
+    @Test
+    void reemplazaUnaCategoriaManualQueMercadoLibreYaNoReconoce() {
+        Producto producto = producto(14L);
+        producto.setMercadoLibreCategoriaId("MLA438180");
+        producto.setFotoUrlExterna("https://img.test/14.jpg");
+        List<Long> ids = List.of(14L);
+        when(productos.findAllById(ids)).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of());
+        when(atributos.obtenerPorCategoria("MLA438180")).thenThrow(
+                HttpClientErrorException.create(
+                        HttpStatus.NOT_FOUND, "Not Found", HttpHeaders.EMPTY,
+                        "{\"message\":\"Category not found: MLA438180\"}"
+                                .getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        java.nio.charset.StandardCharsets.UTF_8));
+        when(atributos.predecirCategoria("Producto de prueba"))
+                .thenReturn("MLA999");
+        when(atributos.obtenerPorCategoria("MLA999")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA999", List.of()));
+
+        var revision = service.revisar(
+                ids, List.of(CanalVenta.MERCADO_LIBRE)).get(0);
+
+        assertEquals("MLA999", producto.getMercadoLibreCategoriaId());
+        assertTrue(revision.faltantes().isEmpty());
+        verify(productos).save(producto);
+        verify(atributos).predecirCategoria("Producto de prueba");
+        verify(atributos).obtenerPorCategoria("MLA999");
     }
 
     @Test
