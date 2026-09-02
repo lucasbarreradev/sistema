@@ -67,4 +67,9 @@ public record RevisionProductoPublicacionDto(
     public boolean isModeloObligatorio() {
         return atributosObligatorios != null && atributosObligatorios.contains("Modelo");
     }
+
+    public boolean isFaltaCategoriaMercadoLibre() {
+        return faltantes != null
+                && faltantes.contains("Categoría de Mercado Libre");
+    }
 }

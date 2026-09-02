@@ -82,7 +82,11 @@
                                     <button type="button" class="btn btn-sm btn-primary"
                                             data-toggle="collapse" data-target="#editar-${p.id}"
                                             aria-expanded="false" aria-controls="editar-${p.id}">
-                                        <i class="fa-solid fa-pen mr-1"></i>Editar aquí
+                                        <i class="fa-solid fa-pen mr-1"></i>
+                                        <c:choose>
+                                            <c:when test="${revision.faltaCategoriaMercadoLibre}">Cambiar título y detectar categoría</c:when>
+                                            <c:otherwise>Editar aquí</c:otherwise>
+                                        </c:choose>
                                     </button>
                                     <c:url var="urlVariantes" value="/productos/${p.id}/variantes">
                                         <c:param name="volver" value="/canales/publicar/revision"/>
@@ -121,6 +125,11 @@
                                                 <input name="categoriaMercadoLibre" class="form-control"
                                                        value="${fn:escapeXml(p.mercadoLibreCategoriaId)}"
                                                        placeholder="Ej.: MLA417282">
+                                                <c:if test="${revision.faltaCategoriaMercadoLibre}">
+                                                    <small class="form-text text-muted">
+                                                        Puede dejarla vacía: al guardar se volverá a detectar usando el título nuevo.
+                                                    </small>
+                                                </c:if>
                                             </div>
                                             <div class="col-lg-3 mb-3">
                                                 <label>Tipo de publicación</label>

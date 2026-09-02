@@ -15,6 +15,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import java.math.BigDecimal;
 import java.beans.Introspector;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -49,7 +50,8 @@ class RevisionPublicacionServiceTest {
                 "producto", "variantes", "faltantes", "atributosFaltantes",
                 "atributosObligatorios", "listo", "marcaObligatoria",
                 "modeloObligatorio", "atributosGenerales", "atributosDeVariante",
-                "valoresAtributosGenerales", "valoresAtributosVariantes")));
+                "valoresAtributosGenerales", "valoresAtributosVariantes",
+                "faltaCategoriaMercadoLibre")));
     }
 
     @Test
@@ -302,6 +304,40 @@ class RevisionPublicacionServiceTest {
         assertTrue(producto.getMercadoLibreRetiroPersonal());
         verify(variantes).saveAll(any());
         verify(productos).save(producto);
+    }
+
+    @Test
+    void detectaLaCategoriaAlGuardarUnTituloNuevoConCategoriaVacia() {
+        Producto producto = producto(23L);
+        producto.setFotoUrlExterna("https://img.test/23.jpg");
+        when(productos.findById(23L)).thenReturn(Optional.of(producto));
+        when(variantes.findByProductoIdOrderByNombreAsc(23L))
+                .thenReturn(List.of());
+
+        service.actualizar(
+                23L, "Aromatizador ultrasónico Thimoty", "", "",
+                "", "", 2, new BigDecimal("1000"), "",
+                false, false, "", null, null, List.of(), Map.of());
+
+        List<Long> ids = List.of(23L);
+        when(productos.findAllById(ids)).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of());
+        when(atributos.predecirCategoria("Aromatizador ultrasónico Thimoty"))
+                .thenReturn("MLA381270");
+        when(atributos.obtenerPorCategoria("MLA381270")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA381270", List.of()));
+
+        var revision = service.revisar(
+                ids, List.of(CanalVenta.MERCADO_LIBRE)).get(0);
+
+        assertEquals("Aromatizador ultrasónico Thimoty",
+                producto.getDescripcion());
+        assertEquals("MLA381270", producto.getMercadoLibreCategoriaId());
+        assertTrue(revision.isListo());
+        verify(atributos).predecirCategoria(
+                "Aromatizador ultrasónico Thimoty");
     }
 
     private Producto producto(Long id) {
