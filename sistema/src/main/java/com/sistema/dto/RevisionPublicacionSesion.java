@@ -8,5 +8,11 @@ import java.util.List;
 public record RevisionPublicacionSesion(
         long tenantId,
         List<Long> productoIds,
-        List<CanalVenta> canales) implements Serializable {
+        List<CanalVenta> canales,
+        Long trabajoPreparacionId) implements Serializable {
+
+    public RevisionPublicacionSesion(
+            long tenantId, List<Long> productoIds, List<CanalVenta> canales) {
+        this(tenantId, productoIds, canales, null);
+    }
 }

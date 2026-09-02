@@ -2,6 +2,7 @@ package com.sistema.model;
 
 public enum TipoTrabajoSincronizacion {
     SINCRONIZACION_CANALES,
+    PREPARACION_PUBLICACION,
     PUBLICACION_SELECCIONADA,
     IMPORTACION_COMPLETA,
     IMPORTACION_FILTRADA,

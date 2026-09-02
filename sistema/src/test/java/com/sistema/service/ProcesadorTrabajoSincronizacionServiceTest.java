@@ -21,6 +21,33 @@ import static org.mockito.Mockito.*;
 class ProcesadorTrabajoSincronizacionServiceTest {
 
     @Test
+    void preparaLaRevisionCompletaAntesDeMarcarElTrabajoTerminado() {
+        TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
+        RevisionPublicacionService revision = mock(RevisionPublicacionService.class);
+        TrabajoSincronizacion trabajo = trabajo();
+        when(repository.findById(10L)).thenReturn(Optional.of(trabajo));
+        when(revision.prepararEnSegundoPlano(eq(10L), eq(List.of(4L, 5L)),
+                eq(List.of(CanalVenta.MERCADO_LIBRE)),
+                any(java.util.function.BooleanSupplier.class))).thenReturn(2);
+        ProcesadorTrabajoSincronizacionService procesador =
+                new ProcesadorTrabajoSincronizacionService(
+                        repository, mock(SincronizacionCanalesService.class),
+                        mock(PublicacionService.class),
+                        mock(ImportacionCanalService.class), revision);
+
+        procesador.ejecutarPreparacionPublicacion(
+                10L, 3L, List.of(4L, 5L),
+                List.of(CanalVenta.MERCADO_LIBRE));
+
+        assertEquals(EstadoTrabajoSincronizacion.COMPLETADA, trabajo.getEstado());
+        assertEquals("Revisión preparada: 2 producto(s) analizados.",
+                trabajo.getResumen());
+        assertNotNull(trabajo.getFinalizadoEn());
+        verify(repository).saveAndFlush(trabajo);
+        verify(repository).save(trabajo);
+    }
+
+    @Test
     void guardaResultadoCompletadoConErroresSinPropagarlosAlHttp() {
         TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
         SincronizacionCanalesService sincronizacion = mock(SincronizacionCanalesService.class);
@@ -38,7 +65,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, sincronizacion, mock(PublicacionService.class),
-                        mock(ImportacionCanalService.class));
+                        mock(ImportacionCanalService.class),
+                        mock(RevisionPublicacionService.class));
 
         procesador.ejecutar(10L, 3L, CanalVenta.MERCADO_LIBRE, List.of(CanalVenta.WOOCOMMERCE));
 
@@ -68,7 +96,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, sincronizacion, publicacionService,
-                        mock(ImportacionCanalService.class));
+                        mock(ImportacionCanalService.class),
+                        mock(RevisionPublicacionService.class));
 
         procesador.ejecutarPublicacion(10L, 3L, List.of(4L, 5L, 6L),
                 List.of(CanalVenta.WOOCOMMERCE));
@@ -94,7 +123,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, sincronizacion, mock(PublicacionService.class),
-                        mock(ImportacionCanalService.class));
+                        mock(ImportacionCanalService.class),
+                        mock(RevisionPublicacionService.class));
 
         procesador.ejecutar(10L, 3L, CanalVenta.MERCADO_LIBRE, List.of(CanalVenta.WOOCOMMERCE));
 
@@ -121,7 +151,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, mock(SincronizacionCanalesService.class),
-                        mock(PublicacionService.class), importacion);
+                        mock(PublicacionService.class), importacion,
+                        mock(RevisionPublicacionService.class));
 
         procesador.ejecutarImportacionCompleta(10L, 3L, CanalVenta.MERCADO_LIBRE, false);
 
@@ -148,7 +179,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, mock(SincronizacionCanalesService.class),
-                        mock(PublicacionService.class), importacion);
+                        mock(PublicacionService.class), importacion,
+                        mock(RevisionPublicacionService.class));
 
         procesador.ejecutarImportacionFiltradaMercadoLibre(
                 10L, 3L, 5, "neumaticos", false);
@@ -169,7 +201,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, mock(SincronizacionCanalesService.class),
-                        publicacionService, mock(ImportacionCanalService.class));
+                        publicacionService, mock(ImportacionCanalService.class),
+                        mock(RevisionPublicacionService.class));
 
         procesador.ejecutarPublicacion(10L, 3L, List.of(4L, 5L),
                 List.of(CanalVenta.WOOCOMMERCE));
@@ -197,7 +230,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
                         repository, mock(SincronizacionCanalesService.class),
-                        mock(PublicacionService.class), importacion);
+                        mock(PublicacionService.class), importacion,
+                        mock(RevisionPublicacionService.class));
 
         procesador.ejecutarImportacionCompleta(
                 10L, 3L, CanalVenta.MERCADO_LIBRE, false);

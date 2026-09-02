@@ -67,6 +67,9 @@ public class TrabajoSincronizacion extends TenantAwareEntity {
 
     @Transient
     public String getFlujoDescripcion() {
+        if (tipoTrabajo == TipoTrabajoSincronizacion.PREPARACION_PUBLICACION) {
+            return "Preparación para " + getDestinosDescripcion();
+        }
         if (tipoTrabajo == TipoTrabajoSincronizacion.PUBLICACION_SELECCIONADA) {
             return "Sistema \u2192 " + getDestinosDescripcion();
         }

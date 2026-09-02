@@ -92,6 +92,52 @@ public class TrabajoSincronizacionService {
         return trabajo;
     }
 
+    public TrabajoSincronizacion iniciarPreparacionPublicacion(
+            Collection<Long> productoIds, Collection<CanalVenta> canales) {
+        if (productoIds == null) throw new IllegalArgumentException(
+                "Seleccione al menos un producto");
+        if (canales == null) throw new IllegalArgumentException(
+                "Seleccione al menos un canal");
+        List<Long> productosValidos = productoIds.stream()
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        List<CanalVenta> canalesValidos = canales.stream()
+                .filter(java.util.Objects::nonNull).distinct().toList();
+        if (productosValidos.isEmpty()) throw new IllegalArgumentException(
+                "Seleccione al menos un producto");
+        if (canalesValidos.isEmpty()) throw new IllegalArgumentException(
+                "Seleccione al menos un canal");
+        verificarDisponibilidad();
+
+        long tenantId = TenantContext.require();
+        TrabajoSincronizacion trabajo = new TrabajoSincronizacion();
+        trabajo.setTenantId(tenantId);
+        trabajo.setOrigen(canalesValidos.get(0));
+        trabajo.setTipoTrabajo(TipoTrabajoSincronizacion.PREPARACION_PUBLICACION);
+        trabajo.setDestinos(canalesValidos.stream().map(Enum::name)
+                .collect(Collectors.joining(",")));
+        trabajo.setEstado(EstadoTrabajoSincronizacion.PENDIENTE);
+        trabajo.setCreadoEn(LocalDateTime.now());
+        trabajo.setResumen("Esperando para revisar " + productosValidos.size()
+                + " producto(s)...");
+        trabajo = repository.save(trabajo);
+
+        procesador.ejecutarPreparacionPublicacion(
+                trabajo.getId(), tenantId, List.copyOf(productosValidos),
+                List.copyOf(canalesValidos));
+        return trabajo;
+    }
+
+    public TrabajoSincronizacion obtenerDelTenantActual(Long trabajoId) {
+        if (trabajoId == null) throw new IllegalArgumentException(
+                "No se encontró la preparación de la revisión");
+        long tenantId = TenantContext.require();
+        return repository.findById(trabajoId)
+                .filter(trabajo -> trabajo.getTenantId() != null
+                        && trabajo.getTenantId() == tenantId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "No se encontró la preparación de la revisión"));
+    }
+
     public TrabajoSincronizacion iniciarImportacionCompleta(CanalVenta canal) {
         return iniciarImportacionCompleta(canal, false);
     }

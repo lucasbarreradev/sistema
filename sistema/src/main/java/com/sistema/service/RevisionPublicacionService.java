@@ -22,6 +22,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -33,6 +37,8 @@ public class RevisionPublicacionService {
     private final ProductoVarianteRepository varianteRepository;
     private final MercadoLibreAtributosVarianteService atributosMercadoLibre;
     private final ObjectMapper objectMapper;
+    private final Map<Long, RevisionPreparada> revisionesPreparadas =
+            new ConcurrentHashMap<>();
 
     public RevisionPublicacionService(
             ProductoRepository productoRepository,
@@ -47,6 +53,48 @@ public class RevisionPublicacionService {
 
     public List<RevisionProductoPublicacionDto> revisar(
             Collection<Long> productoIds, Collection<CanalVenta> canales) {
+        return revisar(productoIds, canales,
+                System.nanoTime() + TIEMPO_MAXIMO_CONSULTAS_ML_MS * 1_000_000L,
+                () -> false);
+    }
+
+    public int prepararEnSegundoPlano(
+            Long trabajoId, Collection<Long> productoIds,
+            Collection<CanalVenta> canales,
+            BooleanSupplier cancelacionSolicitada) {
+        if (trabajoId == null) throw new IllegalArgumentException(
+                "Falta identificar el trabajo de preparación");
+        BooleanSupplier cancelacion = cancelacionSolicitada == null
+                ? () -> false : cancelacionSolicitada;
+        List<RevisionProductoPublicacionDto> resultado = revisar(
+                productoIds, canales, Long.MAX_VALUE, cancelacion);
+        if (cancelacion.getAsBoolean()) {
+            revisionesPreparadas.remove(trabajoId);
+        } else {
+            limpiarRevisionesPreparadasVencidas();
+            revisionesPreparadas.put(trabajoId,
+                    new RevisionPreparada(List.copyOf(resultado), Instant.now()));
+        }
+        return resultado.size();
+    }
+
+    public Optional<List<RevisionProductoPublicacionDto>> consumirRevisionPreparada(
+            Long trabajoId) {
+        if (trabajoId == null) return Optional.empty();
+        RevisionPreparada preparada = revisionesPreparadas.remove(trabajoId);
+        return preparada == null ? Optional.empty()
+                : Optional.of(preparada.productos());
+    }
+
+    private void limpiarRevisionesPreparadasVencidas() {
+        Instant limite = Instant.now().minus(2, ChronoUnit.HOURS);
+        revisionesPreparadas.entrySet().removeIf(
+                entrada -> entrada.getValue().creadaEn().isBefore(limite));
+    }
+
+    private List<RevisionProductoPublicacionDto> revisar(
+            Collection<Long> productoIds, Collection<CanalVenta> canales,
+            long limiteNanos, BooleanSupplier cancelacionSolicitada) {
         if (productoIds == null) return List.of();
         boolean revisarMercadoLibre = canales != null
                 && canales.contains(CanalVenta.MERCADO_LIBRE);
@@ -62,10 +110,10 @@ public class RevisionPublicacionService {
                 .collect(Collectors.groupingBy(
                         variante -> variante.getProducto().getId(),
                         LinkedHashMap::new, Collectors.toList()));
-        ConsultasMercadoLibre consultas = new ConsultasMercadoLibre(
-                System.nanoTime() + TIEMPO_MAXIMO_CONSULTAS_ML_MS * 1_000_000L);
+        ConsultasMercadoLibre consultas = new ConsultasMercadoLibre(limiteNanos);
         List<RevisionProductoPublicacionDto> resultado = new ArrayList<>();
         for (Long id : ids) {
+            if (cancelacionSolicitada.getAsBoolean()) break;
             Producto producto = productosPorId.get(id);
             if (producto != null) {
                 resultado.add(revisar(producto,
@@ -257,6 +305,10 @@ public class RevisionPublicacionService {
     }
 
     private record ConsultaCategoria(String categoriaId, RuntimeException error) {
+    }
+
+    private record RevisionPreparada(
+            List<RevisionProductoPublicacionDto> productos, Instant creadaEn) {
     }
 
     private Set<String> atributosProducto(Producto producto) {

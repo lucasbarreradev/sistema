@@ -3,6 +3,7 @@ package com.sistema.controller;
 import com.sistema.dto.RevisionProductoPublicacionDto;
 import com.sistema.dto.RevisionPublicacionSesion;
 import com.sistema.model.CanalVenta;
+import com.sistema.model.EstadoTrabajoSincronizacion;
 import com.sistema.service.ProductoService;
 import com.sistema.service.PublicacionService;
 import com.sistema.service.RevisionPublicacionService;
@@ -76,9 +77,14 @@ public class RevisionPublicacionController {
             RevisionPublicacionSesion revision = new RevisionPublicacionSesion(
                     TenantContext.require(),
                     seleccionados.stream().distinct().toList(), canalesValidos);
+            var trabajo = trabajoService.iniciarPreparacionPublicacion(
+                    revision.productoIds(), revision.canales());
+            revision = new RevisionPublicacionSesion(
+                    revision.tenantId(), revision.productoIds(), revision.canales(),
+                    trabajo.getId());
             session.setAttribute(ATRIBUTO_SESION, revision);
             return "redirect:/canales/publicar/revision";
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
             ra.addFlashAttribute("error", e.getMessage());
             return "redirect:/canales#productos-publicacion";
         }
@@ -92,8 +98,38 @@ public class RevisionPublicacionController {
             return "redirect:/canales#productos-publicacion";
         }
         try {
-            List<RevisionProductoPublicacionDto> productos = revisionService.revisar(
-                    seleccion.productoIds(), seleccion.canales());
+            List<RevisionProductoPublicacionDto> productosPreparados = null;
+            if (seleccion.trabajoPreparacionId() != null) {
+                Long trabajoPreparacionId = seleccion.trabajoPreparacionId();
+                var trabajo = trabajoService.obtenerDelTenantActual(
+                        trabajoPreparacionId);
+                if (trabajo.isActivo()) {
+                    model.addAttribute("revisionCanales", seleccion.canales());
+                    model.addAttribute("trabajoPreparacion", trabajo);
+                    model.addAttribute("cantidadProductosRevision",
+                            seleccion.productoIds().size());
+                    return "canales/revision-preparando";
+                }
+                if (trabajo.getEstado() == EstadoTrabajoSincronizacion.ERROR
+                        || trabajo.getEstado() == EstadoTrabajoSincronizacion.CANCELADO) {
+                    session.removeAttribute(ATRIBUTO_SESION);
+                    String detalle = trabajo.getDetalle();
+                    ra.addFlashAttribute("error", detalle == null || detalle.isBlank()
+                            ? trabajo.getResumen() : detalle);
+                    return "redirect:/canales#productos-publicacion";
+                }
+                productosPreparados = revisionService
+                        .consumirRevisionPreparada(trabajoPreparacionId)
+                        .orElse(null);
+                seleccion = new RevisionPublicacionSesion(
+                        seleccion.tenantId(), seleccion.productoIds(),
+                        seleccion.canales());
+                session.setAttribute(ATRIBUTO_SESION, seleccion);
+            }
+            List<RevisionProductoPublicacionDto> productos = productosPreparados != null
+                    ? productosPreparados
+                    : revisionService.revisar(
+                            seleccion.productoIds(), seleccion.canales());
             long listos = productos.stream().filter(RevisionProductoPublicacionDto::isListo).count();
             model.addAttribute("revisionProductos", productos);
             model.addAttribute("revisionCanales", seleccion.canales());

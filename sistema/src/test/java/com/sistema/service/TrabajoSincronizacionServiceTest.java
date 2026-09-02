@@ -94,6 +94,34 @@ class TrabajoSincronizacionServiceTest {
     }
 
     @Test
+    void creaPreparacionDeRevisionEnSegundoPlano() {
+        TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
+        ProcesadorTrabajoSincronizacionService procesador = mock(ProcesadorTrabajoSincronizacionService.class);
+        when(repository.findByEstadoIn(anyCollection())).thenReturn(List.of());
+        when(repository.existsByEstadoIn(anyCollection())).thenReturn(false);
+        when(repository.save(any(TrabajoSincronizacion.class))).thenAnswer(invocacion -> {
+            TrabajoSincronizacion trabajo = invocacion.getArgument(0);
+            trabajo.setId(32L);
+            return trabajo;
+        });
+        TrabajoSincronizacionService service = new TrabajoSincronizacionService(repository, procesador);
+
+        TrabajoSincronizacion trabajo;
+        try (TenantContext.Scope ignored = TenantContext.use(8L)) {
+            trabajo = service.iniciarPreparacionPublicacion(
+                    List.of(4L, 4L, 5L),
+                    List.of(CanalVenta.MERCADO_LIBRE, CanalVenta.MERCADO_LIBRE));
+        }
+
+        assertEquals(TipoTrabajoSincronizacion.PREPARACION_PUBLICACION,
+                trabajo.getTipoTrabajo());
+        assertEquals("Preparación para Mercado Libre", trabajo.getFlujoDescripcion());
+        assertEquals(EstadoTrabajoSincronizacion.PENDIENTE, trabajo.getEstado());
+        verify(procesador).ejecutarPreparacionPublicacion(
+                32L, 8L, List.of(4L, 5L), List.of(CanalVenta.MERCADO_LIBRE));
+    }
+
+    @Test
     void creaImportacionCompletaEnSegundoPlano() {
         TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
         ProcesadorTrabajoSincronizacionService procesador = mock(ProcesadorTrabajoSincronizacionService.class);

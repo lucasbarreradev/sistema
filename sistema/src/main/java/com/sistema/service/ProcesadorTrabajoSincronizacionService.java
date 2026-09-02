@@ -26,15 +26,44 @@ public class ProcesadorTrabajoSincronizacionService {
     private final SincronizacionCanalesService sincronizacionCanalesService;
     private final PublicacionService publicacionService;
     private final ImportacionCanalService importacionCanalService;
+    private final RevisionPublicacionService revisionPublicacionService;
 
     public ProcesadorTrabajoSincronizacionService(TrabajoSincronizacionRepository repository,
                                                   SincronizacionCanalesService sincronizacionCanalesService,
                                                   PublicacionService publicacionService,
-                                                  ImportacionCanalService importacionCanalService) {
+                                                  ImportacionCanalService importacionCanalService,
+                                                  RevisionPublicacionService revisionPublicacionService) {
         this.repository = repository;
         this.sincronizacionCanalesService = sincronizacionCanalesService;
         this.publicacionService = publicacionService;
         this.importacionCanalService = importacionCanalService;
+        this.revisionPublicacionService = revisionPublicacionService;
+    }
+
+    @Async("sincronizacionTaskExecutor")
+    public void ejecutarPreparacionPublicacion(
+            Long trabajoId, long tenantId, List<Long> productoIds,
+            List<CanalVenta> canales) {
+        try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
+            if (!actualizarAProcesando(trabajoId,
+                    "Detectando categorías y atributos de " + productoIds.size()
+                            + " producto(s)...")) return;
+            int procesados = revisionPublicacionService.prepararEnSegundoPlano(
+                    trabajoId, productoIds, canales,
+                    verificadorCancelacion(trabajoId));
+            if (finalizarCanceladoSiSolicitado(trabajoId,
+                    "Preparación cancelada por el usuario después de revisar "
+                            + procesados + " producto(s).", List.of())) return;
+            TrabajoSincronizacion trabajo = buscar(trabajoId);
+            trabajo.setEstado(EstadoTrabajoSincronizacion.COMPLETADA);
+            trabajo.setFinalizadoEn(LocalDateTime.now());
+            trabajo.setResumen("Revisión preparada: " + procesados
+                    + " producto(s) analizados.");
+            trabajo.setDetalle(null);
+            repository.save(trabajo);
+        } catch (Exception e) {
+            registrarFallo(trabajoId, tenantId, "preparación de publicación", e);
+        }
     }
 
     @Async("sincronizacionTaskExecutor")

@@ -143,6 +143,29 @@ class RevisionPublicacionServiceTest {
     }
 
     @Test
+    void conservaElResultadoPreparadoParaAbrirLaTablaSinReconsultar() {
+        Producto producto = producto(13L);
+        producto.setMercadoLibreCategoriaId("MLA123");
+        producto.setFotoUrlExterna("https://img.test/13.jpg");
+        List<Long> ids = List.of(13L);
+        when(productos.findAllById(ids)).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of());
+        when(atributos.obtenerPorCategoria("MLA123")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA123", List.of()));
+
+        int procesados = service.prepararEnSegundoPlano(
+                90L, ids, List.of(CanalVenta.MERCADO_LIBRE), () -> false);
+
+        assertEquals(1, procesados);
+        assertEquals(1, service.consumirRevisionPreparada(90L)
+                .orElseThrow().size());
+        assertTrue(service.consumirRevisionPreparada(90L).isEmpty());
+        verify(atributos).obtenerPorCategoria("MLA123");
+    }
+
+    @Test
     void muestraLosAtributosDeUnaUnicaVarianteEnLaRevision() {
         Producto producto = producto(12L);
         producto.setMercadoLibreCategoriaId("MLA123");
