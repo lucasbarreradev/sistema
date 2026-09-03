@@ -73,9 +73,38 @@ class RevisionPublicacionControllerTest {
         RevisionPublicacionSesion restante = (RevisionPublicacionSesion)
                 session.getAttribute(RevisionPublicacionController.ATRIBUTO_SESION);
         assertEquals(List.of(2L), restante.productoIds());
-        assertEquals("redirect:/canales/publicar/revision", destino);
+        assertEquals("redirect:/canales/publicar/revision#producto-2", destino);
         assertEquals("Producto quitado de esta revisión. No fue eliminado del sistema.",
                 atributos.getFlashAttributes().get("mensaje"));
+    }
+
+    @Test
+    void alQuitarElUltimoProductoVuelveAlAnterior() {
+        MockHttpSession session = sesion(List.of(1L, 2L, 3L));
+
+        String destino;
+        try (TenantContext.Scope ignored = TenantContext.use(7L)) {
+            destino = controller.quitarDeRevision(
+                    3L, session, new RedirectAttributesModelMap());
+        }
+
+        assertEquals("redirect:/canales/publicar/revision#producto-2", destino);
+    }
+
+    @Test
+    void cambiaSoloLaCategoriaYVuelveAlMismoProductoAbierto() {
+        MockHttpSession session = sesion(List.of(1L, 2L));
+        RedirectAttributesModelMap atributos = new RedirectAttributesModelMap();
+
+        String destino;
+        try (TenantContext.Scope ignored = TenantContext.use(7L)) {
+            destino = controller.actualizarCategoria(
+                    2L, "Riñoneras", session, atributos);
+        }
+
+        verify(revisionService).actualizarCategoria(2L, "Riñoneras");
+        assertEquals("redirect:/canales/publicar/revision#producto-2", destino);
+        assertEquals(2L, atributos.getFlashAttributes().get("abrirProductoId"));
     }
 
     @Test

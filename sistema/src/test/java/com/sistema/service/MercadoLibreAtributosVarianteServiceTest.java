@@ -15,6 +15,19 @@ class MercadoLibreAtributosVarianteServiceTest {
 
     @Test
     void agregaContextoAConsultasQueSuelenSerAmbiguas() {
+        assertTrue(service.prepararConsultaCategoria("Set x 6 Vasos")
+                .startsWith("vasos para beber vajilla"));
+        assertEquals("Posavasos de madera",
+                service.prepararConsultaCategoria("Posavasos de madera"));
+        assertEquals("Vasos termicos",
+                service.prepararConsultaCategoria("Vasos termicos"));
+        assertTrue(service.prepararConsultaCategoria(
+                        "Set de baño acrílico premium")
+                .startsWith("set de accesorios para bano"));
+        assertEquals("Muneca", service.prepararConsultaCategoria("Muñeca"));
+        assertTrue(service.prepararConsultaCategoria(
+                        "Riñonera Helena Amelie Black")
+                .startsWith("rinonera bolso de cintura accesorio de moda"));
         assertTrue(service.prepararConsultaCategoria("Manopla Kitchen")
                 .startsWith("agarradera manopla de cocina"));
         assertTrue(service.prepararConsultaCategoria("Vela Cedro Verbena")
@@ -37,6 +50,50 @@ class MercadoLibreAtributosVarianteServiceTest {
 
         assertEquals("MLA387586",
                 service.seleccionarCategoria("INCIENSO - SAHUMERIOS", opciones));
+    }
+
+    @Test
+    void eligeRinonerasGeneralesAunqueOtroResultadoAparezcaPrimero()
+            throws Exception {
+        var opciones = objectMapper.readTree("""
+                [
+                  {"category_id":"MLA410888","category_name":"Verduras","domain_name":"Verduras y hortalizas"},
+                  {"category_id":"MLA414321","category_name":"Riñoneras","domain_name":"Riñoneras"},
+                  {"category_id":"MLA417710","category_name":"Riñoneras","domain_name":"Riñoneras"}
+                ]
+                """);
+
+        assertEquals("MLA417710", service.seleccionarCategoria(
+                "Riñonera Helena Amelie Black Color Negro", opciones));
+    }
+
+    @Test
+    void eligeSetsDeAccesoriosParaUnSetDeBanoAunqueNoSeaElPrimero()
+            throws Exception {
+        var opciones = objectMapper.readTree("""
+                [
+                  {"category_id":"MLA74001","category_name":"Juguetes para el Baño","domain_name":"Juguetes de baño"},
+                  {"category_id":"MLA74506","category_name":"Sets Completos","domain_name":"Kits de grifería para baño"},
+                  {"category_id":"MLA31032","category_name":"Sets de Accesorios","domain_name":"Kits de accesorios para baño"}
+                ]
+                """);
+
+        assertEquals("MLA31032", service.seleccionarCategoria(
+                "SET DE BAÑO ACRÍLICO PREMIUM", opciones));
+    }
+
+    @Test
+    void eligeVasosParaBeberEnLugarDeFrutas() throws Exception {
+        var opciones = objectMapper.readTree("""
+                [
+                  {"category_id":"MLA455431","category_name":"Frutas","domain_name":"Frutas"},
+                  {"category_id":"MLA1594","category_name":"Vasos y Copas","domain_name":"Vasos y copas"},
+                  {"category_id":"MLA457489","category_name":"Vasos","domain_name":"Vasos y copas"}
+                ]
+                """);
+
+        assertEquals("MLA457489", service.seleccionarCategoria(
+                "Set x 6 Vasos de vidrio", opciones));
     }
 
     @Test

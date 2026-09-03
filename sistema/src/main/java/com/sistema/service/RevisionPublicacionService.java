@@ -539,6 +539,20 @@ public class RevisionPublicacionService {
         productoRepository.save(producto);
     }
 
+    public void actualizarCategoria(
+            Long productoId, String categoriaMercadoLibre) {
+        Producto producto = productoRepository.findById(productoId)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Producto no encontrado"));
+        if (!tieneTexto(categoriaMercadoLibre)) {
+            throw new IllegalArgumentException(
+                    "Ingrese el nombre de la categoría de Mercado Libre");
+        }
+        producto.setMercadoLibreCategoriaId(
+                resolverCategoriaIngresada(categoriaMercadoLibre));
+        productoRepository.save(producto);
+    }
+
     private String resolverCategoriaIngresada(String categoriaIngresada) {
         String valor = limpiar(categoriaIngresada);
         if (valor == null) return null;

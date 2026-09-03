@@ -122,34 +122,88 @@ public class MercadoLibreAtributosVarianteService {
     String prepararConsultaCategoria(String descripcion) {
         String original = descripcion == null ? "" : descripcion.trim();
         String normalizada = normalizar(original);
+        String consultaOriginal = original
+                .replace("Ã±", "n").replace("Ã‘", "N")
+                .replace('ñ', 'n').replace('Ñ', 'N');
+        if (esVasoParaBeber(normalizada)) {
+            return "vasos para beber vajilla " + consultaOriginal;
+        }
+        if (normalizada.contains("set") && normalizada.contains("bano")) {
+            return "set de accesorios para bano " + consultaOriginal;
+        }
+        if (normalizada.contains("rinonera")) {
+            return "rinonera bolso de cintura accesorio de moda " + consultaOriginal;
+        }
         if (normalizada.contains("manopla")
                 && (normalizada.contains("kitchen")
                         || normalizada.contains("cocina")
                         || normalizada.contains("horno"))) {
-            return "agarradera manopla de cocina para horno " + original;
+            return "agarradera manopla de cocina para horno " + consultaOriginal;
         }
         if (normalizada.contains("vela") && !normalizada.contains("velador")) {
-            return "vela decorativa para el hogar " + original;
+            return "vela decorativa para el hogar " + consultaOriginal;
         }
         if (normalizada.contains("bolsito")) {
-            return "cartera bolso pequeño " + original;
+            return "cartera bolso pequeño " + consultaOriginal;
         }
         if (normalizada.contains("viaje")
                 && (normalizada.contains("envase")
                         || normalizada.contains("frasco")
                         || normalizada.contains("porta liquido"))) {
-            return "neceser organizador de viaje con envases rellenables " + original;
+            return "neceser organizador de viaje con envases rellenables "
+                    + consultaOriginal;
         }
         if ((normalizada.contains("toallita") || normalizada.contains("toalitta"))
                 && normalizada.contains("comprim")) {
-            return "toallitas comprimidas de higiene personal " + original;
+            return "toallitas comprimidas de higiene personal " + consultaOriginal;
         }
-        return original;
+        return consultaOriginal;
     }
 
     String seleccionarCategoria(String descripcion, JsonNode respuesta) {
         if (respuesta == null || !respuesta.isArray() || respuesta.isEmpty()) return "";
         String titulo = normalizar(descripcion);
+        if (esVasoParaBeber(titulo)) {
+            for (JsonNode opcion : respuesta) {
+                if ("MLA457489".equals(opcion.path("category_id").asText(""))) {
+                    return "MLA457489";
+                }
+            }
+            for (JsonNode opcion : respuesta) {
+                String nombre = normalizar(opcion.path("category_name").asText(""));
+                String dominio = normalizar(opcion.path("domain_name").asText(""));
+                if (nombre.equals("vasos") && dominio.equals("vasos y copas")) {
+                    return opcion.path("category_id").asText("");
+                }
+            }
+        }
+        if (titulo.contains("set") && titulo.contains("bano")) {
+            for (JsonNode opcion : respuesta) {
+                if ("MLA31032".equals(opcion.path("category_id").asText(""))) {
+                    return "MLA31032";
+                }
+            }
+            for (JsonNode opcion : respuesta) {
+                String dominio = normalizar(opcion.path("domain_name").asText(""));
+                if (dominio.contains("accesorios") && dominio.contains("bano")) {
+                    return opcion.path("category_id").asText("");
+                }
+            }
+        }
+        if (titulo.contains("rinonera")) {
+            for (JsonNode opcion : respuesta) {
+                if ("MLA417710".equals(opcion.path("category_id").asText(""))) {
+                    return "MLA417710";
+                }
+            }
+            for (JsonNode opcion : respuesta) {
+                String nombre = normalizar(opcion.path("category_name").asText(""));
+                String dominio = normalizar(opcion.path("domain_name").asText(""));
+                if (nombre.equals("rinoneras") || dominio.equals("rinoneras")) {
+                    return opcion.path("category_id").asText("");
+                }
+            }
+        }
         if ((titulo.contains("incienso") || titulo.contains("sahumer"))
                 && !titulo.contains("porta")) {
             for (JsonNode opcion : respuesta) {
@@ -175,6 +229,14 @@ public class MercadoLibreAtributosVarianteService {
             }
         }
         return respuesta.get(0).path("category_id").asText("");
+    }
+
+    private boolean esVasoParaBeber(String textoNormalizado) {
+        return textoNormalizado.matches(".*\\bvasos\\b.*")
+                && !textoNormalizado.contains("descartable")
+                && !textoNormalizado.contains("medidor")
+                && !textoNormalizado.contains("termico")
+                && !textoNormalizado.matches(".*\\bbebe(s)?\\b.*");
     }
 
     private String normalizar(String valor) {

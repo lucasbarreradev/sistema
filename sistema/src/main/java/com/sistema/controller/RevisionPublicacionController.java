@@ -226,6 +226,28 @@ public class RevisionPublicacionController {
         }
     }
 
+    @PostMapping("/revision/categoria")
+    public String actualizarCategoria(
+            @RequestParam Long productoId,
+            @RequestParam(defaultValue = "") String categoriaMercadoLibre,
+            HttpSession session,
+            RedirectAttributes ra) {
+        if (seleccion(session) == null) {
+            return "redirect:/canales#productos-publicacion";
+        }
+        try {
+            revisionService.actualizarCategoria(
+                    productoId, categoriaMercadoLibre);
+            ra.addFlashAttribute("mensaje",
+                    "Categoría actualizada. Se recargaron sus atributos de Mercado Libre.");
+            ra.addFlashAttribute("abrirProductoId", productoId);
+        } catch (IllegalArgumentException e) {
+            ra.addFlashAttribute("error", e.getMessage());
+            ra.addFlashAttribute("abrirProductoId", productoId);
+        }
+        return "redirect:/canales/publicar/revision#producto-" + productoId;
+    }
+
     @PostMapping("/revision/quitar")
     public String quitarDeRevision(
             @RequestParam Long productoId,
@@ -249,7 +271,11 @@ public class RevisionPublicacionController {
                 seleccion.tenantId(), restantes, seleccion.canales()));
         ra.addFlashAttribute("mensaje",
                 "Producto quitado de esta revisión. No fue eliminado del sistema.");
-        return "redirect:/canales/publicar/revision";
+        int indiceQuitado = seleccion.productoIds().indexOf(productoId);
+        Long productoCercano = indiceQuitado >= 0 && indiceQuitado < restantes.size()
+                ? restantes.get(indiceQuitado)
+                : restantes.get(restantes.size() - 1);
+        return "redirect:/canales/publicar/revision#producto-" + productoCercano;
     }
 
     @PostMapping("/revision/cancelar")

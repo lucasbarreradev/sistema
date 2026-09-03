@@ -109,7 +109,7 @@
                             </tr>
                             <tr>
                                 <td colspan="5" class="p-0 border-0">
-                                    <div class="collapse" id="editar-${p.id}">
+                                    <div class="collapse ${abrirProductoId == p.id ? 'show' : ''}" id="editar-${p.id}">
                                     <div class="bg-light p-3">
                                     <form method="post" action="${pageContext.request.contextPath}/canales/publicar/revision/guardar">
                                         <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
@@ -122,9 +122,13 @@
                                             </div>
                                             <div class="col-lg-3 mb-3">
                                                 <label>Categoría de Mercado Libre</label>
-                                                <input name="categoriaMercadoLibre" class="form-control"
+                                                <input name="categoriaMercadoLibreVisible" class="form-control"
                                                        value="${fn:escapeXml(revision.categoriaMercadoLibreNombre)}"
-                                                       placeholder="Ej.: Sahumerios o Neumáticos">
+                                                       placeholder="Ej.: Sahumerios o Neumáticos"
+                                                       oninput="document.getElementById('categoria-valor-${p.id}').value=this.value;">
+                                                <input type="hidden" id="categoria-valor-${p.id}"
+                                                       name="categoriaMercadoLibre"
+                                                       value="${fn:escapeXml(p.mercadoLibreCategoriaId)}">
                                                 <c:if test="${not empty p.mercadoLibreCategoriaId}">
                                                     <small class="form-text text-muted">
                                                         Código interno: <c:out value="${p.mercadoLibreCategoriaId}"/>
@@ -135,6 +139,12 @@
                                                         Escriba el nombre de la categoría. El sistema detectará y guardará el código MLA internamente. También puede dejarla vacía para volver a detectarla usando el título nuevo.
                                                     </small>
                                                 </c:if>
+                                                <button type="submit"
+                                                        formaction="${pageContext.request.contextPath}/canales/publicar/revision/categoria"
+                                                        formmethod="post" formnovalidate
+                                                        class="btn btn-sm btn-outline-primary mt-2">
+                                                    Aplicar categoría y recargar atributos
+                                                </button>
                                             </div>
                                             <div class="col-lg-3 mb-3">
                                                 <label>Tipo de publicación</label>

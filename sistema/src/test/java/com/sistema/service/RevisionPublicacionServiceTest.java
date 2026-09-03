@@ -380,6 +380,24 @@ class RevisionPublicacionServiceTest {
     }
 
     @Test
+    void cambiaSolamenteLaCategoriaParaRecargarSusAtributos() {
+        Producto producto = producto(28L);
+        producto.setDescripcion("Título que debe conservarse");
+        producto.setCantidad(8);
+        when(productos.findById(28L)).thenReturn(Optional.of(producto));
+        when(atributos.predecirCategoria("Riñoneras"))
+                .thenReturn("MLA417710");
+
+        service.actualizarCategoria(28L, "Riñoneras");
+
+        assertEquals("MLA417710", producto.getMercadoLibreCategoriaId());
+        assertEquals("Título que debe conservarse", producto.getDescripcion());
+        assertEquals(8, producto.getCantidad());
+        verify(productos).save(producto);
+        verify(atributos).predecirCategoria("Riñoneras");
+    }
+
+    @Test
     void rechazaUnNombreDeCategoriaQueMercadoLibreNoPuedeDetectar() {
         Producto producto = producto(26L);
         when(productos.findById(26L)).thenReturn(Optional.of(producto));
