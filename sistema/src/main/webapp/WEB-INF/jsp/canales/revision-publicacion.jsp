@@ -119,9 +119,7 @@
                                                 <label>Título</label>
                                                 <input name="titulo" class="form-control" maxlength="255"
                                                        value="${fn:escapeXml(revision.tituloMercadoLibre)}" required>
-                                                <small class="form-text text-muted">
-                                                    Título exclusivo de Mercado Libre. No modifica el de Tiendanube ni WooCommerce.
-                                                </small>
+                                                
                                             </div>
                                             <div class="col-lg-3 mb-3">
                                                 <label>Categoría de Mercado Libre</label>

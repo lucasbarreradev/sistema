@@ -208,7 +208,8 @@ class RevisionPublicacionServiceTest {
                 new MercadoLibreAtributosVarianteService.Resultado(
                         "MLA412620", "Dispensers de Jabón", List.of()));
 
-        service.revisar(ids, List.of(CanalVenta.MERCADO_LIBRE));
+        service.prepararEnSegundoPlano(
+                93L, ids, List.of(CanalVenta.MERCADO_LIBRE), () -> false);
 
         assertEquals("me2", producto.getMercadoLibreModoEnvio());
         assertEquals(true, producto.getMercadoLibreEnvioGratis());

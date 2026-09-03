@@ -210,7 +210,7 @@ public class RevisionPublicacionService {
                 return null;
             }
         }
-        completarOpcionesEnvioSiFaltan(producto);
+        if (redetectarCategorias) completarOpcionesEnvioSiFaltan(producto);
         try {
             var resultado = obtenerAtributosConRecuperacion(producto, consultas);
             boolean tieneFoto = producto.tieneFoto()
@@ -578,6 +578,7 @@ public class RevisionPublicacionService {
                     .mapToInt(v -> Optional.ofNullable(v.getStock()).orElse(0)).sum());
             producto.setUsaVariantes(true);
         }
+        completarOpcionesEnvioSiFaltan(producto);
         productoRepository.save(producto);
     }
 
@@ -593,6 +594,7 @@ public class RevisionPublicacionService {
         producto.setMercadoLibreCategoriaId(
                 resolverCategoriaIngresada(categoriaMercadoLibre));
         producto.setMercadoLibreCategoriaFijada(true);
+        completarOpcionesEnvioSiFaltan(producto);
         productoRepository.save(producto);
     }
 
