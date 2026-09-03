@@ -6,6 +6,7 @@ import com.sistema.model.Producto;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
@@ -26,6 +27,7 @@ public class MercadoLibreOpcionesEnvioService {
     private final Map<String, String> dominiosPorCategoria =
             new java.util.concurrent.ConcurrentHashMap<>();
 
+    @Autowired
     public MercadoLibreOpcionesEnvioService(
             MercadoLibreTokenService tokenService) {
         this(tokenService, crearRestClient());
