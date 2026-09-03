@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -51,7 +52,7 @@ class RevisionPublicacionServiceTest {
                 "atributosObligatorios", "listo", "marcaObligatoria",
                 "modeloObligatorio", "atributosGenerales", "atributosDeVariante",
                 "valoresAtributosGenerales", "valoresAtributosVariantes",
-                "faltaCategoriaMercadoLibre")));
+                "faltaCategoriaMercadoLibre", "categoriaMercadoLibreNombre")));
     }
 
     @Test
@@ -338,6 +339,86 @@ class RevisionPublicacionServiceTest {
         assertTrue(revision.isListo());
         verify(atributos).predecirCategoria(
                 "Aromatizador ultrasónico Thimoty");
+    }
+
+    @Test
+    void muestraElNombreDeLaCategoriaYConservaElIdInterno() {
+        Producto producto = producto(24L);
+        producto.setMercadoLibreCategoriaId("MLA387586");
+        producto.setFotoUrlExterna("https://img.test/24.jpg");
+        List<Long> ids = List.of(24L);
+        when(productos.findAllById(ids)).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of());
+        when(atributos.obtenerPorCategoria("MLA387586")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA387586", "Sahumerios", List.of()));
+
+        var revision = service.revisar(
+                ids, List.of(CanalVenta.MERCADO_LIBRE)).get(0);
+
+        assertEquals("Sahumerios", revision.categoriaMercadoLibreNombre());
+        assertEquals("MLA387586", producto.getMercadoLibreCategoriaId());
+    }
+
+    @Test
+    void convierteElNombreDeCategoriaEnIdAlGuardar() {
+        Producto producto = producto(25L);
+        when(productos.findById(25L)).thenReturn(Optional.of(producto));
+        when(variantes.findByProductoIdOrderByNombreAsc(25L))
+                .thenReturn(List.of());
+        when(atributos.predecirCategoria("Sahumerios"))
+                .thenReturn("MLA387586");
+
+        service.actualizar(
+                25L, "Incienso", "", "Sahumerios",
+                "", "", 2, new BigDecimal("1000"), "",
+                false, false, "", null, null, List.of(), Map.of());
+
+        assertEquals("MLA387586", producto.getMercadoLibreCategoriaId());
+        verify(atributos).predecirCategoria("Sahumerios");
+    }
+
+    @Test
+    void rechazaUnNombreDeCategoriaQueMercadoLibreNoPuedeDetectar() {
+        Producto producto = producto(26L);
+        when(productos.findById(26L)).thenReturn(Optional.of(producto));
+        when(atributos.predecirCategoria("Categoría inexistente"))
+                .thenReturn("");
+
+        var error = assertThrows(IllegalArgumentException.class, () ->
+                service.actualizar(
+                        26L, "Producto", "", "Categoría inexistente",
+                        "", "", 2, new BigDecimal("1000"), "",
+                        false, false, "", null, null, List.of(), Map.of()));
+
+        assertTrue(error.getMessage().contains("nombre más específico"));
+    }
+
+    @Test
+    void vuelveADetectarUnaCategoriaGuardadaDuranteLaPreparacion() {
+        Producto producto = producto(27L);
+        producto.setDescripcion("Billetera Capibara");
+        producto.setMercadoLibreCategoriaId("MLA380650");
+        producto.setFotoUrlExterna("https://img.test/27.jpg");
+        List<Long> ids = List.of(27L);
+        when(productos.findAllById(ids)).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of());
+        when(atributos.predecirCategoria("Billetera Capibara"))
+                .thenReturn("MLA417712");
+        when(atributos.obtenerPorCategoria("MLA417712")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA417712", "Billeteras", List.of()));
+
+        int procesados = service.prepararEnSegundoPlano(
+                91L, ids, List.of(CanalVenta.MERCADO_LIBRE), () -> false);
+
+        assertEquals(1, procesados);
+        assertEquals("MLA417712", producto.getMercadoLibreCategoriaId());
+        assertEquals("Billeteras", service.consumirRevisionPreparada(91L)
+                .orElseThrow().get(0).categoriaMercadoLibreNombre());
+        verify(productos).save(producto);
     }
 
     private Producto producto(Long id) {

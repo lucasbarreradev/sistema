@@ -123,11 +123,16 @@
                                             <div class="col-lg-3 mb-3">
                                                 <label>Categoría de Mercado Libre</label>
                                                 <input name="categoriaMercadoLibre" class="form-control"
-                                                       value="${fn:escapeXml(p.mercadoLibreCategoriaId)}"
-                                                       placeholder="Ej.: MLA417282">
+                                                       value="${fn:escapeXml(revision.categoriaMercadoLibreNombre)}"
+                                                       placeholder="Ej.: Sahumerios o Neumáticos">
+                                                <c:if test="${not empty p.mercadoLibreCategoriaId}">
+                                                    <small class="form-text text-muted">
+                                                        Código interno: <c:out value="${p.mercadoLibreCategoriaId}"/>
+                                                    </small>
+                                                </c:if>
                                                 <c:if test="${revision.faltaCategoriaMercadoLibre}">
                                                     <small class="form-text text-muted">
-                                                        Puede dejarla vacía: al guardar se volverá a detectar usando el título nuevo.
+                                                        Escriba el nombre de la categoría. El sistema detectará y guardará el código MLA internamente. También puede dejarla vacía para volver a detectarla usando el título nuevo.
                                                     </small>
                                                 </c:if>
                                             </div>

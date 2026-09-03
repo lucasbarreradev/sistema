@@ -25,6 +25,8 @@ public class MercadoLibreAtributosVarianteService {
     private final MercadoLibreTokenService tokenService;
     private final Map<String, List<AtributoVarianteMl>> atributosPorCategoria =
             new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, String> nombresPorCategoria =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     public MercadoLibreAtributosVarianteService(MercadoLibreTokenService tokenService) {
         this.tokenService = tokenService;
@@ -50,7 +52,8 @@ public class MercadoLibreAtributosVarianteService {
         if (!tokenService.configurado()) return new Resultado(categoria, List.of());
         if (categoria == null || categoria.isBlank()) return new Resultado(null, List.of());
         List<AtributoVarianteMl> guardados = atributosPorCategoria.get(categoria);
-        if (guardados != null) return new Resultado(categoria, guardados);
+        if (guardados != null) return new Resultado(
+                categoria, obtenerNombreCategoria(categoria), guardados);
         JsonNode respuesta = get("/categories/" + categoria + "/attributes");
         List<AtributoVarianteMl> atributos = new ArrayList<>();
         if (respuesta != null && respuesta.isArray()) {
@@ -92,7 +95,19 @@ public class MercadoLibreAtributosVarianteService {
         }
         List<AtributoVarianteMl> inmutables = List.copyOf(atributos);
         atributosPorCategoria.put(categoria, inmutables);
-        return new Resultado(categoria, inmutables);
+        return new Resultado(
+                categoria, obtenerNombreCategoria(categoria), inmutables);
+    }
+
+    public String obtenerNombreCategoria(String categoriaId) {
+        if (categoriaId == null || categoriaId.isBlank()) return "";
+        if (!tokenService.configurado()) return categoriaId;
+        return nombresPorCategoria.computeIfAbsent(categoriaId, id -> {
+            JsonNode categoria = get("/categories/" + id);
+            String nombre = categoria == null
+                    ? "" : categoria.path("name").asText("").trim();
+            return nombre.isBlank() ? id : nombre;
+        });
     }
 
     public String predecirCategoria(String descripcion) {
@@ -185,5 +200,12 @@ public class MercadoLibreAtributosVarianteService {
                 .headers(h -> h.setBearerAuth(token)).retrieve().body(JsonNode.class);
     }
 
-    public record Resultado(String categoriaId, List<AtributoVarianteMl> atributos) {}
+    public record Resultado(
+            String categoriaId,
+            String categoriaNombre,
+            List<AtributoVarianteMl> atributos) {
+        public Resultado(String categoriaId, List<AtributoVarianteMl> atributos) {
+            this(categoriaId, categoriaId, atributos);
+        }
+    }
 }

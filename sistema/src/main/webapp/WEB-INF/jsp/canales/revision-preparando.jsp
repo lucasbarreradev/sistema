@@ -31,9 +31,7 @@
                         Todavía no se está publicando ningún artículo. Cuando termine el análisis,
                         esta página abrirá automáticamente la tabla de revisión.
                     </div>
-                    <a class="btn btn-outline-secondary" href="${pageContext.request.contextPath}/canales">
-                        Salir y dejar procesando
-                    </a>
+
                 </div>
             </div>
         </div>

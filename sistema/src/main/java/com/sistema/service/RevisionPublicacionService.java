@@ -156,10 +156,13 @@ public class RevisionPublicacionService {
             if (faltaPrecio) faltantes.add("Precio de contado en todas las variantes");
         }
 
-        if (revisarMercadoLibre) revisarMercadoLibre(
-                producto, variantes, faltantes, atributosFaltantes,
-                atributosObligatorios, atributosGenerales,
-                atributosDeVariante, consultas, redetectarCategorias);
+        String categoriaMercadoLibreNombre = null;
+        if (revisarMercadoLibre) {
+            categoriaMercadoLibreNombre = revisarMercadoLibre(
+                    producto, variantes, faltantes, atributosFaltantes,
+                    atributosObligatorios, atributosGenerales,
+                    atributosDeVariante, consultas, redetectarCategorias);
+        }
         return new RevisionProductoPublicacionDto(
                 producto, variantes, List.copyOf(faltantes),
                 List.copyOf(atributosFaltantes),
@@ -170,10 +173,11 @@ public class RevisionPublicacionService {
                 valoresPorVariante.entrySet().stream().collect(Collectors.toMap(
                         Map.Entry::getKey,
                         entrada -> Map.copyOf(entrada.getValue()),
-                        (a, b) -> a, LinkedHashMap::new)));
+                        (a, b) -> a, LinkedHashMap::new)),
+                categoriaMercadoLibreNombre);
     }
 
-    private void revisarMercadoLibre(
+    private String revisarMercadoLibre(
             Producto producto,
             List<ProductoVariante> variantes,
             Set<String> faltantes,
@@ -192,14 +196,14 @@ public class RevisionPublicacionService {
                 faltantes.add("Categoría de Mercado Libre");
                 faltantes.add("No se pudo detectar la categoría: "
                         + mensaje(categoria.error()));
-                return;
+                return null;
             }
             if (tieneTexto(categoria.categoriaId())) {
                 producto.setMercadoLibreCategoriaId(categoria.categoriaId());
                 productoRepository.save(producto);
             } else {
                 faltantes.add("Categoría de Mercado Libre");
-                return;
+                return null;
             }
         }
         try {
@@ -207,7 +211,7 @@ public class RevisionPublicacionService {
             boolean tieneFoto = producto.tieneFoto()
                     || variantes.stream().anyMatch(ProductoVariante::tieneFoto);
             if (!tieneFoto) faltantes.add("Foto");
-            if (resultado == null) return;
+            if (resultado == null) return producto.getMercadoLibreCategoriaId();
             Set<String> atributosProducto = atributosProducto(producto);
             List<Set<String>> atributosVariantes = variantes.stream()
                     .map(this::atributosVariante).toList();
@@ -230,11 +234,15 @@ public class RevisionPublicacionService {
             if (!atributosFaltantes.isEmpty()) {
                 faltantes.add("Atributos: " + String.join(", ", atributosFaltantes));
             }
+            return tieneTexto(resultado.categoriaNombre())
+                    ? resultado.categoriaNombre()
+                    : producto.getMercadoLibreCategoriaId();
         } catch (RuntimeException e) {
             if (!tieneTexto(producto.getMercadoLibreCategoriaId())) {
                 faltantes.add("Categoría de Mercado Libre");
             }
             faltantes.add("Revisar categoría: " + mensaje(e));
+            return producto.getMercadoLibreCategoriaId();
         }
     }
 
@@ -493,7 +501,8 @@ public class RevisionPublicacionService {
         if (!tieneTexto(titulo)) throw new IllegalArgumentException("Ingrese el título");
         producto.setDescripcion(titulo.trim());
         producto.setMercadoLibreDescripcion(limpiar(descripcionMercadoLibre));
-        producto.setMercadoLibreCategoriaId(limpiar(categoriaMercadoLibre));
+        producto.setMercadoLibreCategoriaId(
+                resolverCategoriaIngresada(categoriaMercadoLibre));
         producto.setMercadoLibreMarca(limpiar(marca));
         producto.setMercadoLibreModelo(limpiar(modelo));
         producto.setMercadoLibreModoEnvio(limpiar(modoEnvio));
@@ -528,6 +537,28 @@ public class RevisionPublicacionService {
             producto.setUsaVariantes(true);
         }
         productoRepository.save(producto);
+    }
+
+    private String resolverCategoriaIngresada(String categoriaIngresada) {
+        String valor = limpiar(categoriaIngresada);
+        if (valor == null) return null;
+        if (valor.matches("(?i)MLA\\d+")) {
+            return valor.toUpperCase(java.util.Locale.ROOT);
+        }
+        final String categoriaId;
+        try {
+            categoriaId = atributosMercadoLibre.predecirCategoria(valor);
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException(
+                    "No se pudo buscar la categoría '" + valor
+                            + "' en Mercado Libre. Intente nuevamente.", e);
+        }
+        if (!tieneTexto(categoriaId)) {
+            throw new IllegalArgumentException(
+                    "Mercado Libre no encontró una categoría para '" + valor
+                            + "'. Pruebe con un nombre más específico.");
+        }
+        return categoriaId.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     private Set<String> actualizarAtributosGenerales(

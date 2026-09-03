@@ -16,7 +16,25 @@ public record RevisionProductoPublicacionDto(
         List<AtributoVarianteMl> atributosGenerales,
         List<AtributoVarianteMl> atributosDeVariante,
         Map<String, String> valoresAtributosGenerales,
-        Map<Long, Map<String, String>> valoresAtributosVariantes) {
+        Map<Long, Map<String, String>> valoresAtributosVariantes,
+        String categoriaMercadoLibreNombre) {
+
+    public RevisionProductoPublicacionDto(
+            Producto producto,
+            List<ProductoVariante> variantes,
+            List<String> faltantes,
+            List<String> atributosFaltantes,
+            List<String> atributosObligatorios,
+            List<AtributoVarianteMl> atributosGenerales,
+            List<AtributoVarianteMl> atributosDeVariante,
+            Map<String, String> valoresAtributosGenerales,
+            Map<Long, Map<String, String>> valoresAtributosVariantes) {
+        this(producto, variantes, faltantes, atributosFaltantes,
+                atributosObligatorios, atributosGenerales,
+                atributosDeVariante, valoresAtributosGenerales,
+                valoresAtributosVariantes,
+                producto == null ? null : producto.getMercadoLibreCategoriaId());
+    }
 
     // Jasper/JSP resuelve propiedades JavaBean (getX/isX), no los accesores
     // compactos que generan los records (producto(), variantes(), etc.).
@@ -54,6 +72,10 @@ public record RevisionProductoPublicacionDto(
 
     public Map<Long, Map<String, String>> getValoresAtributosVariantes() {
         return valoresAtributosVariantes;
+    }
+
+    public String getCategoriaMercadoLibreNombre() {
+        return categoriaMercadoLibreNombre;
     }
 
     public boolean isListo() {
