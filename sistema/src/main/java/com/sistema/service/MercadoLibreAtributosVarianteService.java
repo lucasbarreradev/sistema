@@ -97,11 +97,77 @@ public class MercadoLibreAtributosVarianteService {
 
     public String predecirCategoria(String descripcion) {
         if (!tokenService.configurado()) return "";
+        String consulta = prepararConsultaCategoria(descripcion);
         JsonNode respuesta = get("/sites/MLA/domain_discovery/search?limit=3&q="
-                + java.net.URLEncoder.encode(descripcion == null ? "" : descripcion,
+                + java.net.URLEncoder.encode(consulta,
                 java.nio.charset.StandardCharsets.UTF_8));
-        return respuesta != null && respuesta.isArray() && !respuesta.isEmpty()
-                ? respuesta.get(0).path("category_id").asText("") : "";
+        return seleccionarCategoria(descripcion, respuesta);
+    }
+
+    String prepararConsultaCategoria(String descripcion) {
+        String original = descripcion == null ? "" : descripcion.trim();
+        String normalizada = normalizar(original);
+        if (normalizada.contains("manopla")
+                && (normalizada.contains("kitchen")
+                        || normalizada.contains("cocina")
+                        || normalizada.contains("horno"))) {
+            return "agarradera manopla de cocina para horno " + original;
+        }
+        if (normalizada.contains("vela") && !normalizada.contains("velador")) {
+            return "vela decorativa para el hogar " + original;
+        }
+        if (normalizada.contains("bolsito")) {
+            return "cartera bolso pequeño " + original;
+        }
+        if (normalizada.contains("viaje")
+                && (normalizada.contains("envase")
+                        || normalizada.contains("frasco")
+                        || normalizada.contains("porta liquido"))) {
+            return "neceser organizador de viaje con envases rellenables " + original;
+        }
+        if ((normalizada.contains("toallita") || normalizada.contains("toalitta"))
+                && normalizada.contains("comprim")) {
+            return "toallitas comprimidas de higiene personal " + original;
+        }
+        return original;
+    }
+
+    String seleccionarCategoria(String descripcion, JsonNode respuesta) {
+        if (respuesta == null || !respuesta.isArray() || respuesta.isEmpty()) return "";
+        String titulo = normalizar(descripcion);
+        if ((titulo.contains("incienso") || titulo.contains("sahumer"))
+                && !titulo.contains("porta")) {
+            for (JsonNode opcion : respuesta) {
+                String nombre = normalizar(opcion.path("category_name").asText(""));
+                String dominio = normalizar(opcion.path("domain_name").asText(""));
+                if ((nombre.equals("sahumerios") || dominio.equals("inciensos"))
+                        && !nombre.contains("porta")) {
+                    return opcion.path("category_id").asText("");
+                }
+            }
+        }
+        if (titulo.contains("piloto")
+                && (titulo.contains("infantil") || titulo.contains("nena")
+                        || titulo.contains("nino") || titulo.contains("disney")
+                        || titulo.contains("kuromi") || titulo.contains("peppa")
+                        || titulo.contains("paw patrol"))) {
+            for (JsonNode opcion : respuesta) {
+                String dominio = normalizar(opcion.path("domain_name").asText(""));
+                if ((dominio.contains("campera") || dominio.contains("abrigo"))
+                        && !dominio.contains("moto")) {
+                    return opcion.path("category_id").asText("");
+                }
+            }
+        }
+        return respuesta.get(0).path("category_id").asText("");
+    }
+
+    private String normalizar(String valor) {
+        if (valor == null) return "";
+        return java.text.Normalizer.normalize(valor, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .replaceAll("[^A-Za-z0-9]+", " ")
+                .trim().toLowerCase(java.util.Locale.ROOT);
     }
 
     private JsonNode get(String endpoint) {

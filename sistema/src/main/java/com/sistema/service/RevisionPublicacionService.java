@@ -56,7 +56,7 @@ public class RevisionPublicacionService {
             Collection<Long> productoIds, Collection<CanalVenta> canales) {
         return revisar(productoIds, canales,
                 System.nanoTime() + TIEMPO_MAXIMO_CONSULTAS_ML_MS * 1_000_000L,
-                () -> false);
+                () -> false, false);
     }
 
     public int prepararEnSegundoPlano(
@@ -68,7 +68,7 @@ public class RevisionPublicacionService {
         BooleanSupplier cancelacion = cancelacionSolicitada == null
                 ? () -> false : cancelacionSolicitada;
         List<RevisionProductoPublicacionDto> resultado = revisar(
-                productoIds, canales, Long.MAX_VALUE, cancelacion);
+                productoIds, canales, Long.MAX_VALUE, cancelacion, true);
         if (cancelacion.getAsBoolean()) {
             revisionesPreparadas.remove(trabajoId);
         } else {
@@ -95,7 +95,8 @@ public class RevisionPublicacionService {
 
     private List<RevisionProductoPublicacionDto> revisar(
             Collection<Long> productoIds, Collection<CanalVenta> canales,
-            long limiteNanos, BooleanSupplier cancelacionSolicitada) {
+            long limiteNanos, BooleanSupplier cancelacionSolicitada,
+            boolean redetectarCategorias) {
         if (productoIds == null) return List.of();
         boolean revisarMercadoLibre = canales != null
                 && canales.contains(CanalVenta.MERCADO_LIBRE);
@@ -119,7 +120,7 @@ public class RevisionPublicacionService {
             if (producto != null) {
                 resultado.add(revisar(producto,
                         variantesPorProducto.getOrDefault(id, List.of()),
-                        revisarMercadoLibre, consultas));
+                        revisarMercadoLibre, consultas, redetectarCategorias));
             }
         }
         return resultado;
@@ -129,7 +130,8 @@ public class RevisionPublicacionService {
             Producto producto,
             List<ProductoVariante> variantes,
             boolean revisarMercadoLibre,
-            ConsultasMercadoLibre consultas) {
+            ConsultasMercadoLibre consultas,
+            boolean redetectarCategorias) {
         LinkedHashSet<String> faltantes = new LinkedHashSet<>();
         LinkedHashSet<String> atributosFaltantes = new LinkedHashSet<>();
         LinkedHashSet<String> atributosObligatorios = new LinkedHashSet<>();
@@ -157,7 +159,7 @@ public class RevisionPublicacionService {
         if (revisarMercadoLibre) revisarMercadoLibre(
                 producto, variantes, faltantes, atributosFaltantes,
                 atributosObligatorios, atributosGenerales,
-                atributosDeVariante, consultas);
+                atributosDeVariante, consultas, redetectarCategorias);
         return new RevisionProductoPublicacionDto(
                 producto, variantes, List.copyOf(faltantes),
                 List.copyOf(atributosFaltantes),
@@ -179,7 +181,11 @@ public class RevisionPublicacionService {
             Set<String> atributosObligatorios,
             List<AtributoVarianteMl> atributosGenerales,
             List<AtributoVarianteMl> atributosDeVariante,
-            ConsultasMercadoLibre consultas) {
+            ConsultasMercadoLibre consultas,
+            boolean redetectarCategorias) {
+        if (redetectarCategorias) {
+            redetectarCategoriaGuardada(producto, consultas);
+        }
         if (!tieneTexto(producto.getMercadoLibreCategoriaId())) {
             ConsultaCategoria categoria = consultas.predecir(producto);
             if (categoria.error() != null) {
@@ -230,6 +236,19 @@ public class RevisionPublicacionService {
             }
             faltantes.add("Revisar categoría: " + mensaje(e));
         }
+    }
+
+    private void redetectarCategoriaGuardada(
+            Producto producto, ConsultasMercadoLibre consultas) {
+        ConsultaCategoria categoria = consultas.predecir(producto);
+        if (categoria.error() != null || !tieneTexto(categoria.categoriaId())) return;
+        String actual = limpiar(producto.getMercadoLibreCategoriaId());
+        if (categoria.categoriaId().equalsIgnoreCase(
+                actual == null ? "" : actual)) return;
+        ConsultaAtributos validacion = consultas.obtener(categoria.categoriaId());
+        if (validacion.error() != null || validacion.resultado() == null) return;
+        producto.setMercadoLibreCategoriaId(categoria.categoriaId());
+        productoRepository.save(producto);
     }
 
     private MercadoLibreAtributosVarianteService.Resultado
