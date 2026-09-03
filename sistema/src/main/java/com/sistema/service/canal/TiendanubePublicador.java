@@ -67,7 +67,7 @@ public class TiendanubePublicador implements PublicadorCanal {
                         : presentacionSimple(variantesSistema.get(0)));
 
         Map<String, Object> datosProducto = new LinkedHashMap<>();
-        datosProducto.put("name", Map.of("es", producto.getDescripcion()));
+        datosProducto.put("name", Map.of("es", tituloTiendanube(producto)));
         if (variable) {
             List<Map<String, String>> atributos = idsAtributos.stream()
                     .map(id -> Map.of("es", AtributosVarianteHelper.nombre(id)))
@@ -395,7 +395,8 @@ public class TiendanubePublicador implements PublicadorCanal {
 
     private Map<String, String> atributosNormalizados(ProductoVariante variante) {
         Map<String, String> atributos = new LinkedHashMap<>();
-        AtributosVarianteHelper.obtener(variante).forEach((id, valor) -> {
+        AtributosVarianteHelper.obtener(
+                variante, CanalVenta.TIENDANUBE).forEach((id, valor) -> {
             if (id != null && valor != null && !valor.isBlank()) {
                 atributos.put(id.trim().toUpperCase(Locale.ROOT), valor.trim());
             }
@@ -466,5 +467,11 @@ public class TiendanubePublicador implements PublicadorCanal {
 
     private void validar() {
         if (!configurado()) throw new IllegalStateException("Tiendanube no está configurada");
+    }
+
+    private String tituloTiendanube(Producto producto) {
+        String titulo = producto.getTiendaNubeTitulo();
+        return titulo == null || titulo.isBlank()
+                ? producto.getDescripcion() : titulo.trim();
     }
 }

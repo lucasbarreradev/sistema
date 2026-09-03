@@ -78,6 +78,13 @@ public record RevisionProductoPublicacionDto(
         return categoriaMercadoLibreNombre;
     }
 
+    public String getTituloMercadoLibre() {
+        if (producto == null) return null;
+        String titulo = producto.getMercadoLibreTitulo();
+        return titulo == null || titulo.isBlank()
+                ? producto.getDescripcion() : titulo;
+    }
+
     public boolean isListo() {
         return faltantes == null || faltantes.isEmpty();
     }

@@ -231,7 +231,10 @@ public class ImportacionCsvService {
         if (!familyId.isBlank()) producto.setMercadoLibreFamilyId(familyId);
 
         String categoria = valor(fila, "id de categoria", "categoria id", "category id");
-        if (!categoria.isBlank()) producto.setMercadoLibreCategoriaId(categoria);
+        if (!categoria.isBlank()) {
+            producto.setMercadoLibreCategoriaId(categoria);
+            producto.setMercadoLibreCategoriaFijada(true);
+        }
         String cantidad = valor(fila, "stock", "cantidad disponible", "cantidad", "quantity", "stock en tu deposito");
         if (!cantidad.isBlank()) producto.setCantidad(entero(cantidad, 0));
         else if (producto.getCantidad() == null) producto.setCantidad(0);

@@ -47,6 +47,7 @@
 
                         <form method="post" action="${formAction}" enctype="multipart/form-data">
                         <input type="hidden" name="fotoUrlExterna" value="${producto.fotoUrlExterna}">
+                        <textarea name="wooCommerceAtributosJson" hidden><c:out value="${producto.wooCommerceAtributosJson}"/></textarea>
                         <input type="hidden"
                                    name="${_csrf.parameterName}"
                                    value="${_csrf.token}"/>
@@ -77,6 +78,28 @@
                                     <input type="text" name="descripcion"
                                            class="form-control"
                                            value="${producto.descripcion}" required>
+                                </div>
+
+                                <div class="col-md-6 mb-3">
+                                    <label>Título para Tiendanube</label>
+                                    <input type="text" name="tiendaNubeTitulo"
+                                           class="form-control"
+                                           value="${producto.tiendaNubeTitulo}"
+                                           placeholder="Si se deja vacío, se usa la descripción general">
+                                </div>
+
+                                <div class="col-md-6 mb-3">
+                                    <label>Título para WooCommerce</label>
+                                    <input type="text" name="wooCommerceTitulo"
+                                           class="form-control"
+                                           value="${producto.wooCommerceTitulo}"
+                                           placeholder="Si se deja vacío, se usa la descripción general">
+                                </div>
+
+                                <div class="col-12 mb-3">
+                                    <label>Descripción para WooCommerce</label>
+                                    <textarea name="wooCommerceDescripcion" class="form-control" rows="3"
+                                              placeholder="Si se deja vacía, se usa la descripción general"><c:out value="${producto.wooCommerceDescripcion}"/></textarea>
                                 </div>
 
                                 <div class="col-12 mb-3">
@@ -123,6 +146,12 @@
                                     <span class="small text-muted ml-2">Abrir opciones</span>
                                 </summary>
                                 <div class="card-body">
+                            <div class="mb-3">
+                                <label class="form-label">Título para Mercado Libre</label>
+                                <input type="text" name="mercadoLibreTitulo" class="form-control"
+                                       value="${producto.mercadoLibreTitulo}"
+                                       placeholder="Si se deja vacío, se usa el título general">
+                            </div>
                             <div class="mb-3">
                                 <label class="form-label">Categoría de Mercado Libre</label>
                                 <input type="text" name="mercadoLibreCategoriaId" class="form-control"

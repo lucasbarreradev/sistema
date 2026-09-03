@@ -71,4 +71,28 @@ class ProductoServiceTest {
         assertEquals(List.of(4L, 9L, 15L), ids);
         verify(productos).buscarIdsListado("neumatico");
     }
+
+    @Test
+    void fijaLaCategoriaCuandoSeCambiaDesdeEditarProducto() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
+        PresupuestoService presupuestos = mock(PresupuestoService.class);
+        Producto existente = new Producto();
+        existente.setId(7L);
+        existente.setMercadoLibreCategoriaId("MLA410902");
+        Producto editado = new Producto();
+        editado.setDescripcion("Botellón Suavizante/Jabón Liquido");
+        editado.setMercadoLibreCategoriaId("MLA412620");
+        when(productos.findById(7L)).thenReturn(Optional.of(existente));
+        when(productos.save(existente)).thenReturn(existente);
+        when(variantes.existsByProductoId(7L)).thenReturn(false);
+        ProductoService service = new ProductoService(productos,
+                mock(ProveedorRepository.class), mock(MovimientoInventarioRepository.class),
+                presupuestos, mock(PublicacionCanalRepository.class), variantes);
+
+        Producto guardado = service.updateProducto(7L, editado);
+
+        assertEquals("MLA412620", guardado.getMercadoLibreCategoriaId());
+        assertEquals(true, guardado.getMercadoLibreCategoriaFijada());
+    }
 }

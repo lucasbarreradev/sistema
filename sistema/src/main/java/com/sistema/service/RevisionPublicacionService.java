@@ -37,6 +37,7 @@ public class RevisionPublicacionService {
     private final ProductoRepository productoRepository;
     private final ProductoVarianteRepository varianteRepository;
     private final MercadoLibreAtributosVarianteService atributosMercadoLibre;
+    private final MercadoLibreOpcionesEnvioService opcionesEnvioMercadoLibre;
     private final ObjectMapper objectMapper;
     private final Map<Long, RevisionPreparada> revisionesPreparadas =
             new ConcurrentHashMap<>();
@@ -45,10 +46,12 @@ public class RevisionPublicacionService {
             ProductoRepository productoRepository,
             ProductoVarianteRepository varianteRepository,
             MercadoLibreAtributosVarianteService atributosMercadoLibre,
+            MercadoLibreOpcionesEnvioService opcionesEnvioMercadoLibre,
             ObjectMapper objectMapper) {
         this.productoRepository = productoRepository;
         this.varianteRepository = varianteRepository;
         this.atributosMercadoLibre = atributosMercadoLibre;
+        this.opcionesEnvioMercadoLibre = opcionesEnvioMercadoLibre;
         this.objectMapper = objectMapper;
     }
 
@@ -142,7 +145,7 @@ public class RevisionPublicacionService {
         variantes.stream().filter(v -> v.getId() != null).forEach(v ->
                 valoresPorVariante.put(v.getId(), valoresAtributosVariante(v)));
 
-        if (!tieneTexto(producto.getDescripcion())) faltantes.add("Título");
+        if (!tieneTexto(tituloMercadoLibre(producto))) faltantes.add("Título");
         int stockTotal = variantes.isEmpty()
                 ? Optional.ofNullable(producto.getCantidad()).orElse(0)
                 : variantes.stream().mapToInt(v -> Optional.ofNullable(v.getStock()).orElse(0)).sum();
@@ -200,12 +203,14 @@ public class RevisionPublicacionService {
             }
             if (tieneTexto(categoria.categoriaId())) {
                 producto.setMercadoLibreCategoriaId(categoria.categoriaId());
+                producto.setMercadoLibreCategoriaFijada(false);
                 productoRepository.save(producto);
             } else {
                 faltantes.add("Categoría de Mercado Libre");
                 return null;
             }
         }
+        completarOpcionesEnvioSiFaltan(producto);
         try {
             var resultado = obtenerAtributosConRecuperacion(producto, consultas);
             boolean tieneFoto = producto.tieneFoto()
@@ -246,8 +251,41 @@ public class RevisionPublicacionService {
         }
     }
 
+    private void completarOpcionesEnvioSiFaltan(Producto producto) {
+        boolean faltaModo = !tieneTexto(producto.getMercadoLibreModoEnvio());
+        boolean faltaGratis = producto.getMercadoLibreEnvioGratis() == null;
+        boolean faltaRetiro = producto.getMercadoLibreRetiroPersonal() == null;
+        if (opcionesEnvioMercadoLibre == null) return;
+        MercadoLibreOpcionesEnvioService.OpcionesEnvio opciones =
+                opcionesEnvioMercadoLibre.obtener(producto);
+        if (opciones == null) return;
+        boolean cambio = false;
+        if ((opciones.verificada() || faltaModo)
+                && !Objects.equals(limpiar(producto.getMercadoLibreModoEnvio()),
+                limpiar(opciones.modo()))) {
+            producto.setMercadoLibreModoEnvio(opciones.modo());
+            cambio = true;
+        }
+        if ((opciones.verificada() || faltaGratis)
+                && !Objects.equals(producto.getMercadoLibreEnvioGratis(),
+                opciones.envioGratis())) {
+            producto.setMercadoLibreEnvioGratis(opciones.envioGratis());
+            cambio = true;
+        }
+        if ((opciones.verificada() || faltaRetiro)
+                && !Objects.equals(producto.getMercadoLibreRetiroPersonal(),
+                opciones.retiroPersonal())) {
+            producto.setMercadoLibreRetiroPersonal(opciones.retiroPersonal());
+            cambio = true;
+        }
+        if (cambio) productoRepository.save(producto);
+    }
+
     private void redetectarCategoriaGuardada(
             Producto producto, ConsultasMercadoLibre consultas) {
+        // Los registros anteriores a esta marca quedan en null: se consideran
+        // confirmados para no deshacer una categoría ya corregida por el usuario.
+        if (!Boolean.FALSE.equals(producto.getMercadoLibreCategoriaFijada())) return;
         ConsultaCategoria categoria = consultas.predecir(producto);
         if (categoria.error() != null || !tieneTexto(categoria.categoriaId())) return;
         String actual = limpiar(producto.getMercadoLibreCategoriaId());
@@ -256,6 +294,7 @@ public class RevisionPublicacionService {
         ConsultaAtributos validacion = consultas.obtener(categoria.categoriaId());
         if (validacion.error() != null || validacion.resultado() == null) return;
         producto.setMercadoLibreCategoriaId(categoria.categoriaId());
+        producto.setMercadoLibreCategoriaFijada(false);
         productoRepository.save(producto);
     }
 
@@ -290,6 +329,7 @@ public class RevisionPublicacionService {
                     consultaReemplazo.error());
         }
         producto.setMercadoLibreCategoriaId(reemplazo.categoriaId());
+        producto.setMercadoLibreCategoriaFijada(false);
         productoRepository.save(producto);
         return consultaReemplazo.resultado();
     }
@@ -338,7 +378,7 @@ public class RevisionPublicacionService {
 
         private ConsultaCategoria predecir(Producto producto) {
             String origen = limpiar(producto.getCategoriaOrigen());
-            String titulo = limpiar(producto.getDescripcion());
+            String titulo = limpiar(tituloMercadoLibre(producto));
             ConsultaCategoria porTitulo = predecir(
                     titulo, "titulo:" + normalizarClave(titulo));
             if (porTitulo.error() != null || tieneTexto(porTitulo.categoriaId())
@@ -357,7 +397,7 @@ public class RevisionPublicacionService {
         }
 
         private ConsultaCategoria predecirPorTitulo(Producto producto) {
-            String titulo = limpiar(producto.getDescripcion());
+            String titulo = limpiar(tituloMercadoLibre(producto));
             return predecir(titulo, "titulo:" + normalizarClave(titulo));
         }
 
@@ -499,10 +539,12 @@ public class RevisionPublicacionService {
         Producto producto = productoRepository.findById(productoId)
                 .orElseThrow(() -> new IllegalArgumentException("Producto no encontrado"));
         if (!tieneTexto(titulo)) throw new IllegalArgumentException("Ingrese el título");
-        producto.setDescripcion(titulo.trim());
+        producto.setMercadoLibreTitulo(titulo.trim());
         producto.setMercadoLibreDescripcion(limpiar(descripcionMercadoLibre));
-        producto.setMercadoLibreCategoriaId(
-                resolverCategoriaIngresada(categoriaMercadoLibre));
+        String categoriaResuelta = resolverCategoriaIngresada(
+                categoriaMercadoLibre);
+        producto.setMercadoLibreCategoriaId(categoriaResuelta);
+        producto.setMercadoLibreCategoriaFijada(tieneTexto(categoriaResuelta));
         producto.setMercadoLibreMarca(limpiar(marca));
         producto.setMercadoLibreModelo(limpiar(modelo));
         producto.setMercadoLibreModoEnvio(limpiar(modoEnvio));
@@ -550,6 +592,7 @@ public class RevisionPublicacionService {
         }
         producto.setMercadoLibreCategoriaId(
                 resolverCategoriaIngresada(categoriaMercadoLibre));
+        producto.setMercadoLibreCategoriaFijada(true);
         productoRepository.save(producto);
     }
 
@@ -628,8 +671,6 @@ public class RevisionPublicacionService {
                 if (valor == null || valor.isBlank()) atributos.remove(id);
                 else atributos.put(id, valor.trim());
             });
-            variante.setTalle(atributos.get("SIZE"));
-            variante.setColor(atributos.get("COLOR"));
             try {
                 variante.setMercadoLibreAtributosJson(
                         objectMapper.writeValueAsString(atributos));
@@ -679,6 +720,13 @@ public class RevisionPublicacionService {
 
     private boolean tieneTexto(String valor) {
         return valor != null && !valor.isBlank();
+    }
+
+    private String tituloMercadoLibre(Producto producto) {
+        if (producto == null) return null;
+        return tieneTexto(producto.getMercadoLibreTitulo())
+                ? producto.getMercadoLibreTitulo()
+                : producto.getDescripcion();
     }
 
     private String limpiar(String valor) {

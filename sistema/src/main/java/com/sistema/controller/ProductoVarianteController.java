@@ -191,6 +191,7 @@ public class ProductoVarianteController {
             if ((producto.getMercadoLibreCategoriaId() == null || producto.getMercadoLibreCategoriaId().isBlank())
                     && resultado.categoriaId() != null) {
                 producto.setMercadoLibreCategoriaId(resultado.categoriaId());
+                producto.setMercadoLibreCategoriaFijada(false);
                 productoService.saveProducto(producto);
             }
         } catch (Exception e) {
@@ -309,8 +310,6 @@ public class ProductoVarianteController {
         } catch (Exception e) {
             throw new IllegalArgumentException("No se pudieron guardar los atributos de la variante", e);
         }
-        variante.setTalle(atributos.get("SIZE"));
-        variante.setColor(atributos.get("COLOR"));
         Set<String> idsVariacion = parametros.keySet().stream()
                 .filter(clave -> clave.startsWith("es_variacion_"))
                 .map(clave -> clave.substring("es_variacion_".length()))

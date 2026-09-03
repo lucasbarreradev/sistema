@@ -156,9 +156,61 @@ class ImportacionCanalServiceTest {
         assertEquals(0, resultado.getCreados());
         assertEquals(1, resultado.getActualizados());
         assertEquals("Producto actualizado", existente.getDescripcion());
+        assertEquals("Producto actualizado", existente.getWooCommerceTitulo());
         assertEquals(new BigDecimal("123.45"), existente.getPrecioContado());
         verify(productoService).saveProducto(existente);
         verify(publicaciones).save(any(PublicacionCanal.class));
+    }
+
+    @Test
+    void importarTiendanubeNoPisaTituloNiAtributosDeMercadoLibre() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        ProductoService productoService = mock(ProductoService.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        ProductoVarianteRepository variantesRepo = mock(ProductoVarianteRepository.class);
+        ProductoVarianteService variantesService = mock(ProductoVarianteService.class);
+        ImportadorCanal importador = mock(ImportadorCanal.class);
+        when(importador.canal()).thenReturn(CanalVenta.TIENDANUBE);
+        when(importador.configurado()).thenReturn(true);
+        Producto producto = new Producto();
+        producto.setId(30L);
+        producto.setSku("VASO-1");
+        producto.setMercadoLibreTitulo("Set de vasos para beber");
+        producto.setMercadoLibreMarca("Marca ML");
+        PublicacionCanal mapeo = publicacion(producto, "TN-30");
+        ProductoVariante variante = new ProductoVariante();
+        variante.setId(301L);
+        variante.setProducto(producto);
+        variante.setSku("VASO-NEGRO");
+        variante.setMercadoLibreGtin("7790000000001");
+        variante.setMercadoLibreAtributosJson(
+                "{\"COLOR\":\"Negro ML\",\"MATERIAL\":\"Vidrio\"}");
+        when(publicaciones.findByCanalAndIdExterno(
+                CanalVenta.TIENDANUBE, "TN-30")).thenReturn(Optional.of(mapeo));
+        when(variantesRepo.findByTiendaNubeVariationId("TN-V1"))
+                .thenReturn(Optional.of(variante));
+        VarianteCanalImportada varianteTn = new VarianteCanalImportada(
+                "TN-V1", "VASO-NEGRO", "Negro TN", "", "Negro TN", 5,
+                BigDecimal.TEN, null, null, "7799999999999",
+                Map.of("COLOR", "Negro TN"), null, false);
+        ProductoCanalImportado remoto = new ProductoCanalImportado(
+                "TN-30", "VASO-1", "Vasos Tiendanube", 5, BigDecimal.TEN,
+                null, null, Map.of("marca", "Marca TN"), List.of(varianteTn));
+        ImportacionCanalService service = new ImportacionCanalService(
+                productos, productoService, publicaciones, List.of(importador),
+                variantesRepo, variantesService,
+                new com.fasterxml.jackson.databind.ObjectMapper());
+
+        service.importar(CanalVenta.TIENDANUBE, List.of(remoto));
+
+        assertEquals("Vasos Tiendanube", producto.getTiendaNubeTitulo());
+        assertEquals("Set de vasos para beber", producto.getMercadoLibreTitulo());
+        assertEquals("Marca ML", producto.getMercadoLibreMarca());
+        assertEquals("7790000000001", variante.getMercadoLibreGtin());
+        assertEquals("{\"COLOR\":\"Negro ML\",\"MATERIAL\":\"Vidrio\"}",
+                variante.getMercadoLibreAtributosJson());
+        assertEquals("{\"COLOR\":\"Negro TN\"}",
+                variante.getTiendaNubeAtributosJson());
     }
 
     @Test

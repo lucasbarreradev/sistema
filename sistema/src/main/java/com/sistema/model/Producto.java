@@ -41,6 +41,16 @@ public class Producto extends TenantAwareEntity {
     private String mercadoLibreId;
     private String mercadoLibreFamilyId;
     private String mercadoLibreCategoriaId;
+    private Boolean mercadoLibreCategoriaFijada = false;
+    private String mercadoLibreTitulo;
+    private String wooCommerceTitulo;
+    private String tiendaNubeTitulo;
+    @Lob
+    @Column(columnDefinition = "TEXT")
+    private String wooCommerceDescripcion;
+    @Lob
+    @Column(columnDefinition = "TEXT")
+    private String wooCommerceAtributosJson;
     @Column(length = 1000)
     private String categoriaOrigen;
     @Column(length = 100)

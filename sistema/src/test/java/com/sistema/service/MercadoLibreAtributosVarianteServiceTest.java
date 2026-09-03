@@ -37,6 +37,9 @@ class MercadoLibreAtributosVarianteServiceTest {
         assertTrue(service.prepararConsultaCategoria(
                         "Set de viaje con envases")
                 .startsWith("neceser organizador de viaje"));
+        assertTrue(service.prepararConsultaCategoria(
+                        "Botellón Suavizante/Jabón Liquido")
+                .startsWith("dispensador botellon para jabon liquido y suavizante lavadero"));
     }
 
     @Test
@@ -108,5 +111,20 @@ class MercadoLibreAtributosVarianteServiceTest {
 
         assertEquals("MLA109096", service.seleccionarCategoria(
                 "Piloto Infantil Lluvia Kuromi Wabro", opciones));
+    }
+
+    @Test
+    void eligeDispenserDeJabonEnLugarDeMedialunasYFacturas()
+            throws Exception {
+        var opciones = objectMapper.readTree("""
+                [
+                  {"category_id":"MLA410902","category_name":"Medialunas y Facturas","domain_name":"Productos de Panadería"},
+                  {"category_id":"MLA412620","category_name":"Dispensers de Jabón","domain_name":"Dispensadores manuales de jabón y detergente"},
+                  {"category_id":"MLA412631","category_name":"Dispensadores de Bebidas","domain_name":"Dispensadores de bebidas"}
+                ]
+                """);
+
+        assertEquals("MLA412620", service.seleccionarCategoria(
+                "Botellón Suavizante/Jabón Liquido", opciones));
     }
 }

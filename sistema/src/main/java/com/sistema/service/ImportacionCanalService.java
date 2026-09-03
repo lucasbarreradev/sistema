@@ -174,6 +174,11 @@ public class ImportacionCanalService {
         boolean nuevo = encontrado.isEmpty();
         Producto producto = encontrado.orElseGet(Producto::new);
         producto.setDescripcion(dato.descripcion());
+        switch (canal) {
+            case MERCADO_LIBRE -> producto.setMercadoLibreTitulo(dato.descripcion());
+            case WOOCOMMERCE -> producto.setWooCommerceTitulo(dato.descripcion());
+            case TIENDANUBE -> producto.setTiendaNubeTitulo(dato.descripcion());
+        }
         asignarSkuImportadoSiDisponible(producto, dato.sku());
         producto.setCantidad(Optional.ofNullable(dato.cantidad()).orElse(0));
         if (dato.precio() != null) {
@@ -192,12 +197,17 @@ public class ImportacionCanalService {
             producto.setMercadoLibreId(dato.idExterno());
             if (familyId != null && !familyId.isBlank()) producto.setMercadoLibreFamilyId(familyId);
             producto.setMercadoLibreCategoriaId(dato.mercadoLibreCategoriaId());
+            producto.setMercadoLibreCategoriaFijada(
+                    tieneTexto(dato.mercadoLibreCategoriaId()));
             aplicarDatosMercadoLibre(producto, dato.datosCanal());
+        } else if (canal == CanalVenta.WOOCOMMERCE
+                && dato.datosCanal() != null) {
+            producto.setWooCommerceDescripcion(
+                    texto(dato.datosCanal(), "descripcion"));
+            producto.setWooCommerceAtributosJson(
+                    texto(dato.datosCanal(), "atributosJson"));
         } else if (canal == CanalVenta.TIENDANUBE
                 && dato.datosCanal() != null) {
-            if (!tieneTexto(producto.getMercadoLibreMarca())) {
-                producto.setMercadoLibreMarca(texto(dato.datosCanal(), "marca"));
-            }
             String categoriasOrigen = nombresCategorias(dato.datosCanal().get("categorias"));
             if (tieneTexto(categoriasOrigen)) producto.setCategoriaOrigen(categoriasOrigen);
         }
@@ -262,6 +272,11 @@ public class ImportacionCanalService {
         VarianteCanalImportada detalle = dato.variantes() == null || dato.variantes().isEmpty()
                 ? null : dato.variantes().get(0);
         actualizarVarianteDesdeCanal(canal, dato, detalle, variante);
+        switch (canal) {
+            case MERCADO_LIBRE -> producto.setMercadoLibreTitulo(dato.descripcion());
+            case WOOCOMMERCE -> producto.setWooCommerceTitulo(dato.descripcion());
+            case TIENDANUBE -> producto.setTiendaNubeTitulo(dato.descripcion());
+        }
         if (canal == CanalVenta.MERCADO_LIBRE) {
             if (producto.getMercadoLibreId() == null || producto.getMercadoLibreId().isBlank()) {
                 producto.setMercadoLibreId(dato.idExterno());
@@ -269,6 +284,8 @@ public class ImportacionCanalService {
             if (producto.getMercadoLibreCategoriaId() == null
                     || producto.getMercadoLibreCategoriaId().isBlank()) {
                 producto.setMercadoLibreCategoriaId(dato.mercadoLibreCategoriaId());
+                producto.setMercadoLibreCategoriaFijada(
+                        tieneTexto(dato.mercadoLibreCategoriaId()));
             }
             aplicarDatosMercadoLibre(producto, dato.datosCanal());
         }
@@ -304,14 +321,7 @@ public class ImportacionCanalService {
             if (detalle.codigoBarras() != null && !detalle.codigoBarras().isBlank()) {
                 variante.setCodigoBarras(detalle.codigoBarras());
             }
-            if (detalle.gtin() != null && !detalle.gtin().isBlank()) variante.setMercadoLibreGtin(detalle.gtin());
-            if (detalle.atributos() != null && !detalle.atributos().isEmpty()) {
-                try {
-                    variante.setMercadoLibreAtributosJson(objectMapper.writeValueAsString(detalle.atributos()));
-                } catch (Exception e) {
-                    throw new IllegalArgumentException("No se pudieron guardar los atributos de la variante", e);
-                }
-            }
+            aplicarDatosEspecificosVariante(canal, variante, detalle);
         }
 
         String idExterno = detalle != null && detalle.idExterno() != null
@@ -457,17 +467,13 @@ public class ImportacionCanalService {
             if (!skuImportado.isBlank()) variante.setSku(skuImportado);
             else if (normalizarSkuImportado(variante.getSku()).isBlank()) variante.setSku(null);
             variante.setNombre(dato.nombre()); variante.setTalle(dato.talle()); variante.setColor(dato.color());
-            variante.setMercadoLibreGtin(dato.gtin());
             if (dato.fotoUrl() != null && !dato.fotoUrl().isBlank()) {
                 variante.setFotoContenido(null);
                 variante.setFotoNombre(null);
                 variante.setFotoTipoContenido(null);
                 variante.setFotoUrlExterna(dato.fotoUrl().trim());
             }
-            if (dato.atributos() != null && !dato.atributos().isEmpty()) {
-                try { variante.setMercadoLibreAtributosJson(objectMapper.writeValueAsString(dato.atributos())); }
-                catch (Exception e) { throw new IllegalArgumentException("No se pudieron guardar los atributos de la variante", e); }
-            }
+            aplicarDatosEspecificosVariante(canal, variante, dato);
             variante.setStock(Optional.ofNullable(dato.stock()).orElse(0));
             if (dato.precio() != null) {
                 variante.setPrecioContado(dato.precio()); variante.setPrecioTarjeta(dato.precio());
@@ -487,6 +493,28 @@ public class ImportacionCanalService {
                 case TIENDANUBE -> variante.setTiendaNubeVariationId(dato.idExterno());
             }
             varianteService.guardarImportada(producto, variante);
+        }
+    }
+
+    private void aplicarDatosEspecificosVariante(
+            CanalVenta canal, ProductoVariante variante,
+            VarianteCanalImportada dato) {
+        if (dato == null) return;
+        if (canal == CanalVenta.MERCADO_LIBRE) {
+            variante.setMercadoLibreGtin(dato.gtin());
+        }
+        if (dato.atributos() == null || dato.atributos().isEmpty()) return;
+        final String json;
+        try {
+            json = objectMapper.writeValueAsString(dato.atributos());
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "No se pudieron guardar los atributos de la variante", e);
+        }
+        switch (canal) {
+            case MERCADO_LIBRE -> variante.setMercadoLibreAtributosJson(json);
+            case WOOCOMMERCE -> variante.setWooCommerceAtributosJson(json);
+            case TIENDANUBE -> variante.setTiendaNubeAtributosJson(json);
         }
     }
 

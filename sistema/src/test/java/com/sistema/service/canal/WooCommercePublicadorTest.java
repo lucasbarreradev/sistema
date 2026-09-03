@@ -153,11 +153,17 @@ class WooCommercePublicadorTest {
         producto.setId(10L);
         producto.setSku("CELU-001");
         producto.setDescripcion("Celular");
-        producto.setMercadoLibreDescripcion("DescripciÃ³n completa del producto.\nSegunda lÃ­nea.");
-        producto.setMercadoLibreMarca("Samsung");
-        producto.setMercadoLibreModelo("Galaxy S24");
+        producto.setMercadoLibreMarca("Marca ML");
         producto.setMercadoLibreAtributosJson("""
                 [
+                  {"id":"MATERIAL","name":"Material","value_name":"Aluminio"}
+                ]
+                """);
+        producto.setWooCommerceDescripcion("DescripciÃ³n completa del producto.\nSegunda lÃ­nea.");
+        producto.setWooCommerceAtributosJson("""
+                [
+                  {"slug":"pa_marca","name":"Marca","options":["Samsung"]},
+                  {"slug":"pa_modelo","name":"Modelo","options":["Galaxy S24"]},
                   {"id":"DISPLAY_SIZE","name":"TamaÃ±o de pantalla","value_name":"6.8 pulgadas"},
                   {"id":"PROCESSOR_MODEL","name":"Modelo del procesador","value_name":"Snapdragon"},
                   {"id":"SELLER_PACKAGE_HEIGHT","name":"Alto del paquete","value_name":"20 cm"}
@@ -186,6 +192,10 @@ class WooCommercePublicadorTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"short_description\":\"<ul>")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"name\":\"Marca\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"options\":[\"Samsung\"]")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"name\":\"Material\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"options\":[\"Aluminio\"]")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(
+                        org.hamcrest.Matchers.containsString("Marca ML"))))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString(
                         "\"name\":\"TamaÃ±o de pantalla\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.not(
@@ -634,7 +644,7 @@ class WooCommercePublicadorTest {
     private ProductoVariante variante(String atributos) {
         ProductoVariante variante = new ProductoVariante();
         variante.setSku("SKU");
-        variante.setMercadoLibreAtributosJson(atributos);
+        variante.setWooCommerceAtributosJson(atributos);
         return variante;
     }
 }

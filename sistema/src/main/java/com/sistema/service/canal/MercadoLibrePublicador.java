@@ -193,15 +193,16 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     private void prepararCategoriaPublicable(Producto producto) {
         String categoria = texto(producto.getMercadoLibreCategoriaId(), categoryId);
         if (!categoria.isBlank() && categoriaPermitePublicarConRenovacion(categoria)) return;
-        String consultaCategoria = texto(producto.getDescripcion(), "") + " "
+        String consultaCategoria = texto(tituloMercadoLibre(producto), "") + " "
                 + texto(producto.getCategoriaOrigen(), "");
         String predicha = predecirCategoriaConRenovacion(consultaCategoria.trim());
         if (!tieneTexto(predicha)) {
             throw new IllegalArgumentException("No se pudo determinar una categoría final de Mercado Libre para \""
-                    + producto.getDescripcion() + "\". Edite el producto y seleccione manualmente la categoría "
+                    + tituloMercadoLibre(producto) + "\". Edite el producto y seleccione manualmente la categoría "
                     + "de Mercado Libre que corresponda.");
         }
         producto.setMercadoLibreCategoriaId(predicha);
+        producto.setMercadoLibreCategoriaFijada(false);
     }
 
     private void validarAtributosObligatorios(Producto producto, List<ProductoVariante> variantes) {
@@ -235,7 +236,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         if (!faltantes.isEmpty()) {
             JsonNode categoria = consultarCategoriaConRenovacion(producto.getMercadoLibreCategoriaId());
             String nombreCategoria = categoria.path("name").asText(producto.getMercadoLibreCategoriaId());
-            throw new IllegalArgumentException("Para publicar \"" + producto.getDescripcion()
+            throw new IllegalArgumentException("Para publicar \"" + tituloMercadoLibre(producto)
                     + "\" en la categoría " + nombreCategoria + " ("
                     + producto.getMercadoLibreCategoriaId() + "), complete en Productos > Editar los campos "
                     + "obligatorios de Mercado Libre: " + String.join(", ", faltantes)
@@ -323,7 +324,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
 
     private Map<String, Object> inferirAtributo(Producto producto, JsonNode definicion) {
         String id = definicion.path("id").asText("");
-        String textoProducto = texto(producto.getDescripcion(), "") + " "
+        String textoProducto = texto(tituloMercadoLibre(producto), "") + " "
                 + texto(producto.getCategoriaOrigen(), "");
         String normalizado = " " + normalizarTextoBusqueda(textoProducto) + " ";
         JsonNode mejor = null;
@@ -458,7 +459,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     }
 
     private String modeloAutomatico(Producto producto, JsonNode definicion) {
-        String modelo = texto(producto.getDescripcion(), producto.getSku());
+        String modelo = texto(tituloMercadoLibre(producto), producto.getSku());
         if (modelo.isBlank()) modelo = "Modelo genérico";
         int maximo = definicion.path("value_max_length").asInt(255);
         if (maximo <= 0) maximo = 255;
@@ -1104,7 +1105,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
         if (nuevaPublicacion) {
             body.put(userProducts && variantes.isEmpty() ? "family_name" : "title", nombrePublicacion(producto));
         } else if (!userProducts) {
-            body.put("title", producto.getDescripcion());
+            body.put("title", tituloMercadoLibre(producto));
         }
         body.put("price", precioPublicacion(producto, variantes));
         ProductoVariante presentacionSimple = variantes.size() == 1 ? variantes.get(0) : null;
@@ -1190,7 +1191,7 @@ public class MercadoLibrePublicador implements PublicadorCanal {
 
     private String nombrePublicacion(Producto producto) {
         LinkedHashSet<String> partes = new LinkedHashSet<>();
-        for (String parte : List.of(texto(producto.getDescripcion(), ""),
+        for (String parte : List.of(texto(tituloMercadoLibre(producto), ""),
                 texto(producto.getMercadoLibreMarca(), ""), texto(producto.getMercadoLibreModelo(), ""),
                 texto(producto.getCategoriaOrigen(), ""))) {
             if (!parte.isBlank()) partes.add(parte.trim());
@@ -1430,6 +1431,10 @@ public class MercadoLibrePublicador implements PublicadorCanal {
     private String texto(String principal, String alternativa) {
         return principal != null && !principal.isBlank() ? principal.trim()
                 : alternativa == null ? "" : alternativa.trim();
+    }
+
+    private String tituloMercadoLibre(Producto producto) {
+        return texto(producto.getMercadoLibreTitulo(), producto.getDescripcion());
     }
 
     private void validar() {

@@ -77,7 +77,7 @@ class ProductoVarianteControllerTest {
                 edicion.getMercadoLibreAtributosJson(), new TypeReference<>() {});
         assertEquals("L", atributos.get("SIZE"));
         assertEquals("Algodón", atributos.get("MATERIAL"));
-        assertEquals("L", edicion.getTalle());
+        assertNull(edicion.getTalle());
     }
 
     @Test
@@ -138,8 +138,9 @@ class ProductoVarianteControllerTest {
         controller.aplicarAtributosDinamicos(variante, parametros);
 
         assertEquals("Celeste / 40 AR", variante.getNombre());
-        assertEquals("Celeste", variante.getColor());
-        assertEquals("40 AR", variante.getTalle());
+        assertNull(variante.getColor());
+        assertNull(variante.getTalle());
+        assertTrue(variante.getMercadoLibreAtributosJson().contains("Celeste"));
     }
 
     @Test

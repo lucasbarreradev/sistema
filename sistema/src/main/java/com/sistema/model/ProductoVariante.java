@@ -42,6 +42,12 @@ public class ProductoVariante extends TenantAwareEntity {
     @Lob
     @Column(columnDefinition = "TEXT")
     private String mercadoLibreAtributosJson;
+    @Lob
+    @Column(columnDefinition = "TEXT")
+    private String wooCommerceAtributosJson;
+    @Lob
+    @Column(columnDefinition = "TEXT")
+    private String tiendaNubeAtributosJson;
     private String wooCommerceVariationId;
     private String tiendaNubeVariationId;
     private String fotoNombre;

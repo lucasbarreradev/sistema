@@ -2,6 +2,7 @@ package com.sistema.service.canal;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sistema.model.CanalVenta;
 import com.sistema.model.ProductoVariante;
 
 import java.util.LinkedHashMap;
@@ -14,18 +15,34 @@ final class AtributosVarianteHelper {
     private AtributosVarianteHelper() {}
 
     static Map<String, String> obtener(ProductoVariante variante) {
-        String json = variante.getMercadoLibreAtributosJson();
-        if (json != null && !json.isBlank()) {
-            try {
-                return MAPPER.readValue(json, new TypeReference<LinkedHashMap<String, String>>() {});
-            } catch (Exception e) {
-                throw new IllegalArgumentException("Los atributos de la variante " + variante.getSku() + " no son válidos", e);
-            }
-        }
+        return obtener(variante, CanalVenta.MERCADO_LIBRE);
+    }
+
+    static Map<String, String> obtener(
+            ProductoVariante variante, CanalVenta canal) {
         Map<String, String> atributos = new LinkedHashMap<>();
         if (variante.getTalle() != null && !variante.getTalle().isBlank()) atributos.put("SIZE", variante.getTalle());
         if (variante.getColor() != null && !variante.getColor().isBlank()) atributos.put("COLOR", variante.getColor());
+        agregarJson(atributos, variante.getMercadoLibreAtributosJson(), variante);
+        if (canal != CanalVenta.MERCADO_LIBRE) {
+            String jsonCanal = canal == CanalVenta.WOOCOMMERCE
+                    ? variante.getWooCommerceAtributosJson()
+                    : variante.getTiendaNubeAtributosJson();
+            agregarJson(atributos, jsonCanal, variante);
+        }
         return atributos;
+    }
+
+    private static void agregarJson(Map<String, String> atributos, String json,
+                                    ProductoVariante variante) {
+        if (json == null || json.isBlank()) return;
+        try {
+            atributos.putAll(MAPPER.readValue(
+                    json, new TypeReference<LinkedHashMap<String, String>>() {}));
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Los atributos de la variante "
+                    + variante.getSku() + " no son válidos", e);
+        }
     }
 
     static String nombre(String id) {

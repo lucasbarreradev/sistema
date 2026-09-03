@@ -25,6 +25,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -35,8 +36,10 @@ class RevisionPublicacionServiceTest {
     private final ProductoVarianteRepository variantes = mock(ProductoVarianteRepository.class);
     private final MercadoLibreAtributosVarianteService atributos =
             mock(MercadoLibreAtributosVarianteService.class);
+    private final MercadoLibreOpcionesEnvioService opcionesEnvio =
+            mock(MercadoLibreOpcionesEnvioService.class);
     private final RevisionPublicacionService service = new RevisionPublicacionService(
-            productos, variantes, atributos, new ObjectMapper());
+            productos, variantes, atributos, opcionesEnvio, new ObjectMapper());
 
     @Test
     void elDtoExponePropiedadesCompatiblesConJsp() throws Exception {
@@ -187,6 +190,33 @@ class RevisionPublicacionServiceTest {
     }
 
     @Test
+    void completaLasOpcionesDeEnvioQueMercadoLibrePermite() {
+        Producto producto = producto(31L);
+        producto.setMercadoLibreCategoriaId("MLA412620");
+        producto.setMercadoLibreModoEnvio("not_specified");
+        producto.setMercadoLibreEnvioGratis(false);
+        producto.setMercadoLibreRetiroPersonal(false);
+        producto.setFotoUrlExterna("https://img.test/31.jpg");
+        List<Long> ids = List.of(31L);
+        when(productos.findAllById(ids)).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of());
+        when(opcionesEnvio.obtener(producto)).thenReturn(
+                new MercadoLibreOpcionesEnvioService.OpcionesEnvio(
+                        "me2", true, true, true));
+        when(atributos.obtenerPorCategoria("MLA412620")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA412620", "Dispensers de Jabón", List.of()));
+
+        service.revisar(ids, List.of(CanalVenta.MERCADO_LIBRE));
+
+        assertEquals("me2", producto.getMercadoLibreModoEnvio());
+        assertEquals(true, producto.getMercadoLibreEnvioGratis());
+        assertEquals(true, producto.getMercadoLibreRetiroPersonal());
+        verify(productos).save(producto);
+    }
+
+    @Test
     void conservaElResultadoPreparadoParaAbrirLaTablaSinReconsultar() {
         Producto producto = producto(13L);
         producto.setMercadoLibreCategoriaId("MLA123");
@@ -213,6 +243,7 @@ class RevisionPublicacionServiceTest {
     void reemplazaUnaCategoriaManualQueMercadoLibreYaNoReconoce() {
         Producto producto = producto(14L);
         producto.setMercadoLibreCategoriaId("MLA438180");
+        producto.setMercadoLibreCategoriaFijada(true);
         producto.setFotoUrlExterna("https://img.test/14.jpg");
         List<Long> ids = List.of(14L);
         when(productos.findAllById(ids)).thenReturn(List.of(producto));
@@ -234,6 +265,7 @@ class RevisionPublicacionServiceTest {
                 ids, List.of(CanalVenta.MERCADO_LIBRE)).get(0);
 
         assertEquals("MLA999", producto.getMercadoLibreCategoriaId());
+        assertEquals(false, producto.getMercadoLibreCategoriaFijada());
         assertTrue(revision.faltantes().isEmpty());
         verify(productos).save(producto);
         verify(atributos).predecirCategoria("Producto de prueba");
@@ -291,14 +323,15 @@ class RevisionPublicacionServiceTest {
                         "ml_general_BRAND", "Marca editada",
                         "ml_variante_30_COLOR", "Negro"));
 
-        assertEquals("Título nuevo", producto.getDescripcion());
+        assertEquals("Título nuevo", producto.getMercadoLibreTitulo());
+        assertEquals("Producto de prueba", producto.getDescripcion());
         assertEquals("MLA999", producto.getMercadoLibreCategoriaId());
         assertEquals("Marca editada", producto.getMercadoLibreMarca());
         assertEquals("gold_pro", producto.getMercadoLibreListingTypeId());
         assertEquals(7, producto.getCantidad());
         assertEquals(7, variante.getStock());
         assertEquals(new BigDecimal("9500"), variante.getPrecioContado());
-        assertEquals("Negro", variante.getColor());
+        assertEquals(null, variante.getColor());
         assertEquals("{\"COLOR\":\"Negro\"}",
                 variante.getMercadoLibreAtributosJson());
         assertTrue(producto.getMercadoLibreEnvioGratis());
@@ -334,7 +367,8 @@ class RevisionPublicacionServiceTest {
                 ids, List.of(CanalVenta.MERCADO_LIBRE)).get(0);
 
         assertEquals("Aromatizador ultrasónico Thimoty",
-                producto.getDescripcion());
+                producto.getMercadoLibreTitulo());
+        assertEquals("Producto de prueba", producto.getDescripcion());
         assertEquals("MLA381270", producto.getMercadoLibreCategoriaId());
         assertTrue(revision.isListo());
         verify(atributos).predecirCategoria(
@@ -376,6 +410,7 @@ class RevisionPublicacionServiceTest {
                 false, false, "", null, null, List.of(), Map.of());
 
         assertEquals("MLA387586", producto.getMercadoLibreCategoriaId());
+        assertEquals(true, producto.getMercadoLibreCategoriaFijada());
         verify(atributos).predecirCategoria("Sahumerios");
     }
 
@@ -391,6 +426,7 @@ class RevisionPublicacionServiceTest {
         service.actualizarCategoria(28L, "Riñoneras");
 
         assertEquals("MLA417710", producto.getMercadoLibreCategoriaId());
+        assertEquals(true, producto.getMercadoLibreCategoriaFijada());
         assertEquals("Título que debe conservarse", producto.getDescripcion());
         assertEquals(8, producto.getCantidad());
         verify(productos).save(producto);
@@ -437,6 +473,32 @@ class RevisionPublicacionServiceTest {
         assertEquals("Billeteras", service.consumirRevisionPreparada(91L)
                 .orElseThrow().get(0).categoriaMercadoLibreNombre());
         verify(productos).save(producto);
+    }
+
+    @Test
+    void conservaUnaCategoriaFijadaOAnteriorAlVolverAPreparar() {
+        Producto producto = producto(29L);
+        producto.setDescripcion("Botellón Suavizante/Jabón Liquido");
+        producto.setMercadoLibreCategoriaId("MLA412620");
+        producto.setMercadoLibreCategoriaFijada(null);
+        producto.setFotoUrlExterna("https://img.test/29.jpg");
+        List<Long> ids = List.of(29L);
+        when(productos.findAllById(ids)).thenReturn(List.of(producto));
+        when(variantes.findByProductoIdInOrderByProductoIdAscNombreAsc(ids))
+                .thenReturn(List.of());
+        when(atributos.obtenerPorCategoria("MLA412620")).thenReturn(
+                new MercadoLibreAtributosVarianteService.Resultado(
+                        "MLA412620", "Dispensers de Jabón", List.of()));
+
+        int procesados = service.prepararEnSegundoPlano(
+                92L, ids, List.of(CanalVenta.MERCADO_LIBRE), () -> false);
+
+        assertEquals(1, procesados);
+        assertEquals("MLA412620", producto.getMercadoLibreCategoriaId());
+        assertEquals("Dispensers de Jabón", service.consumirRevisionPreparada(92L)
+                .orElseThrow().get(0).categoriaMercadoLibreNombre());
+        verify(atributos, never()).predecirCategoria(anyString());
+        verify(productos, never()).save(producto);
     }
 
     private Producto producto(Long id) {

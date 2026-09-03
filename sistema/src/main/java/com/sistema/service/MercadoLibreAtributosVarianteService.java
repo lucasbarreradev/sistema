@@ -44,7 +44,11 @@ public class MercadoLibreAtributosVarianteService {
     public Resultado obtener(Producto producto) {
         if (!tokenService.configurado()) return new Resultado(producto.getMercadoLibreCategoriaId(), List.of());
         String categoria = producto.getMercadoLibreCategoriaId();
-        if (categoria == null || categoria.isBlank()) categoria = predecirCategoria(producto.getDescripcion());
+        if (categoria == null || categoria.isBlank()) {
+            String titulo = producto.getMercadoLibreTitulo();
+            if (titulo == null || titulo.isBlank()) titulo = producto.getDescripcion();
+            categoria = predecirCategoria(titulo);
+        }
         return obtenerPorCategoria(categoria);
     }
 
@@ -125,6 +129,10 @@ public class MercadoLibreAtributosVarianteService {
         String consultaOriginal = original
                 .replace("Ã±", "n").replace("Ã‘", "N")
                 .replace('ñ', 'n').replace('Ñ', 'N');
+        if (esDispenserJabonOSuavizante(normalizada)) {
+            return "dispensador botellon para jabon liquido y suavizante lavadero "
+                    + consultaOriginal;
+        }
         if (esVasoParaBeber(normalizada)) {
             return "vasos para beber vajilla " + consultaOriginal;
         }
@@ -163,6 +171,22 @@ public class MercadoLibreAtributosVarianteService {
     String seleccionarCategoria(String descripcion, JsonNode respuesta) {
         if (respuesta == null || !respuesta.isArray() || respuesta.isEmpty()) return "";
         String titulo = normalizar(descripcion);
+        if (esDispenserJabonOSuavizante(titulo)) {
+            for (JsonNode opcion : respuesta) {
+                if ("MLA412620".equals(opcion.path("category_id").asText(""))) {
+                    return "MLA412620";
+                }
+            }
+            for (JsonNode opcion : respuesta) {
+                String nombre = normalizar(opcion.path("category_name").asText(""));
+                String dominio = normalizar(opcion.path("domain_name").asText(""));
+                if (dominio.contains("dispensadores manuales")
+                        && (dominio.contains("jabon") || dominio.contains("detergente"))
+                        || nombre.contains("dispenser") && nombre.contains("jabon")) {
+                    return opcion.path("category_id").asText("");
+                }
+            }
+        }
         if (esVasoParaBeber(titulo)) {
             for (JsonNode opcion : respuesta) {
                 if ("MLA457489".equals(opcion.path("category_id").asText(""))) {
@@ -237,6 +261,18 @@ public class MercadoLibreAtributosVarianteService {
                 && !textoNormalizado.contains("medidor")
                 && !textoNormalizado.contains("termico")
                 && !textoNormalizado.matches(".*\\bbebe(s)?\\b.*");
+    }
+
+    private boolean esDispenserJabonOSuavizante(String textoNormalizado) {
+        boolean recipiente = textoNormalizado.contains("botellon")
+                || textoNormalizado.contains("botella")
+                || textoNormalizado.contains("envase")
+                || textoNormalizado.contains("dispenser")
+                || textoNormalizado.contains("dispensador");
+        boolean contenido = textoNormalizado.contains("jabon")
+                || textoNormalizado.contains("suavizante")
+                || textoNormalizado.contains("detergente");
+        return recipiente && contenido;
     }
 
     private String normalizar(String valor) {

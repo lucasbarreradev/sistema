@@ -154,7 +154,21 @@ public class ProductoService {
         existente.setPrecioCuentaCorriente(producto.getPrecioCuentaCorriente());
         existente.setTipoIva(producto.getTipoIva());
         existente.setMercadoLibreId(producto.getMercadoLibreId());
+        String categoriaAnterior = normalizarCategoria(
+                existente.getMercadoLibreCategoriaId());
+        String categoriaNueva = normalizarCategoria(
+                producto.getMercadoLibreCategoriaId());
         existente.setMercadoLibreCategoriaId(producto.getMercadoLibreCategoriaId());
+        if (categoriaNueva.isBlank()) {
+            existente.setMercadoLibreCategoriaFijada(false);
+        } else if (!categoriaNueva.equalsIgnoreCase(categoriaAnterior)) {
+            existente.setMercadoLibreCategoriaFijada(true);
+        }
+        existente.setMercadoLibreTitulo(producto.getMercadoLibreTitulo());
+        existente.setWooCommerceTitulo(producto.getWooCommerceTitulo());
+        existente.setTiendaNubeTitulo(producto.getTiendaNubeTitulo());
+        existente.setWooCommerceDescripcion(producto.getWooCommerceDescripcion());
+        existente.setWooCommerceAtributosJson(producto.getWooCommerceAtributosJson());
         existente.setMercadoLibreGuiaTallesId(producto.getMercadoLibreGuiaTallesId());
         existente.setMercadoLibreGuiaTallesFilaId(producto.getMercadoLibreGuiaTallesFilaId());
         existente.setMercadoLibreGenero(producto.getMercadoLibreGenero());
@@ -207,6 +221,10 @@ public class ProductoService {
 
         return productoRepo.save(existente);
 
+    }
+
+    private String normalizarCategoria(String categoria) {
+        return categoria == null ? "" : categoria.trim();
     }
 
     @Transactional

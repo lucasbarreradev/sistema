@@ -6,7 +6,6 @@ import com.sistema.model.CanalVenta;
 import com.sistema.model.Producto;
 import com.sistema.model.ProductoVariante;
 import com.sistema.repository.ProductoVarianteRepository;
-import com.sistema.service.MercadoLibreAtributosVarianteService;
 import com.sistema.service.WooCommerceCredencialesService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -24,7 +23,6 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -36,45 +34,32 @@ public class WooCommercePublicador implements PublicadorCanal {
             "EMPTY_GTIN_REASON", "HAZMAT_TRANSPORTABILITY", "GIFTABLE",
             "IS_TOM_BRAND", "IS_HIGHLIGHT_BRAND", "IS_EMERGING_BRAND",
             "VALUE_ADDED_TAX", "IMPORT_DUTY", "WITH_VIRTUAL_TRY_ON", "AGID", "MPN");
-    private static final Map<String, String> ALIAS_ATRIBUTOS_WOO = Map.of(
-            "MAIN_COLOR", "COLOR",
-            "COLOR_SECONDARY_COLOR", "COLOR",
-            "FILTRABLE_SIZE", "SIZE",
-            "MANUFACTURER_SIZE", "SIZE",
-            "FILTRABLE_GENDER", "GENDER");
+    private static final Map<String, String> ALIAS_ATRIBUTOS_WOO = Map.ofEntries(
+            Map.entry("MAIN_COLOR", "COLOR"),
+            Map.entry("COLOR_SECONDARY_COLOR", "COLOR"),
+            Map.entry("FILTRABLE_SIZE", "SIZE"),
+            Map.entry("MANUFACTURER_SIZE", "SIZE"),
+            Map.entry("TALLE", "SIZE"),
+            Map.entry("TAMANO", "SIZE"),
+            Map.entry("FILTRABLE_GENDER", "GENDER"),
+            Map.entry("MARCA", "BRAND"),
+            Map.entry("MODELO", "MODEL"));
     private final RestClient restClient;
     private final ProductoVarianteRepository varianteRepository;
     private final WooCommerceCredencialesService credenciales;
-    private final MercadoLibreAtributosVarianteService atributosMercadoLibre;
-    private final Map<String, Map<String, String>> nombresAtributosPorCategoria = new ConcurrentHashMap<>();
-    private final Map<String, Set<String>> atributosVariablesPorCategoria = new ConcurrentHashMap<>();
     @Value("${integraciones.public-base-url:}") private String publicBaseUrl;
 
     @Autowired
     public WooCommercePublicador(ProductoVarianteRepository varianteRepository,
-                                 WooCommerceCredencialesService credenciales,
-                                 MercadoLibreAtributosVarianteService atributosMercadoLibre) {
-        this(varianteRepository, credenciales, atributosMercadoLibre, crearRestClient());
-    }
-
-    WooCommercePublicador(ProductoVarianteRepository varianteRepository,
-                          WooCommerceCredencialesService credenciales) {
-        this(varianteRepository, credenciales, null, crearRestClient());
+                                 WooCommerceCredencialesService credenciales) {
+        this(varianteRepository, credenciales, crearRestClient());
     }
 
     WooCommercePublicador(ProductoVarianteRepository varianteRepository,
                           WooCommerceCredencialesService credenciales,
-                          RestClient restClient) {
-        this(varianteRepository, credenciales, null, restClient);
-    }
-
-    WooCommercePublicador(ProductoVarianteRepository varianteRepository,
-                          WooCommerceCredencialesService credenciales,
-                          MercadoLibreAtributosVarianteService atributosMercadoLibre,
                           RestClient restClient) {
         this.varianteRepository = varianteRepository;
         this.credenciales = credenciales;
-        this.atributosMercadoLibre = atributosMercadoLibre;
         this.restClient = restClient;
     }
 
@@ -111,10 +96,9 @@ public class WooCommercePublicador implements PublicadorCanal {
                 ? variantes.get(0) : null;
         validarSkuNoUsadoPorOtraVariante(p, presentacionSimple);
         Map<String, String> nombresAtributos = new LinkedHashMap<>(nombresAtributos(p));
-        Set<String> idsAtributosVariacion = idsAtributosVariacion(
-                variantes, atributosVariablesPermitidos(p));
+        Set<String> idsAtributosVariacion = idsAtributosVariacion(variantes);
         Map<String, String> atributosGenerales = atributosGenerales(p, nombresAtributos);
-        body.put("name", p.getDescripcion());
+        body.put("name", tituloWooCommerce(p));
         body.put("type", variable ? "variable" : "simple");
         if (!recuperarComoVariable) {
             body.put("sku", presentacionSimple == null ? p.getSku() : presentacionSimple.getSku());
@@ -260,32 +244,66 @@ public class WooCommercePublicador implements PublicadorCanal {
                 producto.getMercadoLibreModelo());
         agregarAtributo(atributos, nombresAtributos, "GTIN", "GTIN",
                 producto.getMercadoLibreGtin());
-        String json = producto.getMercadoLibreAtributosJson();
+        atributos.putAll(atributosDesdeJson(producto.getMercadoLibreAtributosJson(),
+                nombresAtributos, producto, "Mercado Libre"));
+        Map<String, String> nombresWoo = new LinkedHashMap<>();
+        atributos.putAll(atributosDesdeJson(producto.getWooCommerceAtributosJson(),
+                nombresWoo, producto, "WooCommerce"));
+        nombresAtributos.putAll(nombresWoo);
+        return canonicalizarAtributosWoo(atributos);
+    }
+
+    private Map<String, String> atributosDesdeJson(
+            String json, Map<String, String> nombresAtributos,
+            Producto producto, String canalOrigen) {
+        Map<String, String> atributos = new LinkedHashMap<>();
         if (json == null || json.isBlank()) return atributos;
         try {
             JsonNode lista = JSON.readTree(json);
             if (!lista.isArray()) return atributos;
             for (JsonNode atributo : lista) {
-                String id = textoJson(atributo.get("id")).toUpperCase(Locale.ROOT);
+                String nombre = textoJson(atributo.get("name"));
+                String id = idAtributoWoo(atributo, nombre);
                 if (id.isBlank() || esAtributoInterno(id)) continue;
                 String valor = textoJson(atributo.get("value_name"));
+                if (valor.isBlank()) valor = textoJson(atributo.get("option"));
                 if (valor.isBlank() && atributo.path("values").isArray()) {
                     List<String> valores = new ArrayList<>();
                     atributo.path("values").forEach(v -> {
-                        String nombre = textoJson(v.get("name"));
-                        if (!nombre.isBlank()) valores.add(nombre);
+                        String nombreValor = textoJson(v.get("name"));
+                        if (!nombreValor.isBlank()) valores.add(nombreValor);
                     });
                     valor = String.join(", ", valores);
                 }
-                String nombre = textoJson(atributo.get("name"));
+                if (valor.isBlank() && atributo.path("options").isArray()) {
+                    List<String> valores = new ArrayList<>();
+                    atributo.path("options").forEach(v -> {
+                        String opcion = textoJson(v);
+                        if (!opcion.isBlank()) valores.add(opcion);
+                    });
+                    valor = String.join(", ", valores);
+                }
                 agregarAtributo(atributos, nombresAtributos, id,
                         nombre.isBlank() ? AtributosVarianteHelper.nombre(id) : nombre, valor);
             }
             return canonicalizarAtributosWoo(atributos);
         } catch (Exception e) {
-            throw new IllegalArgumentException("Las caracterÃ­sticas de Mercado Libre del producto "
-                    + producto.getSku() + " no son vÃ¡lidas", e);
+            throw new IllegalArgumentException("Las características de " + canalOrigen + " del producto "
+                    + producto.getSku() + " no son válidas", e);
         }
+    }
+
+    private String idAtributoWoo(JsonNode atributo, String nombre) {
+        String id = textoJson(atributo.get("slug"));
+        if (!id.isBlank()) id = id.replaceFirst("(?i)^pa_", "");
+        if (id.isBlank()) id = textoJson(atributo.get("id"));
+        if (id.isBlank() || id.matches("\\d+")) id = nombre;
+        if (id == null) return "";
+        return java.text.Normalizer.normalize(id, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .replaceAll("[^A-Za-z0-9]+", "_")
+                .replaceAll("^_+|_+$", "")
+                .toUpperCase(Locale.ROOT);
     }
 
     private void agregarAtributo(Map<String, String> atributos,
@@ -311,7 +329,8 @@ public class WooCommercePublicador implements PublicadorCanal {
     }
 
     private String descripcionWoo(Producto producto) {
-        String descripcion = producto.getMercadoLibreDescripcion();
+        String descripcion = producto.getWooCommerceDescripcion();
+        if (descripcion == null || descripcion.isBlank()) descripcion = producto.getMercadoLibreDescripcion();
         if (descripcion == null || descripcion.isBlank()) descripcion = producto.getDescripcion();
         if (descripcion == null || descripcion.isBlank()) return "";
         String html = HtmlUtils.htmlEscape(descripcion.trim(), StandardCharsets.UTF_8.name())
@@ -358,7 +377,8 @@ public class WooCommercePublicador implements PublicadorCanal {
     }
 
     private Map<String, String> atributosWoo(ProductoVariante variante) {
-        return canonicalizarAtributosWoo(AtributosVarianteHelper.obtener(variante));
+        return canonicalizarAtributosWoo(AtributosVarianteHelper.obtener(
+                variante, CanalVenta.WOOCOMMERCE));
     }
 
     private Map<String, String> canonicalizarAtributosWoo(Map<String, String> atributos) {
@@ -501,31 +521,21 @@ public class WooCommercePublicador implements PublicadorCanal {
     }
 
     private Map<String, String> nombresAtributos(Producto producto) {
-        String categoria = producto.getMercadoLibreCategoriaId();
-        if (atributosMercadoLibre == null || categoria == null || categoria.isBlank()) return Map.of();
-        Map<String, String> guardados = nombresAtributosPorCategoria.get(categoria);
-        if (guardados != null) return guardados;
+        String json = producto.getWooCommerceAtributosJson();
+        if (json == null || json.isBlank()) return Map.of();
         try {
-            List<com.sistema.dto.AtributoVarianteMl> metadata =
-                    atributosMercadoLibre.obtener(producto).atributos();
-            Map<String, String> nombres = metadata.stream()
-                    .filter(atributo -> atributo.id() != null && atributo.nombre() != null
-                            && !atributo.id().isBlank() && !atributo.nombre().isBlank())
-                    .collect(Collectors.toMap(
-                            atributo -> atributo.id().toUpperCase(Locale.ROOT),
-                            atributo -> atributo.nombre().trim(),
-                            (primero, ignorado) -> primero,
-                            LinkedHashMap::new));
-            Set<String> variables = metadata.stream()
-                    .filter(com.sistema.dto.AtributoVarianteMl::permiteVariar)
-                    .map(atributo -> atributo.id().toUpperCase(Locale.ROOT))
-                    .map(id -> ALIAS_ATRIBUTOS_WOO.getOrDefault(id, id))
-                    .collect(Collectors.toCollection(LinkedHashSet::new));
-            if (!nombres.isEmpty()) nombresAtributosPorCategoria.put(categoria, Map.copyOf(nombres));
-            atributosVariablesPorCategoria.put(categoria, Set.copyOf(variables));
+            JsonNode lista = JSON.readTree(json);
+            if (!lista.isArray()) return Map.of();
+            Map<String, String> nombres = new LinkedHashMap<>();
+            for (JsonNode atributo : lista) {
+                String nombre = textoJson(atributo.get("name"));
+                String id = idAtributoWoo(atributo, nombre);
+                if (!id.isBlank() && !nombre.isBlank()) nombres.put(id, nombre);
+            }
             return nombres;
         } catch (RuntimeException ignored) {
-            // WooCommerce puede seguir publicando con las traducciones locales de respaldo.
+            return Map.of();
+        } catch (Exception ignored) {
             return Map.of();
         }
     }
@@ -590,13 +600,6 @@ public class WooCommercePublicador implements PublicadorCanal {
         }
     }
 
-    private Set<String> atributosVariablesPermitidos(Producto producto) {
-        String categoria = producto.getMercadoLibreCategoriaId();
-        if (categoria == null || categoria.isBlank() || atributosMercadoLibre == null) return Set.of();
-        if (!atributosVariablesPorCategoria.containsKey(categoria)) nombresAtributos(producto);
-        return atributosVariablesPorCategoria.getOrDefault(categoria, Set.of());
-    }
-
     private static RestClient crearRestClient() {
         HttpClient cliente = HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -624,5 +627,10 @@ public class WooCommercePublicador implements PublicadorCanal {
     private String precio(ProductoVariante v) { return Optional.ofNullable(v.getPrecioContado()).orElse(v.getProducto().getPrecioContado()).toPlainString(); }
     private int stock(ProductoVariante variante) { return Optional.ofNullable(variante.getStock()).orElse(0); }
     private String estadoStock(int stock) { return stock > 0 ? "instock" : "outofstock"; }
+    private String tituloWooCommerce(Producto producto) {
+        String titulo = producto.getWooCommerceTitulo();
+        return titulo == null || titulo.isBlank()
+                ? producto.getDescripcion() : titulo.trim();
+    }
     private void validar() { if (!configurado()) throw new IllegalStateException("WooCommerce no está configurado"); }
 }
