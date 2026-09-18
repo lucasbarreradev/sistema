@@ -3,6 +3,7 @@ package com.sistema.service;
 import com.sistema.dto.ResultadoPublicacionLote;
 import com.sistema.model.CanalVenta;
 import com.sistema.model.Producto;
+import com.sistema.model.PublicacionCanal;
 import com.sistema.repository.ProductoRepository;
 import com.sistema.repository.PublicacionCanalRepository;
 import com.sistema.service.canal.PublicadorCanal;
@@ -17,6 +18,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.client.HttpClientErrorException;
+import java.nio.charset.StandardCharsets;
 
 class PublicacionServiceTest {
 
@@ -84,6 +89,38 @@ class PublicacionServiceTest {
         ResultadoPublicacionLote resultado = service.publicar(List.of(8L), List.of(CanalVenta.MERCADO_LIBRE));
 
         assertTrue(resultado.getErrores().get(0).startsWith("Producto sin SKU / Mercado Libre"));
+    }
+
+    @Test
+    void guardaUnMensajeClaroYNoElJsonTecnicoDelCanal() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        PublicadorCanal publicador = mock(PublicadorCanal.class);
+        Producto producto = producto(12L, "SKU-12");
+        PublicacionCanal publicacion = new PublicacionCanal();
+        publicacion.setProducto(producto);
+        publicacion.setCanal(CanalVenta.MERCADO_LIBRE);
+        String json = "{\"cause\":[\"address_pending\"],"
+                + "\"message\":\"seller.unable_to_list\",\"status\":403}";
+        HttpClientErrorException error = HttpClientErrorException.create(
+                HttpStatus.FORBIDDEN, "Forbidden", HttpHeaders.EMPTY,
+                json.getBytes(StandardCharsets.UTF_8), StandardCharsets.UTF_8);
+        when(publicador.canal()).thenReturn(CanalVenta.MERCADO_LIBRE);
+        when(publicador.publicar(any(Producto.class), any())).thenThrow(error);
+        when(productos.findById(12L)).thenReturn(Optional.of(producto));
+        when(publicaciones.findByProductoIdAndCanal(12L, CanalVenta.MERCADO_LIBRE))
+                .thenReturn(Optional.of(publicacion));
+        PublicacionService service = new PublicacionService(
+                productos, publicaciones, List.of(publicador));
+
+        ResultadoPublicacionLote resultado = service.publicar(
+                List.of(12L), List.of(CanalVenta.MERCADO_LIBRE));
+
+        assertTrue(publicacion.getUltimoError().contains("dirección de la cuenta vendedora"));
+        assertTrue(resultado.getErrores().get(0).contains("dirección de la cuenta vendedora"));
+        assertTrue(!publicacion.getUltimoError().contains("address_pending"));
+        assertTrue(!publicacion.getUltimoError().contains("{"));
+        verify(publicaciones).save(publicacion);
     }
 
     private Producto producto(Long id, String sku) {

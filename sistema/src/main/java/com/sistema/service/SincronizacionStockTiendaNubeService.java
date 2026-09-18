@@ -10,11 +10,14 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 
 @Service
 public class SincronizacionStockTiendaNubeService {
+    private static final Logger log = LoggerFactory.getLogger(SincronizacionStockTiendaNubeService.class);
     private final ProductoRepository productoRepository;
     private final PublicacionCanalRepository publicacionRepository;
     private final TiendanubePublicador publicador;
@@ -44,16 +47,14 @@ public class SincronizacionStockTiendaNubeService {
             }
             publicacion.setUltimoError(null);
         } catch (Exception e) {
+            log.error("Error técnico al sincronizar stock con Tiendanube para el producto {}. Respuesta completa: {}",
+                    producto.getId(), MensajeErrorIntegracion.detalleTecnico(e), e);
             publicacion.setEstado(EstadoPublicacion.ERROR);
-            publicacion.setUltimoError("No se pudo sincronizar el stock con Tiendanube: " + mensajeSeguro(e));
+            publicacion.setUltimoError("No se pudo sincronizar el stock con Tiendanube: "
+                    + MensajeErrorIntegracion.paraUsuario(CanalVenta.TIENDANUBE, e));
         }
         publicacion.setFechaActualizacion(LocalDateTime.now());
         publicacionRepository.save(publicacion);
     }
 
-    private String mensajeSeguro(Exception e) {
-        String mensaje = e.getMessage();
-        if (mensaje == null || mensaje.isBlank()) mensaje = e.getClass().getSimpleName();
-        return mensaje.length() > 1800 ? mensaje.substring(0, 1800) : mensaje;
-    }
 }

@@ -9,6 +9,8 @@ import com.sistema.service.canal.ResultadoPublicacion;
 import org.springframework.stereotype.Service;
 import org.springframework.data.domain.PageRequest;
 import com.sistema.dto.PublicacionCanalListadoDto;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -17,6 +19,7 @@ import java.util.function.BooleanSupplier;
 
 @Service
 public class PublicacionService {
+    private static final Logger log = LoggerFactory.getLogger(PublicacionService.class);
     private final ProductoRepository productoRepository;
     private final PublicacionCanalRepository publicacionRepository;
     private final Map<CanalVenta, PublicadorCanal> publicadores;
@@ -36,7 +39,16 @@ public class PublicacionService {
     }
 
     public List<PublicacionCanalListadoDto> historial() {
-        return publicacionRepository.buscarHistorialLiviano(PageRequest.of(0, 100));
+        return publicacionRepository.buscarHistorialLiviano(PageRequest.of(0, 100)).stream()
+                .map(publicacion -> new PublicacionCanalListadoDto(
+                        publicacion.getId(), publicacion.getProductoDescripcion(),
+                        publicacion.getCanal(), publicacion.getEstado(),
+                        publicacion.getIdExterno(), publicacion.getFechaActualizacion(),
+                        publicacion.getUltimoError() == null
+                                || publicacion.getUltimoError().isBlank() ? null
+                                : MensajeErrorIntegracion.paraUsuario(
+                                publicacion.getCanal(), publicacion.getUltimoError())))
+                .toList();
     }
 
     public ResultadoPublicacionLote publicar(Collection<Long> productoIds, Collection<CanalVenta> canales) {
@@ -69,9 +81,13 @@ public class PublicacionService {
             publicacion.setUltimoError(null);
             lote.exito();
         } catch (Exception e) {
+            log.error("Error técnico al publicar el producto {} en {}. Respuesta completa: {}",
+                    referenciaProducto(producto), canal.getDescripcion(),
+                    MensajeErrorIntegracion.detalleTecnico(e), e);
+            String mensajeUsuario = MensajeErrorIntegracion.paraUsuario(canal, e);
             publicacion.setEstado(EstadoPublicacion.ERROR);
-            publicacion.setUltimoError(mensajeSeguro(e));
-            lote.error(referenciaProducto(producto) + " / " + canal.getDescripcion() + ": " + mensajeSeguro(e));
+            publicacion.setUltimoError(mensajeUsuario);
+            lote.error(referenciaProducto(producto) + " / " + canal.getDescripcion() + ": " + mensajeUsuario);
         }
         publicacion.setFechaActualizacion(LocalDateTime.now());
         publicacionRepository.save(publicacion);
@@ -82,12 +98,6 @@ public class PublicacionService {
         p.setProducto(producto);
         p.setCanal(canal);
         return p;
-    }
-
-    private String mensajeSeguro(Exception e) {
-        String mensaje = e.getMessage();
-        if (mensaje == null || mensaje.isBlank()) mensaje = e.getClass().getSimpleName();
-        return mensaje.length() > 1900 ? mensaje.substring(0, 1900) : mensaje;
     }
 
     private String referenciaProducto(Producto producto) {

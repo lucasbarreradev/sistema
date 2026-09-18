@@ -12,6 +12,7 @@ import com.sistema.service.TrabajoSincronizacionService;
 import com.sistema.service.MercadoLibreTokenService;
 import com.sistema.service.TiendanubeCredencialesService;
 import com.sistema.service.WooCommerceCredencialesService;
+import com.sistema.service.MensajeErrorIntegracion;
 import com.sistema.tenant.TenantContext;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
@@ -146,7 +147,7 @@ public class CanalesController {
             Matcher error = ERROR_PUBLICACION.matcher(linea);
             String referencia = error.matches() ? error.group(1).trim() : referenciaGenerica(linea);
             String canal = error.matches() ? error.group(2).trim() : "";
-            String mensaje = mensajeLegible(
+            String mensaje = mensajeLegible(canal,
                     error.matches() ? error.group(3).trim() : mensajeGenerico(linea));
             Long productoId = productosPorSku.computeIfAbsent(referencia,
                     sku -> productoService.getProductoBySku(sku).map(p -> p.getId())).orElse(null);
@@ -166,8 +167,14 @@ public class CanalesController {
         return separador > 0 ? linea.substring(separador + 1).trim() : linea;
     }
 
-    private String mensajeLegible(String mensajeCrudo) {
+    private String mensajeLegible(String canalDescripcion, String mensajeCrudo) {
         if (mensajeCrudo == null || mensajeCrudo.isBlank()) return mensajeCrudo;
+        CanalVenta canal = java.util.Arrays.stream(CanalVenta.values())
+                .filter(valor -> valor.getDescripcion().equalsIgnoreCase(canalDescripcion))
+                .findFirst().orElse(null);
+        String mensajeCentralizado = MensajeErrorIntegracion.paraUsuario(
+                canal, mensajeCrudo);
+        if (!mensajeCentralizado.equals(mensajeCrudo)) return mensajeCentralizado;
         String json = extraerJson(mensajeCrudo);
         if (json == null) return mensajeCrudo;
         try {

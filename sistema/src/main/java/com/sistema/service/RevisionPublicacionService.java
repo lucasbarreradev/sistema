@@ -12,6 +12,8 @@ import com.sistema.repository.ProductoVarianteRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClientResponseException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
@@ -33,6 +35,7 @@ import java.util.stream.Collectors;
 @Service
 @Transactional
 public class RevisionPublicacionService {
+    private static final Logger log = LoggerFactory.getLogger(RevisionPublicacionService.class);
     private static final long TIEMPO_MAXIMO_CONSULTAS_ML_MS = 15_000;
     private final ProductoRepository productoRepository;
     private final ProductoVarianteRepository varianteRepository;
@@ -736,7 +739,20 @@ public class RevisionPublicacionService {
     }
 
     private String mensaje(RuntimeException e) {
-        return e.getMessage() == null || e.getMessage().isBlank()
-                ? e.getClass().getSimpleName() : e.getMessage();
+        if (contieneRespuestaHttp(e)) {
+            log.error("Error técnico al validar un producto con Mercado Libre. Respuesta completa: {}",
+                    MensajeErrorIntegracion.detalleTecnico(e), e);
+        }
+        return MensajeErrorIntegracion.paraUsuario(CanalVenta.MERCADO_LIBRE, e);
+    }
+
+    private boolean contieneRespuestaHttp(Throwable error) {
+        Throwable actual = error;
+        while (actual != null) {
+            if (actual instanceof RestClientResponseException) return true;
+            if (actual.getCause() == actual) break;
+            actual = actual.getCause();
+        }
+        return false;
     }
 }

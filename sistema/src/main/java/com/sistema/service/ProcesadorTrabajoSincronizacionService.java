@@ -300,10 +300,6 @@ public class ProcesadorTrabajoSincronizacionService {
     }
 
     private String mensajeExcepcion(Exception e) {
-        Throwable actual = e;
-        while (actual.getCause() != null && actual.getCause() != actual) actual = actual.getCause();
-        String mensaje = actual.getMessage();
-        if (mensaje == null || mensaje.isBlank()) mensaje = e.getMessage();
-        return mensaje == null || mensaje.isBlank() ? "Error inesperado durante la sincronización" : mensaje;
+        return MensajeErrorIntegracion.paraUsuario(null, e);
     }
 }

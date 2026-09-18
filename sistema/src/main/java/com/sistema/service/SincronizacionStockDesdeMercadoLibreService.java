@@ -101,16 +101,15 @@ public class SincronizacionStockDesdeMercadoLibreService {
 
     @Transactional
     public void registrarError(Long publicacionId, Exception e) {
+        log.error("Error técnico al traer stock desde Mercado Libre para la publicación {}. Respuesta completa: {}",
+                publicacionId, MensajeErrorIntegracion.detalleTecnico(e), e);
         publicacionRepository.findById(publicacionId).ifPresent(publicacion -> {
-            publicacion.setUltimoError("No se pudo traer el stock desde Mercado Libre: " + mensajeSeguro(e));
+            publicacion.setUltimoError("No se pudo traer el stock desde Mercado Libre: "
+                    + MensajeErrorIntegracion.paraUsuario(
+                    com.sistema.model.CanalVenta.MERCADO_LIBRE, e));
             publicacion.setFechaActualizacion(LocalDateTime.now());
             publicacionRepository.save(publicacion);
         });
     }
 
-    private String mensajeSeguro(Exception e) {
-        String mensaje = e.getMessage();
-        if (mensaje == null || mensaje.isBlank()) mensaje = e.getClass().getSimpleName();
-        return mensaje.length() > 1800 ? mensaje.substring(0, 1800) : mensaje;
-    }
 }

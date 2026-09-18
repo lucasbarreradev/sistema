@@ -13,12 +13,15 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.LocalDateTime;
 import java.util.Optional;
 
 @Service
 public class SincronizacionStockMercadoLibreService {
+    private static final Logger log = LoggerFactory.getLogger(SincronizacionStockMercadoLibreService.class);
     private final ProductoRepository productoRepository;
     private final PublicacionCanalRepository publicacionRepository;
     private final MercadoLibrePublicador mercadoLibrePublicador;
@@ -53,8 +56,11 @@ public class SincronizacionStockMercadoLibreService {
             }
             publicacion.setUltimoError(null);
         } catch (Exception e) {
+            log.error("Error técnico al sincronizar stock con Mercado Libre para el producto {}. Respuesta completa: {}",
+                    producto.getId(), MensajeErrorIntegracion.detalleTecnico(e), e);
             publicacion.setEstado(EstadoPublicacion.ERROR);
-            publicacion.setUltimoError("No se pudo sincronizar el stock: " + mensajeSeguro(e));
+            publicacion.setUltimoError("No se pudo sincronizar el stock: "
+                    + MensajeErrorIntegracion.paraUsuario(CanalVenta.MERCADO_LIBRE, e));
         }
         publicacion.setFechaActualizacion(LocalDateTime.now());
         publicacionRepository.save(publicacion);
@@ -68,9 +74,4 @@ public class SincronizacionStockMercadoLibreService {
         return publicacion;
     }
 
-    private String mensajeSeguro(Exception e) {
-        String mensaje = e.getMessage();
-        if (mensaje == null || mensaje.isBlank()) mensaje = e.getClass().getSimpleName();
-        return mensaje.length() > 1850 ? mensaje.substring(0, 1850) : mensaje;
-    }
 }
