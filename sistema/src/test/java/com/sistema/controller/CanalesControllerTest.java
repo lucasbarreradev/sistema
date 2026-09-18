@@ -36,6 +36,7 @@ class CanalesControllerTest {
                 mock(MercadoLibreTokenService.class),
                 mock(WooCommerceCredencialesService.class),
                 mock(TiendanubeCredencialesService.class),
+                mock(com.fasterxml.jackson.databind.ObjectMapper.class),
                 "", "");
         RedirectAttributesModelMap atributos = new RedirectAttributesModelMap();
 
@@ -68,6 +69,7 @@ class CanalesControllerTest {
                 mock(MercadoLibreTokenService.class),
                 mock(WooCommerceCredencialesService.class),
                 mock(TiendanubeCredencialesService.class),
+                mock(com.fasterxml.jackson.databind.ObjectMapper.class),
                 "", "");
         TrabajoSincronizacion trabajo = new TrabajoSincronizacion();
         trabajo.setDetalle("""

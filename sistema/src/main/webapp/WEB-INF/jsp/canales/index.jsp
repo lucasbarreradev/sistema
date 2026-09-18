@@ -379,6 +379,7 @@
                 </div>
 
                 <form method="get" action="${pageContext.request.contextPath}/canales#productos-publicacion"
+                      id="formBuscarProductos"
                       class="form-inline mb-3">
                     <input type="hidden" name="productoSize" value="${tamanioPagina}">
                     <input type="search" name="productoQ" class="form-control mr-2"
@@ -390,7 +391,8 @@
                     </c:if>
                 </form>
 
-                <form method="post" action="${pageContext.request.contextPath}/canales/publicar/revisar">
+                <form method="post" action="${pageContext.request.contextPath}/canales/publicar/revisar"
+                      id="formRevisarProductos">
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
                     <input type="hidden" name="productoQ" value="${fn:escapeXml(busquedaProductos)}">
                     <input type="hidden" id="seleccionarTodosResultadosInput"
@@ -421,9 +423,14 @@
                                         </c:choose>
                                     </button>
                                 </c:if>
-                                <small class="text-muted ml-auto align-self-center">
-                                    ${paginaProductos.totalElements} producto(s) encontrados
-                                </small>
+                                <div class="ml-auto d-flex align-items-center mb-1">
+                                    <span class="badge badge-primary mr-2" id="contadorProductosSeleccionados">0 seleccionados</span>
+                                    <button type="button" class="btn btn-sm btn-link text-danger p-0 mr-3 d-none"
+                                            id="limpiarProductosSeleccionados">Limpiar selecci&oacute;n</button>
+                                    <small class="text-muted">
+                                        ${paginaProductos.totalElements} producto(s) encontrados
+                                    </small>
+                                </div>
                             </div>
                             <div id="avisoSeleccionTotal"
                                  class="alert alert-info py-2 ${seleccionarTodosResultados ? '' : 'd-none'}">
@@ -522,6 +529,60 @@ const checksProductos = Array.from(document.querySelectorAll('.producto-check'))
 const seleccionTotalInput = document.getElementById('seleccionarTodosResultadosInput');
 const botonSeleccionTotal = document.getElementById('seleccionarTodosResultados');
 const avisoSeleccionTotal = document.getElementById('avisoSeleccionTotal');
+const formularioBusquedaProductos = document.getElementById('formBuscarProductos');
+const formularioRevisionProductos = document.getElementById('formRevisarProductos');
+const contadorProductosSeleccionados = document.getElementById('contadorProductosSeleccionados');
+const botonLimpiarProductosSeleccionados = document.getElementById('limpiarProductosSeleccionados');
+const claveProductosSeleccionados = 'canales.productosSeleccionados.${tenantSeleccionProductos}';
+
+function leerProductosSeleccionados() {
+    try {
+        const guardados = JSON.parse(sessionStorage.getItem(claveProductosSeleccionados) || '[]');
+        return new Set(Array.isArray(guardados)
+            ? guardados.map(String).filter(id => /^\d+$/.test(id))
+            : []);
+    } catch (e) {
+        return new Set();
+    }
+}
+
+function guardarProductosSeleccionados(seleccionados) {
+    try {
+        sessionStorage.setItem(claveProductosSeleccionados, JSON.stringify(Array.from(seleccionados)));
+    } catch (e) {
+        // Si el navegador bloquea el almacenamiento, la selección visible sigue funcionando.
+    }
+}
+
+function actualizarResumenSeleccion() {
+    const seleccionTotalActiva = seleccionTotalInput.value === 'true';
+    const cantidad = seleccionTotalActiva
+        ? Number('${paginaProductos.totalElements}')
+        : leerProductosSeleccionados().size;
+    contadorProductosSeleccionados.textContent = cantidad + (cantidad === 1 ? ' seleccionado' : ' seleccionados');
+    botonLimpiarProductosSeleccionados.classList.toggle('d-none', cantidad === 0);
+}
+
+function guardarSeleccionVisible() {
+    if (seleccionTotalInput.value === 'true') return;
+    const seleccionados = leerProductosSeleccionados();
+    checksProductos.forEach(check => {
+        if (check.checked) seleccionados.add(check.value);
+        else seleccionados.delete(check.value);
+    });
+    guardarProductosSeleccionados(seleccionados);
+    actualizarResumenSeleccion();
+}
+
+function restaurarSeleccionVisible() {
+    if (seleccionTotalInput.value === 'true') {
+        checksProductos.forEach(check => check.checked = true);
+    } else {
+        const seleccionados = leerProductosSeleccionados();
+        checksProductos.forEach(check => check.checked = seleccionados.has(check.value));
+    }
+    actualizarResumenSeleccion();
+}
 
 function cancelarSeleccionTotal() {
     seleccionTotalInput.value = 'false';
@@ -535,9 +596,11 @@ document.getElementById('seleccionarTodos').addEventListener('click', function (
     const marcar = checksProductos.some(check => !check.checked);
     cancelarSeleccionTotal();
     checksProductos.forEach(check => check.checked = marcar);
+    guardarSeleccionVisible();
 });
 checksProductos.forEach(check => check.addEventListener('change', function () {
     if (seleccionTotalInput.value === 'true' && !this.checked) cancelarSeleccionTotal();
+    guardarSeleccionVisible();
 }));
 if (botonSeleccionTotal) {
     botonSeleccionTotal.addEventListener('click', function () {
@@ -548,16 +611,46 @@ if (botonSeleccionTotal) {
         this.textContent = activar
             ? 'Cancelar selección de todas las páginas'
             : 'Seleccionar los ${paginaProductos.totalElements} resultados';
+        if (!activar) restaurarSeleccionVisible();
+        else actualizarResumenSeleccion();
+    });
+}
+botonLimpiarProductosSeleccionados.addEventListener('click', function () {
+    guardarProductosSeleccionados(new Set());
+    cancelarSeleccionTotal();
+    checksProductos.forEach(check => check.checked = false);
+    actualizarResumenSeleccion();
+});
+if (formularioBusquedaProductos) {
+    formularioBusquedaProductos.addEventListener('submit', guardarSeleccionVisible);
+}
+if (formularioRevisionProductos) {
+    formularioRevisionProductos.addEventListener('submit', function () {
+        if (seleccionTotalInput.value === 'true') return;
+        guardarSeleccionVisible();
+        this.querySelectorAll('.producto-seleccionado-acumulado').forEach(input => input.remove());
+        const idsVisibles = new Set(checksProductos.map(check => check.value));
+        leerProductosSeleccionados().forEach(id => {
+            if (idsVisibles.has(id)) return;
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'productoIds';
+            input.value = id;
+            input.className = 'producto-seleccionado-acumulado';
+            this.appendChild(input);
+        });
     });
 }
 document.querySelectorAll('.pagina-productos-link').forEach(link => {
     link.addEventListener('click', function () {
+        guardarSeleccionVisible();
         if (seleccionTotalInput.value !== 'true' || this.getAttribute('href') === '#') return;
         const destino = new URL(this.href);
         destino.searchParams.set('seleccionarTodosResultados', 'true');
         this.href = destino.toString();
     });
 });
+restaurarSeleccionVisible();
 document.querySelectorAll('.filtro-errores-sincronizacion').forEach(filtro => {
     filtro.addEventListener('input', function () {
         const consulta = this.value.trim().toLocaleLowerCase('es');

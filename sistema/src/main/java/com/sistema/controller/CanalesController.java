@@ -12,6 +12,7 @@ import com.sistema.service.TrabajoSincronizacionService;
 import com.sistema.service.MercadoLibreTokenService;
 import com.sistema.service.TiendanubeCredencialesService;
 import com.sistema.service.WooCommerceCredencialesService;
+import com.sistema.tenant.TenantContext;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -28,6 +29,8 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.springframework.data.domain.PageRequest;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Controller
 @RequestMapping("/canales")
@@ -45,6 +48,7 @@ public class CanalesController {
     private final TiendanubeCredencialesService tiendanubeCredencialesService;
     private final String mercadoLibreRedirectUri;
     private final String publicBaseUrl;
+    private final ObjectMapper objectMapper;
 
     public CanalesController(ProductoService productoService, ImportacionCsvService importacionCsvService,
                              PublicacionService publicacionService, ImportacionCanalService importacionCanalService,
@@ -52,6 +56,7 @@ public class CanalesController {
                              MercadoLibreTokenService mercadoLibreTokenService,
                              WooCommerceCredencialesService wooCommerceCredencialesService,
                              TiendanubeCredencialesService tiendanubeCredencialesService,
+                             ObjectMapper objectMapper,
                              @Value("${integraciones.mercadolibre.redirect-uri:}") String mercadoLibreRedirectUri,
                              @Value("${integraciones.public-base-url:}") String publicBaseUrl) {
         this.productoService = productoService;
@@ -63,7 +68,9 @@ public class CanalesController {
         this.wooCommerceCredencialesService = wooCommerceCredencialesService;
         this.tiendanubeCredencialesService = tiendanubeCredencialesService;
         this.mercadoLibreRedirectUri = mercadoLibreRedirectUri;
+        this.objectMapper = objectMapper;
         this.publicBaseUrl = publicBaseUrl == null ? "" : publicBaseUrl.replaceAll("/+$", "");
+
     }
 
     @GetMapping
@@ -80,6 +87,7 @@ public class CanalesController {
         model.addAttribute("paginaProductos", productos);
         model.addAttribute("busquedaProductos", productoQ == null ? "" : productoQ.trim());
         model.addAttribute("seleccionarTodosResultados", seleccionarTodosResultados);
+        model.addAttribute("tenantSeleccionProductos", TenantContext.require());
         model.addAttribute("tamanioPagina", tamanio);
         model.addAttribute("canales", CanalVenta.values());
         model.addAttribute("configuracion", publicacionService.estadoConfiguracion());
@@ -138,7 +146,8 @@ public class CanalesController {
             Matcher error = ERROR_PUBLICACION.matcher(linea);
             String referencia = error.matches() ? error.group(1).trim() : referenciaGenerica(linea);
             String canal = error.matches() ? error.group(2).trim() : "";
-            String mensaje = error.matches() ? error.group(3).trim() : mensajeGenerico(linea);
+            String mensaje = mensajeLegible(
+                    error.matches() ? error.group(3).trim() : mensajeGenerico(linea));
             Long productoId = productosPorSku.computeIfAbsent(referencia,
                     sku -> productoService.getProductoBySku(sku).map(p -> p.getId())).orElse(null);
             resultado.add(new ErrorSincronizacionDto(
@@ -157,6 +166,93 @@ public class CanalesController {
         return separador > 0 ? linea.substring(separador + 1).trim() : linea;
     }
 
+    private String mensajeLegible(String mensajeCrudo) {
+        if (mensajeCrudo == null || mensajeCrudo.isBlank()) return mensajeCrudo;
+        String json = extraerJson(mensajeCrudo);
+        if (json == null) return mensajeCrudo;
+        try {
+            JsonNode raiz = objectMapper.readTree(json);
+            JsonNode causas = raiz.path("cause");
+            if (causas.isArray() && !causas.isEmpty()) {
+                String amigable = mensajeDesdeCausas(causas);
+                if (amigable != null) return amigable;
+            }
+            if (raiz.path("status").asInt(0) == 500) {
+                return "Mercado Libre tuvo un error interno al procesar esta publicación. "
+                        + "Reintentá la sincronización de este producto; si vuelve a fallar, "
+                        + "puede ser un problema temporal del lado de Mercado Libre.";
+            }
+            String top = raiz.path("message").asText("");
+            if (!top.isBlank()) {
+                return "Mercado Libre rechazó la publicación (" + top
+                        + "). Revisá el detalle completo para más información.";
+            }
+        } catch (Exception ignored) {
+            // Si el JSON no se puede interpretar, se muestra el mensaje original tal cual.
+        }
+        return mensajeCrudo;
+    }
+
+    private String extraerJson(String texto) {
+        int inicio = texto.indexOf('{');
+        int fin = texto.lastIndexOf('}');
+        return (inicio < 0 || fin <= inicio) ? null : texto.substring(inicio, fin + 1);
+    }
+
+    private String mensajeDesdeCausas(JsonNode causas) {
+        for (JsonNode causa : causas) {
+            String code = causa.path("code").asText("");
+            String mensaje = causa.path("message").asText("");
+            if ("item.attribute.number_invalid_format".equals(code)) {
+                return mensajeValorInvalido(mensaje, causas);
+            }
+            if ("item.attribute.invalid_product_identifier".equals(code)) {
+                return "El código universal (GTIN) que se está enviando ya está en uso en otra "
+                        + "categoría de Mercado Libre. Revisá el GTIN cargado en este producto, "
+                        + "o marcá que no tiene GTIN si corresponde.";
+            }
+            if (code.endsWith(".missing") || code.endsWith(".required")) {
+                String atributo = extraerAtributo(mensaje);
+                return atributo != null
+                        ? "Falta cargar el atributo obligatorio \"" + atributo + "\" para esta categoría."
+                        : mensaje;
+            }
+        }
+        for (JsonNode causa : causas) {
+            if ("error".equals(causa.path("type").asText())) {
+                String mensaje = causa.path("message").asText("");
+                if (!mensaje.isBlank()) return mensaje;
+            }
+        }
+        return null;
+    }
+
+    private String mensajeValorInvalido(String mensajeOriginal, JsonNode causas) {
+        String atributo = extraerAtributo(mensajeOriginal);
+        String unidades = "";
+        for (JsonNode causa : causas) {
+            String texto = causa.path("message").asText("");
+            int idx = texto.indexOf("valid units:");
+            if (idx >= 0) {
+                unidades = texto.substring(idx + "valid units:".length()).trim();
+                if (unidades.endsWith(".")) unidades = unidades.substring(0, unidades.length() - 1);
+                break;
+            }
+        }
+        String base = atributo != null
+                ? "El valor cargado para \"" + atributo + "\" no es válido."
+                : "El valor cargado para este atributo no es válido.";
+        return unidades.isBlank() ? base
+                : base + " Tiene que ser un número seguido de una unidad válida, por ejemplo "
+                + unidades + ".";
+    }
+
+    private String extraerAtributo(String mensaje) {
+        if (mensaje == null) return null;
+        Matcher m = Pattern.compile("\"([^\"]+)\"").matcher(mensaje);
+        return m.find() ? m.group(1) : null;
+    }
+
     private List<String> correcciones(String mensaje) {
         Matcher campos = CAMPOS_OBLIGATORIOS.matcher(mensaje);
         if (campos.find()) {
@@ -173,6 +269,15 @@ public class CanalesController {
             return List.of("Esperar revisión de Mercado Libre");
         }
         if (normalizado.contains("conflicto temporal") || normalizado.contains("repeated user-product")) {
+            return List.of("Reintentar sincronización");
+        }
+        if (normalizado.contains("no es válido") && normalizado.contains("unidad válida")) {
+            return List.of("Volumen / unidad de medida");
+        }
+        if (normalizado.contains("código universal") && normalizado.contains("gtin")) {
+            return List.of("GTIN duplicado");
+        }
+        if (normalizado.contains("error interno al procesar esta publicación")) {
             return List.of("Reintentar sincronización");
         }
         return List.of("Revisar detalle");
