@@ -144,9 +144,9 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ResultadoImportacionCanal resultado = new ResultadoImportacionCanal();
         resultado.creado(1L);
         resultado.actualizado(2L);
-        when(importacion.obtenerProductos(eq(CanalVenta.MERCADO_LIBRE), eq(false),
+        when(importacion.obtenerProductos(eq(CanalVenta.MERCADO_LIBRE), eq(false), eq(false),
                 any(java.util.function.BooleanSupplier.class))).thenReturn(productos);
-        when(importacion.importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos),
+        when(importacion.importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos), eq(false),
                 any(java.util.function.BooleanSupplier.class))).thenReturn(resultado);
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
@@ -156,7 +156,7 @@ class ProcesadorTrabajoSincronizacionServiceTest {
 
         procesador.ejecutarImportacionCompleta(10L, 3L, CanalVenta.MERCADO_LIBRE, false);
 
-        verify(importacion).importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos),
+        verify(importacion).importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos), eq(false),
                 any(java.util.function.BooleanSupplier.class));
         verify(importacion, never()).importar(CanalVenta.MERCADO_LIBRE);
         assertEquals(EstadoTrabajoSincronizacion.COMPLETADA, trabajo.getEstado());
@@ -164,7 +164,7 @@ class ProcesadorTrabajoSincronizacionServiceTest {
     }
 
     @Test
-    void importaLasUltimasPublicacionesFiltradasEnSegundoPlano() {
+    void importaLasUltimasPublicacionesSinStockCuandoSeSolicita() {
         TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
         ImportacionCanalService importacion = mock(ImportacionCanalService.class);
         TrabajoSincronizacion trabajo = trabajo();
@@ -173,8 +173,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ResultadoImportacionCanal resultado = new ResultadoImportacionCanal();
         resultado.creado(1L);
         when(importacion.obtenerUltimasPublicacionesMercadoLibre(eq(5), eq("neumaticos"),
-                eq(false), any(java.util.function.BooleanSupplier.class))).thenReturn(productos);
-        when(importacion.importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos),
+                eq(false), eq(true), any(java.util.function.BooleanSupplier.class))).thenReturn(productos);
+        when(importacion.importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos), eq(true),
                 any(java.util.function.BooleanSupplier.class))).thenReturn(resultado);
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(
@@ -183,11 +183,11 @@ class ProcesadorTrabajoSincronizacionServiceTest {
                         mock(RevisionPublicacionService.class));
 
         procesador.ejecutarImportacionFiltradaMercadoLibre(
-                10L, 3L, 5, "neumaticos", false);
+                10L, 3L, 5, "neumaticos", false, true);
 
         assertEquals(EstadoTrabajoSincronizacion.COMPLETADA, trabajo.getEstado());
         assertTrue(trabajo.getResumen().contains("1 productos creados"));
-        verify(importacion).importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos),
+        verify(importacion).importar(eq(CanalVenta.MERCADO_LIBRE), eq(productos), eq(true),
                 any(java.util.function.BooleanSupplier.class));
     }
 
@@ -219,9 +219,9 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         ImportacionCanalService importacion = mock(ImportacionCanalService.class);
         TrabajoSincronizacion trabajo = trabajo();
         when(repository.findById(10L)).thenReturn(Optional.of(trabajo));
-        when(importacion.obtenerProductos(eq(CanalVenta.MERCADO_LIBRE), eq(false),
+        when(importacion.obtenerProductos(eq(CanalVenta.MERCADO_LIBRE), eq(false), eq(false),
                 any(java.util.function.BooleanSupplier.class))).thenAnswer(invocacion -> {
-                    java.util.function.BooleanSupplier cancelacion = invocacion.getArgument(2);
+                    java.util.function.BooleanSupplier cancelacion = invocacion.getArgument(3);
                     assertFalse(cancelacion.getAsBoolean());
                     trabajo.setCancelacionSolicitada(true);
                     assertTrue(cancelacion.getAsBoolean());

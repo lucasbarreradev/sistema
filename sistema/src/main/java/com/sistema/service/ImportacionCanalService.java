@@ -69,26 +69,51 @@ public class ImportacionCanalService {
 
     public List<ProductoCanalImportado> obtenerProductos(
             CanalVenta canal, boolean incluirInactivas) {
-        return obtenerProductos(canal, incluirInactivas, () -> false);
+        return obtenerProductos(canal, incluirInactivas, false, () -> false);
     }
 
     public List<ProductoCanalImportado> obtenerProductos(
             CanalVenta canal, boolean incluirInactivas,
             BooleanSupplier cancelacionSolicitada) {
+        return obtenerProductos(canal, incluirInactivas, false,
+                cancelacionSolicitada);
+    }
+
+    public List<ProductoCanalImportado> obtenerProductos(
+            CanalVenta canal, boolean incluirInactivas,
+            boolean incluirSinStock,
+            BooleanSupplier cancelacionSolicitada) {
         ImportadorCanal importador = importadorConfigurado(canal);
-        return filtrarConStock(importador.obtenerProductos(
-                incluirInactivas, cancelacionSolicitada));
+        boolean consultarInactivas = incluirInactivas
+                || canal == CanalVenta.MERCADO_LIBRE && incluirSinStock;
+        List<ProductoCanalImportado> descargados = importador.obtenerProductos(
+                consultarInactivas, cancelacionSolicitada);
+        return aplicarFiltrosImportacion(canal, descargados,
+                incluirInactivas, incluirSinStock);
     }
 
     public List<ProductoCanalImportado> obtenerUltimasPublicacionesMercadoLibre(
             int cantidad, String categoria, boolean incluirInactivas,
             BooleanSupplier cancelacionSolicitada) {
+        return obtenerUltimasPublicacionesMercadoLibre(cantidad, categoria,
+                incluirInactivas, false, cancelacionSolicitada);
+    }
+
+    public List<ProductoCanalImportado> obtenerUltimasPublicacionesMercadoLibre(
+            int cantidad, String categoria, boolean incluirInactivas,
+            boolean incluirSinStock,
+            BooleanSupplier cancelacionSolicitada) {
         ImportadorCanal importador = importadorConfigurado(CanalVenta.MERCADO_LIBRE);
         if (!(importador instanceof MercadoLibreImportador mercadoLibre)) {
             throw new IllegalStateException("El importador de Mercado Libre no está disponible");
         }
-        return filtrarConStock(mercadoLibre.obtenerUltimasPublicaciones(
-                cantidad, categoria, incluirInactivas, cancelacionSolicitada));
+        boolean consultarInactivas = incluirInactivas || incluirSinStock;
+        List<ProductoCanalImportado> descargados =
+                mercadoLibre.obtenerUltimasPublicaciones(
+                        cantidad, categoria, consultarInactivas,
+                        cancelacionSolicitada);
+        return aplicarFiltrosImportacion(CanalVenta.MERCADO_LIBRE,
+                descargados, incluirInactivas, incluirSinStock);
     }
 
     public ResultadoImportacionCanal importar(CanalVenta canal,
@@ -99,12 +124,20 @@ public class ImportacionCanalService {
     public ResultadoImportacionCanal importar(CanalVenta canal,
                                               Collection<ProductoCanalImportado> productos,
                                               BooleanSupplier cancelacionSolicitada) {
+        return importar(canal, productos, false, cancelacionSolicitada);
+    }
+
+    public ResultadoImportacionCanal importar(CanalVenta canal,
+                                              Collection<ProductoCanalImportado> productos,
+                                              boolean incluirSinStock,
+                                              BooleanSupplier cancelacionSolicitada) {
         importadorConfigurado(canal);
         ResultadoImportacionCanal resultado = new ResultadoImportacionCanal();
         if (productos == null) return resultado;
-        List<ProductoCanalImportado> productosConStock = filtrarConStock(productos);
-        resultado.recibidos(productosConStock.size());
-        for (ProductoCanalImportado dato : productosConStock) {
+        List<ProductoCanalImportado> productosAImportar =
+                aplicarFiltroStock(productos, incluirSinStock);
+        resultado.recibidos(productosAImportar.size());
+        for (ProductoCanalImportado dato : productosAImportar) {
             if (cancelacionSolicitada.getAsBoolean()) return resultado;
             try { guardar(canal, dato, resultado); }
             catch (Exception e) {
@@ -122,6 +155,38 @@ public class ImportacionCanalService {
                 .filter(Objects::nonNull)
                 .filter(this::tieneStockPositivo)
                 .toList();
+    }
+
+    private List<ProductoCanalImportado> aplicarFiltroStock(
+            Collection<ProductoCanalImportado> productos,
+            boolean incluirSinStock) {
+        if (!incluirSinStock) return filtrarConStock(productos);
+        if (productos == null || productos.isEmpty()) return List.of();
+        return productos.stream().filter(Objects::nonNull).toList();
+    }
+
+    private List<ProductoCanalImportado> aplicarFiltrosImportacion(
+            CanalVenta canal, Collection<ProductoCanalImportado> productos,
+            boolean incluirInactivas, boolean incluirSinStock) {
+        List<ProductoCanalImportado> candidatos = aplicarFiltroStock(
+                productos, incluirSinStock);
+        if (canal != CanalVenta.MERCADO_LIBRE
+                || incluirInactivas || !incluirSinStock) return candidatos;
+        return candidatos.stream()
+                .filter(producto -> {
+                    String estado = textoDato(producto, "estado");
+                    if (estado.isBlank()) return true;
+                    if ("active".equalsIgnoreCase(estado)) return true;
+                    return "paused".equalsIgnoreCase(estado)
+                            && !tieneStockPositivo(producto);
+                })
+                .toList();
+    }
+
+    private String textoDato(ProductoCanalImportado producto, String clave) {
+        if (producto == null || producto.datosCanal() == null) return "";
+        Object valor = producto.datosCanal().get(clave);
+        return valor == null ? "" : valor.toString().trim();
     }
 
     private boolean tieneStockPositivo(ProductoCanalImportado producto) {

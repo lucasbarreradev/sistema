@@ -139,23 +139,38 @@ public class TrabajoSincronizacionService {
     }
 
     public TrabajoSincronizacion iniciarImportacionCompleta(CanalVenta canal) {
-        return iniciarImportacionCompleta(canal, false);
+        return iniciarImportacionCompleta(canal, false, false);
     }
 
     public TrabajoSincronizacion iniciarImportacionCompleta(
             CanalVenta canal, boolean incluirInactivas) {
+        return iniciarImportacionCompleta(canal, incluirInactivas, false);
+    }
+
+    public TrabajoSincronizacion iniciarImportacionCompleta(
+            CanalVenta canal, boolean incluirInactivas,
+            boolean incluirSinStock) {
         TrabajoSincronizacion trabajo = crearTrabajoImportacion(
                 canal, TipoTrabajoSincronizacion.IMPORTACION_COMPLETA,
-                incluirInactivas
-                        ? "Esperando para traer productos activos e inactivos..."
-                        : "Esperando para traer los productos activos...");
+                (incluirInactivas
+                        ? "Esperando para traer productos activos e inactivos"
+                        : "Esperando para traer los productos activos")
+                        + (incluirSinStock ? ", incluyendo los que no tienen stock..." : " con stock..."));
         procesador.ejecutarImportacionCompleta(
-                trabajo.getId(), trabajo.getTenantId(), canal, incluirInactivas);
+                trabajo.getId(), trabajo.getTenantId(), canal,
+                incluirInactivas, incluirSinStock);
         return trabajo;
     }
 
     public TrabajoSincronizacion iniciarImportacionFiltradaMercadoLibre(
             int cantidad, String categoria, boolean incluirInactivas) {
+        return iniciarImportacionFiltradaMercadoLibre(cantidad, categoria,
+                incluirInactivas, false);
+    }
+
+    public TrabajoSincronizacion iniciarImportacionFiltradaMercadoLibre(
+            int cantidad, String categoria, boolean incluirInactivas,
+            boolean incluirSinStock) {
         if (cantidad < 1 || cantidad > 100) {
             throw new IllegalArgumentException("La cantidad debe estar entre 1 y 100");
         }
@@ -168,10 +183,11 @@ public class TrabajoSincronizacionService {
                 : " de la categoría " + categoriaNormalizada;
         TrabajoSincronizacion trabajo = crearTrabajoImportacion(
                 CanalVenta.MERCADO_LIBRE, TipoTrabajoSincronizacion.IMPORTACION_FILTRADA,
-                "Esperando para traer las últimas " + cantidad + " publicaciones" + alcance + "...");
+                "Esperando para traer las últimas " + cantidad + " publicaciones" + alcance
+                        + (incluirSinStock ? ", incluyendo las que no tienen stock..." : " con stock..."));
         procesador.ejecutarImportacionFiltradaMercadoLibre(
                 trabajo.getId(), trabajo.getTenantId(), cantidad,
-                categoriaNormalizada, incluirInactivas);
+                categoriaNormalizada, incluirInactivas, incluirSinStock);
         return trabajo;
     }
 

@@ -143,11 +143,11 @@ class TrabajoSincronizacionServiceTest {
         assertEquals("Mercado Libre → Sistema", trabajo.getFlujoDescripcion());
         assertEquals(EstadoTrabajoSincronizacion.PENDIENTE, trabajo.getEstado());
         verify(procesador).ejecutarImportacionCompleta(
-                44L, 8L, CanalVenta.MERCADO_LIBRE, false);
+                44L, 8L, CanalVenta.MERCADO_LIBRE, false, false);
     }
 
     @Test
-    void propagaLaSeleccionDePublicacionesInactivasALaImportacionCompleta() {
+    void propagaLaSeleccionDePublicacionesInactivasYSinStockALaImportacionCompleta() {
         TrabajoSincronizacionRepository repository = mock(TrabajoSincronizacionRepository.class);
         ProcesadorTrabajoSincronizacionService procesador = mock(ProcesadorTrabajoSincronizacionService.class);
         when(repository.findByEstadoIn(anyCollection())).thenReturn(List.of());
@@ -160,11 +160,12 @@ class TrabajoSincronizacionServiceTest {
         TrabajoSincronizacionService service = new TrabajoSincronizacionService(repository, procesador);
 
         try (TenantContext.Scope ignored = TenantContext.use(8L)) {
-            service.iniciarImportacionCompleta(CanalVenta.MERCADO_LIBRE, true);
+            service.iniciarImportacionCompleta(
+                    CanalVenta.MERCADO_LIBRE, true, true);
         }
 
         verify(procesador).ejecutarImportacionCompleta(
-                45L, 8L, CanalVenta.MERCADO_LIBRE, true);
+                45L, 8L, CanalVenta.MERCADO_LIBRE, true, true);
     }
 
     @Test
@@ -190,7 +191,7 @@ class TrabajoSincronizacionServiceTest {
         assertEquals("Mercado Libre → Sistema", trabajo.getFlujoDescripcion());
         assertTrue(trabajo.getResumen().contains("últimas 5"));
         verify(procesador).ejecutarImportacionFiltradaMercadoLibre(
-                46L, 8L, 5, "neumaticos", false);
+                46L, 8L, 5, "neumaticos", false, false);
     }
 
     @Test

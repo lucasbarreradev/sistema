@@ -106,17 +106,27 @@ public class ProcesadorTrabajoSincronizacionService {
     @Async("sincronizacionTaskExecutor")
     public void ejecutarImportacionCompleta(Long trabajoId, long tenantId, CanalVenta canal,
                                             boolean incluirInactivas) {
+        ejecutarImportacionCompleta(trabajoId, tenantId, canal,
+                incluirInactivas, false);
+    }
+
+    @Async("sincronizacionTaskExecutor")
+    public void ejecutarImportacionCompleta(Long trabajoId, long tenantId, CanalVenta canal,
+                                            boolean incluirInactivas,
+                                            boolean incluirSinStock) {
         try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
             if (!actualizarAProcesando(trabajoId,
                     "Trayendo productos " + (incluirInactivas ? "activos e inactivos" : "activos")
+                            + (incluirSinStock ? ", incluyendo los que no tienen stock" : " con stock")
                             + " desde " + canal.getDescripcion() + "...")) return;
             BooleanSupplier cancelacion = verificadorCancelacion(trabajoId);
             List<ProductoCanalImportado> productos = importacionCanalService
-                    .obtenerProductos(canal, incluirInactivas, cancelacion);
+                    .obtenerProductos(canal, incluirInactivas, incluirSinStock,
+                            cancelacion);
             if (finalizarCanceladoSiSolicitado(trabajoId,
                     "Cancelado por el usuario antes de importar los productos descargados.", List.of())) return;
             ResultadoImportacionCanal resultado = importacionCanalService
-                    .importar(canal, productos, cancelacion);
+                    .importar(canal, productos, incluirSinStock, cancelacion);
             guardarResultadoImportacion(trabajoId, resultado);
         } catch (Exception e) {
             registrarFallo(trabajoId, tenantId, "importación completa", e);
@@ -127,22 +137,33 @@ public class ProcesadorTrabajoSincronizacionService {
     public void ejecutarImportacionFiltradaMercadoLibre(
             Long trabajoId, long tenantId, int cantidad, String categoria,
             boolean incluirInactivas) {
+        ejecutarImportacionFiltradaMercadoLibre(trabajoId, tenantId, cantidad,
+                categoria, incluirInactivas, false);
+    }
+
+    @Async("sincronizacionTaskExecutor")
+    public void ejecutarImportacionFiltradaMercadoLibre(
+            Long trabajoId, long tenantId, int cantidad, String categoria,
+            boolean incluirInactivas, boolean incluirSinStock) {
         try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
             String alcance = categoria == null || categoria.isBlank()
                     ? ""
                     : " de la categoría " + categoria;
             if (!actualizarAProcesando(trabajoId,
                     "Trayendo las últimas " + cantidad + " publicaciones" + alcance
+                            + (incluirSinStock ? ", incluyendo las que no tienen stock" : " con stock")
                             + " desde Mercado Libre...")) return;
             BooleanSupplier cancelacion = verificadorCancelacion(trabajoId);
             List<ProductoCanalImportado> productos = importacionCanalService
                     .obtenerUltimasPublicacionesMercadoLibre(
-                            cantidad, categoria, incluirInactivas, cancelacion);
+                            cantidad, categoria, incluirInactivas,
+                            incluirSinStock, cancelacion);
             if (finalizarCanceladoSiSolicitado(trabajoId,
                     "Cancelado por el usuario antes de importar las publicaciones descargadas.",
                     List.of())) return;
             ResultadoImportacionCanal resultado = importacionCanalService
-                    .importar(CanalVenta.MERCADO_LIBRE, productos, cancelacion);
+                    .importar(CanalVenta.MERCADO_LIBRE, productos,
+                            incluirSinStock, cancelacion);
             guardarResultadoImportacion(trabajoId, resultado);
         } catch (Exception e) {
             registrarFallo(trabajoId, tenantId,

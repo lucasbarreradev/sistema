@@ -293,10 +293,12 @@ public class CanalesController {
     @PostMapping("/importar/{canal}")
     public String importarCanal(@PathVariable CanalVenta canal,
                                 @RequestParam(defaultValue = "false") boolean incluirInactivas,
+                                @RequestParam(defaultValue = "false") boolean incluirSinStock,
                                 RedirectAttributes ra) {
         try {
             var trabajo = trabajoSincronizacionService
-                    .iniciarImportacionCompleta(canal, incluirInactivas);
+                    .iniciarImportacionCompleta(canal, incluirInactivas,
+                            incluirSinStock);
             ra.addFlashAttribute("mensaje", "Importación completa iniciada en segundo plano (trabajo #"
                     + trabajo.getId() + "). Puede salir de esta página sin interrumpirla.");
         } catch (Exception e) {
@@ -310,11 +312,13 @@ public class CanalesController {
             @RequestParam int cantidad,
             @RequestParam(defaultValue = "") String categoria,
             @RequestParam(defaultValue = "false") boolean incluirInactivas,
+            @RequestParam(defaultValue = "false") boolean incluirSinStock,
             RedirectAttributes ra) {
         try {
             var trabajo = trabajoSincronizacionService
                     .iniciarImportacionFiltradaMercadoLibre(
-                            cantidad, categoria, incluirInactivas);
+                            cantidad, categoria, incluirInactivas,
+                            incluirSinStock);
             ra.addFlashAttribute("mensaje",
                     "Importación de las últimas publicaciones iniciada en segundo plano (trabajo #"
                             + trabajo.getId() + ").");

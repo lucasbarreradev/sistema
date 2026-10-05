@@ -52,6 +52,43 @@ class ImportacionCanalServiceTest {
     }
 
     @Test
+    void incluyeProductosSinStockCuandoSeSolicita() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        ProductoService productoService = mock(ProductoService.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        ImportadorCanal importador = mock(ImportadorCanal.class);
+        ProductoCanalImportado agotado = new ProductoCanalImportado(
+                "MLA-0", "SIN-0", "Producto sin stock", 0, BigDecimal.TEN,
+                null, null, Map.of("estado", "paused"), List.of());
+        ProductoCanalImportado cerrado = new ProductoCanalImportado(
+                "MLA-C", "SIN-C", "Producto cerrado", 0, BigDecimal.TEN,
+                null, null, Map.of("estado", "closed"), List.of());
+        ProductoCanalImportado pausadoConStock = new ProductoCanalImportado(
+                "MLA-P", "CON-P", "Pausado con stock", 2, BigDecimal.TEN,
+                null, null, Map.of("estado", "paused"), List.of());
+        ProductoCanalImportado activo = new ProductoCanalImportado(
+                "MLA-A", "CON-A", "Activo con stock", 3, BigDecimal.TEN,
+                null, null, Map.of("estado", "active"), List.of());
+        when(importador.canal()).thenReturn(CanalVenta.MERCADO_LIBRE);
+        when(importador.configurado()).thenReturn(true);
+        when(importador.obtenerProductos(eq(true),
+                any(java.util.function.BooleanSupplier.class)))
+                .thenReturn(List.of(agotado, cerrado, pausadoConStock, activo));
+        ImportacionCanalService service = new ImportacionCanalService(
+                productos, productoService, publicaciones, List.of(importador),
+                mock(ProductoVarianteRepository.class), mock(ProductoVarianteService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper());
+
+        List<ProductoCanalImportado> recibidos = service.obtenerProductos(
+                CanalVenta.MERCADO_LIBRE, false, true, () -> false);
+        ResultadoImportacionCanal resultado = service.importar(
+                CanalVenta.MERCADO_LIBRE, recibidos, true, () -> true);
+
+        assertEquals(List.of(agotado, activo), recibidos);
+        assertEquals(2, resultado.getRecibidos());
+    }
+
+    @Test
     void traeProductoSiAlgunaVarianteTieneStock() {
         ImportadorCanal importador = mock(ImportadorCanal.class);
         when(importador.canal()).thenReturn(CanalVenta.TIENDANUBE);

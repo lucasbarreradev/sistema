@@ -159,6 +159,10 @@
                                                                 <input type="checkbox" name="incluirInactivas" value="true">
                                                                 Incluir publicaciones inactivas
                                                             </label>
+                                                            <label class="d-block small mb-2">
+                                                                <input type="checkbox" name="incluirSinStock" value="true">
+                                                                Incluir productos sin stock
+                                                            </label>
                                                         </c:if>
                                                         <button type="submit" class="btn btn-sm btn-outline-primary"
                                                                 ${(configuracionImportacion[canal] && !sincronizacionActiva) ? '' : 'disabled'}>
@@ -189,6 +193,10 @@
                                                             <label class="d-block small mb-2">
                                                                 <input type="checkbox" name="incluirInactivas" value="true">
                                                                 Incluir publicaciones inactivas
+                                                            </label>
+                                                            <label class="d-block small mb-2">
+                                                                <input type="checkbox" name="incluirSinStock" value="true">
+                                                                Incluir productos sin stock
                                                             </label>
                                                             <small class="text-muted d-block mb-2">
                                                                 Se toman primero las publicaciones más nuevas. Deje la categoría vacía para traer cualquiera.
