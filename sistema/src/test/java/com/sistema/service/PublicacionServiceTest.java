@@ -47,6 +47,31 @@ class PublicacionServiceTest {
     }
 
     @Test
+    void intentaPublicarSinStockCuandoFueMarcadoComoPendiente() {
+        ProductoRepository productos = mock(ProductoRepository.class);
+        PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);
+        PublicadorCanal publicador = mock(PublicadorCanal.class);
+        Producto agotado = producto(10L, "SIN-STOCK-FORZADO");
+        agotado.setCantidad(0);
+        when(publicador.canal()).thenReturn(CanalVenta.WOOCOMMERCE);
+        when(publicador.publicar(agotado, null))
+                .thenReturn(new ResultadoPublicacion("800"));
+        when(productos.findById(10L)).thenReturn(Optional.of(agotado));
+        when(publicaciones.findByProductoIdAndCanal(
+                10L, CanalVenta.WOOCOMMERCE)).thenReturn(Optional.empty());
+        PublicacionService service = new PublicacionService(
+                productos, publicaciones, List.of(publicador));
+
+        ResultadoPublicacionLote resultado = service.publicar(
+                List.of(10L), List.of(CanalVenta.WOOCOMMERCE),
+                () -> false, true);
+
+        assertEquals(1, resultado.getExitosas());
+        verify(publicador).publicar(agotado, null);
+        verify(publicaciones).save(any(PublicacionCanal.class));
+    }
+
+    @Test
     void detieneElLoteAntesDelSiguienteProductoCuandoSeSolicitaCancelar() {
         ProductoRepository productos = mock(ProductoRepository.class);
         PublicacionCanalRepository publicaciones = mock(PublicacionCanalRepository.class);

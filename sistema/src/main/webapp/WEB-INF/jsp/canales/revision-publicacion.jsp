@@ -48,14 +48,13 @@
                             <c:set var="p" value="${revision.producto}"/>
                             <tr id="producto-${p.id}" class="${revision.listo ? 'table-success' : 'table-warning'}">
                                 <td class="text-center align-middle">
-                                    <c:choose>
-                                        <c:when test="${revision.listo}">
-                                            <input type="checkbox" class="producto-listo" name="productoIds"
-                                                   value="${p.id}" form="form-publicar-seleccion" checked
-                                                   aria-label="Publicar ${fn:escapeXml(p.descripcion)}">
-                                        </c:when>
-                                        <c:otherwise><span class="text-muted">—</span></c:otherwise>
-                                    </c:choose>
+                                    <input type="checkbox"
+                                           class="producto-publicable ${revision.listo ? 'producto-listo' : 'producto-pendiente'}"
+                                           name="productoIds" value="${p.id}"
+                                           form="form-publicar-seleccion"
+                                           data-pendiente="${revision.listo ? 'false' : 'true'}"
+                                           <c:if test="${revision.listo}">checked</c:if>
+                                           aria-label="Intentar publicar ${fn:escapeXml(p.descripcion)}">
                                 </td>
                                 <td>
                                     <span class="badge ${revision.listo ? 'badge-success' : 'badge-warning'} p-2">
@@ -287,12 +286,16 @@
                     <input type="hidden" name="${_csrf.parameterName}" value="${_csrf.token}">
                     <div class="text-right mb-2">
                         <button type="button" class="btn btn-sm btn-outline-secondary" id="marcar-listos">Marcar listos</button>
-                        <button type="button" class="btn btn-sm btn-outline-secondary" id="desmarcar-listos">Desmarcar todos</button>
+                        <button type="button" class="btn btn-sm btn-outline-warning" id="marcar-todos">Marcar todos, incluso pendientes</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" id="desmarcar-todos">Desmarcar todos</button>
                     </div>
-                    <button class="btn btn-success btn-lg" type="submit" <c:if test="${cantidadListos == 0}">disabled</c:if>>
+                    <div class="alert alert-warning py-2 text-left d-none" id="aviso-publicacion-pendientes">
+                        Los productos pendientes tambi&eacute;n se intentar&aacute;n publicar. El canal puede rechazarlos y el motivo aparecer&aacute; en el detalle de la sincronizaci&oacute;n.
+                    </div>
+                    <button class="btn btn-success btn-lg" type="submit">
                         <i class="fa-solid fa-cloud-arrow-up mr-1"></i>Publicar seleccionados
                     </button>
-                    <div class="small text-muted mt-1">Sólo se publicarán los productos listos que estén marcados.</div>
+                    <div class="small text-muted mt-1">Se intentar&aacute;n publicar todos los productos marcados, incluso si tienen datos pendientes.</div>
                 </form>
             </div>
         </div>
@@ -304,11 +307,36 @@ document.querySelectorAll('.precio-decimal').forEach(function (campo) {
     campo.addEventListener('input', function () { this.value = this.value.replace(',', '.'); });
 });
 document.getElementById('marcar-listos').addEventListener('click', function () {
-    document.querySelectorAll('.producto-listo').forEach(function (campo) { campo.checked = true; });
+    document.querySelectorAll('.producto-publicable').forEach(function (campo) {
+        campo.checked = campo.classList.contains('producto-listo');
+    });
+    actualizarAvisoPendientes();
 });
-document.getElementById('desmarcar-listos').addEventListener('click', function () {
-    document.querySelectorAll('.producto-listo').forEach(function (campo) { campo.checked = false; });
+document.getElementById('marcar-todos').addEventListener('click', function () {
+    document.querySelectorAll('.producto-publicable').forEach(function (campo) { campo.checked = true; });
+    actualizarAvisoPendientes();
 });
+document.getElementById('desmarcar-todos').addEventListener('click', function () {
+    document.querySelectorAll('.producto-publicable').forEach(function (campo) { campo.checked = false; });
+    actualizarAvisoPendientes();
+});
+function actualizarAvisoPendientes() {
+    const hayPendientes = Array.from(document.querySelectorAll('.producto-pendiente'))
+        .some(function (campo) { return campo.checked; });
+    document.getElementById('aviso-publicacion-pendientes')
+        .classList.toggle('d-none', !hayPendientes);
+}
+document.querySelectorAll('.producto-publicable').forEach(function (campo) {
+    campo.addEventListener('change', actualizarAvisoPendientes);
+});
+document.getElementById('form-publicar-seleccion').addEventListener('submit', function (evento) {
+    const pendientes = Array.from(document.querySelectorAll('.producto-pendiente'))
+        .filter(function (campo) { return campo.checked; }).length;
+    if (pendientes > 0 && !window.confirm('Hay ' + pendientes + ' producto(s) con datos pendientes. Se intentarán publicar igualmente y el canal puede rechazarlos. ¿Desea continuar?')) {
+        evento.preventDefault();
+    }
+});
+actualizarAvisoPendientes();
 </script>
 </body>
 </html>

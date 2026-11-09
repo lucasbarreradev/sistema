@@ -195,7 +195,7 @@ public class RevisionPublicacionController {
                     .distinct().toList();
             if (elegidos.isEmpty()) {
                 throw new IllegalArgumentException(
-                        "Seleccione al menos un producto listo para publicar");
+                        "Seleccione al menos un producto para intentar publicar");
             }
             Set<Long> permitidos = new LinkedHashSet<>(seleccion.productoIds());
             if (!permitidos.containsAll(elegidos)) {
@@ -210,15 +210,15 @@ public class RevisionPublicacionController {
             }
             List<RevisionProductoPublicacionDto> pendientes = revision.stream()
                     .filter(producto -> !producto.isListo()).toList();
-            if (!pendientes.isEmpty()) {
-                throw new IllegalArgumentException("Todavía hay " + pendientes.size()
-                        + " producto(s) seleccionados con datos pendientes. Corríjalos o desmárquelos.");
-            }
-            var trabajo = trabajoService.iniciarPublicacion(
-                    elegidos, seleccion.canales());
+            var trabajo = pendientes.isEmpty()
+                    ? trabajoService.iniciarPublicacion(elegidos, seleccion.canales())
+                    : trabajoService.iniciarPublicacion(
+                            elegidos, seleccion.canales(), true);
             session.removeAttribute(ATRIBUTO_SESION);
             ra.addFlashAttribute("mensaje", "Publicación iniciada en segundo plano (trabajo #"
-                    + trabajo.getId() + ") para " + revision.size() + " producto(s).");
+                    + trabajo.getId() + ") para " + revision.size() + " producto(s)."
+                    + (pendientes.isEmpty() ? "" : " Se intentarán publicar también "
+                    + pendientes.size() + " producto(s) con datos pendientes."));
             return "redirect:/canales";
         } catch (IllegalArgumentException | IllegalStateException e) {
             ra.addFlashAttribute("error", e.getMessage());

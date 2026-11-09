@@ -86,12 +86,20 @@ public class ProcesadorTrabajoSincronizacionService {
     @Async("sincronizacionTaskExecutor")
     public void ejecutarPublicacion(Long trabajoId, long tenantId, List<Long> productoIds,
                                     List<CanalVenta> canales) {
+        ejecutarPublicacion(trabajoId, tenantId, productoIds, canales, false);
+    }
+
+    @Async("sincronizacionTaskExecutor")
+    public void ejecutarPublicacion(Long trabajoId, long tenantId, List<Long> productoIds,
+                                    List<CanalVenta> canales,
+                                    boolean forzarIntento) {
         try (TenantContext.Scope ignored = TenantContext.use(tenantId)) {
             if (!actualizarAProcesando(trabajoId,
                     "Publicando " + productoIds.size() + " producto(s) en "
                             + descripcionCanales(canales) + "...")) return;
             ResultadoPublicacionLote resultado = publicacionService
-                    .publicar(productoIds, canales, verificadorCancelacion(trabajoId));
+                    .publicar(productoIds, canales,
+                            verificadorCancelacion(trabajoId), forzarIntento);
             guardarResultadoPublicacion(trabajoId, resultado);
         } catch (Exception e) {
             log.error("Falló el trabajo de publicación {} del tenant {}", trabajoId, tenantId, e);

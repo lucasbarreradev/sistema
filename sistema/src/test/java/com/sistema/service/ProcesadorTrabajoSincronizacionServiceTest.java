@@ -91,7 +91,8 @@ class ProcesadorTrabajoSincronizacionServiceTest {
         resultado.exito();
         resultado.error("CAMP-001 / WooCommerce: error de prueba");
         when(publicacionService.publicar(eq(List.of(4L, 5L, 6L)),
-                eq(List.of(CanalVenta.WOOCOMMERCE)), any(java.util.function.BooleanSupplier.class)))
+                eq(List.of(CanalVenta.WOOCOMMERCE)),
+                any(java.util.function.BooleanSupplier.class), eq(false)))
                 .thenReturn(resultado);
         ProcesadorTrabajoSincronizacionService procesador =
                 new ProcesadorTrabajoSincronizacionService(

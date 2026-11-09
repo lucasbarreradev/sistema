@@ -60,6 +60,12 @@ public class TrabajoSincronizacionService {
 
     public TrabajoSincronizacion iniciarPublicacion(Collection<Long> productoIds,
                                                     Collection<CanalVenta> canales) {
+        return iniciarPublicacion(productoIds, canales, false);
+    }
+
+    public TrabajoSincronizacion iniciarPublicacion(Collection<Long> productoIds,
+                                                    Collection<CanalVenta> canales,
+                                                    boolean forzarIntento) {
         if (productoIds == null) throw new IllegalArgumentException("Seleccione al menos un producto");
         if (canales == null) throw new IllegalArgumentException("Seleccione al menos un canal");
         List<Long> productosValidos = productoIds.stream()
@@ -88,7 +94,8 @@ public class TrabajoSincronizacionService {
         trabajo = repository.save(trabajo);
 
         procesador.ejecutarPublicacion(trabajo.getId(), tenantId,
-                List.copyOf(productosValidos), List.copyOf(canalesValidos));
+                List.copyOf(productosValidos), List.copyOf(canalesValidos),
+                forzarIntento);
         return trabajo;
     }
 

@@ -20,6 +20,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -133,6 +134,43 @@ class RevisionPublicacionControllerTest {
         assertEquals("redirect:/canales", destino);
         assertNull(session.getAttribute(
                 RevisionPublicacionController.ATRIBUTO_SESION));
+    }
+
+    @Test
+    void intentaPublicarUnProductoPendienteEnTodosLosCanalesElegidos() {
+        List<CanalVenta> canales = List.of(
+                CanalVenta.MERCADO_LIBRE, CanalVenta.WOOCOMMERCE);
+        MockHttpSession session = new MockHttpSession();
+        session.setAttribute(RevisionPublicacionController.ATRIBUTO_SESION,
+                new RevisionPublicacionSesion(7L, List.of(3L), canales));
+        Producto producto = new Producto();
+        producto.setId(3L);
+        RevisionProductoPublicacionDto pendiente =
+                new RevisionProductoPublicacionDto(
+                        producto, List.of(), List.of("Atributos: Marca"),
+                        List.of("Marca"), List.of("Marca"),
+                        List.of(), List.of(), java.util.Map.of(),
+                        java.util.Map.of());
+        when(revisionService.revisar(List.of(3L), canales))
+                .thenReturn(List.of(pendiente));
+        TrabajoSincronizacion trabajo = new TrabajoSincronizacion();
+        trabajo.setId(56L);
+        when(trabajoService.iniciarPublicacion(
+                List.of(3L), canales, true)).thenReturn(trabajo);
+        RedirectAttributesModelMap atributos =
+                new RedirectAttributesModelMap();
+
+        String destino;
+        try (TenantContext.Scope ignored = TenantContext.use(7L)) {
+            destino = controller.confirmar(
+                    List.of(3L), session, atributos);
+        }
+
+        verify(trabajoService).iniciarPublicacion(
+                List.of(3L), canales, true);
+        assertEquals("redirect:/canales", destino);
+        assertTrue(atributos.getFlashAttributes().get("mensaje")
+                .toString().contains("datos pendientes"));
     }
 
     @Test

@@ -90,7 +90,8 @@ class TrabajoSincronizacionServiceTest {
         assertEquals("WOOCOMMERCE", trabajo.getDestinos());
         assertEquals(EstadoTrabajoSincronizacion.PENDIENTE, trabajo.getEstado());
         verify(procesador).ejecutarPublicacion(
-                31L, 8L, List.of(4L, 5L), List.of(CanalVenta.WOOCOMMERCE));
+                31L, 8L, List.of(4L, 5L),
+                List.of(CanalVenta.WOOCOMMERCE), false);
     }
 
     @Test

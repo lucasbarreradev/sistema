@@ -57,12 +57,20 @@ public class PublicacionService {
 
     public ResultadoPublicacionLote publicar(Collection<Long> productoIds, Collection<CanalVenta> canales,
                                              BooleanSupplier cancelacionSolicitada) {
+        return publicar(productoIds, canales, cancelacionSolicitada, false);
+    }
+
+    public ResultadoPublicacionLote publicar(Collection<Long> productoIds,
+                                             Collection<CanalVenta> canales,
+                                             BooleanSupplier cancelacionSolicitada,
+                                             boolean forzarIntento) {
         ResultadoPublicacionLote lote = new ResultadoPublicacionLote();
         for (Long productoId : productoIds) {
             if (cancelacionSolicitada.getAsBoolean()) return lote;
             Producto producto = productoRepository.findById(productoId).orElse(null);
             if (producto == null) { lote.error("Producto " + productoId + ": no encontrado"); continue; }
-            if (Optional.ofNullable(producto.getCantidad()).orElse(0) <= 0) continue;
+            if (!forzarIntento
+                    && Optional.ofNullable(producto.getCantidad()).orElse(0) <= 0) continue;
             for (CanalVenta canal : canales) {
                 if (cancelacionSolicitada.getAsBoolean()) return lote;
                 publicarUno(producto, canal, lote);
